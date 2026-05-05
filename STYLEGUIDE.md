@@ -347,7 +347,7 @@ Minimum target `mypy` profile:
 
 ```toml
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.12"
 strict = true
 warn_unused_ignores = true
 warn_redundant_casts = true
