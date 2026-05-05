@@ -8,7 +8,8 @@ import httpx
 import pytest
 
 from avito.ads import Ad, AdPromotion, AdStats
-from avito.ads.enums import ListingStatus
+from avito.ads.models import AdAnalyticsGrouping, AdSpendingsGrouping, ListingStatus
+from avito.core import ValidationError
 from tests.helpers.transport import make_transport
 
 
@@ -110,7 +111,7 @@ def test_ads_domain_covers_item_stats_spendings_and_promotion() -> None:
                 200, json={"items": [{"item_id": 101, "amount": 77.5, "service": "xl"}]}
             )
         if request.url.path == "/core/v1/accounts/7/items/101/vas":
-            assert json.loads(request.content.decode()) == {"codes": ["xl"]}
+            assert json.loads(request.content.decode()) == {"vas_id": "xl"}
             return httpx.Response(200, json={"success": True, "status": "applied"})
         assert request.url.path == "/core/v1/items/101/update_price"
         assert json.loads(request.content.decode()) == {"price": 1500}
@@ -123,10 +124,15 @@ def test_ads_domain_covers_item_stats_spendings_and_promotion() -> None:
 
     item = ad.get()
     updated = ad.update_price(price=1500)
-    item_stats = stats.get_item_stats()
-    calls = stats.get_calls_stats()
-    spendings = stats.get_account_spendings()
-    applied = promotion.apply_vas(codes=["xl"])
+    item_stats = stats.get_item_stats(date_from="2026-04-01", date_to="2026-04-02")
+    calls = stats.get_calls_stats(date_from="2026-04-01", date_to="2026-04-02")
+    spendings = stats.get_account_spendings(
+        date_from="2026-04-01",
+        date_to="2026-04-02",
+        spending_types=["promotion"],
+        grouping=AdSpendingsGrouping.DAY,
+    )
+    applied = promotion.apply_vas(vas_id="xl")
 
     assert item.title == "Смартфон"
     assert updated.status == "updated"
@@ -147,10 +153,19 @@ def test_ad_stats_accept_datetime_filters_and_serialize_isoformat() -> None:
     started_at = datetime.fromisoformat("2026-04-18T00:00:00+03:00")
     finished_at = datetime.fromisoformat("2026-04-18T23:59:59+03:00")
 
-    stats.get_item_analytics(item_ids=[101], date_from=started_at, date_to=finished_at)
+    stats.get_item_analytics(
+        item_ids=[101],
+        date_from=started_at,
+        date_to=finished_at,
+        metrics=["views"],
+        grouping=AdAnalyticsGrouping.DAY,
+        limit=100,
+        offset=0,
+    )
 
     assert seen_payloads[0]["dateFrom"] == "2026-04-18"
     assert seen_payloads[0]["dateTo"] == "2026-04-18"
+    assert seen_payloads[0]["grouping"] == "day"
 
 
 def test_ad_stats_accept_date_and_iso_string_filters() -> None:
@@ -168,6 +183,30 @@ def test_ad_stats_accept_date_and_iso_string_filters() -> None:
 
     assert seen_payloads[0]["dateFrom"] == "2026-04-18"
     assert seen_payloads[0]["dateTo"] == "2026-04-19"
+
+
+def test_ad_stats_reject_unknown_grouping_before_transport() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("transport must not be called")
+
+    stats = AdStats(make_transport(httpx.MockTransport(handler)), item_id=101, user_id=7)
+
+    with pytest.raises(ValidationError, match="grouping"):
+        stats.get_item_analytics(
+            date_from="2026-04-18",
+            date_to="2026-04-19",
+            metrics=["views"],
+            grouping="unknown",
+            limit=100,
+            offset=0,
+        )
+    with pytest.raises(ValidationError, match="grouping"):
+        stats.get_account_spendings(
+            date_from="2026-04-18",
+            date_to="2026-04-19",
+            spending_types=["promotion"],
+            grouping="totals",
+        )
 
 
 def test_ad_mapper_reads_nested_listing_fields() -> None:

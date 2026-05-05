@@ -15,7 +15,7 @@ from avito.autoteka import (
     AutotekaVehicle,
 )
 from avito.core import Transport
-from avito.core.exceptions import ConfigurationError
+from avito.core.exceptions import ClientClosedError
 from avito.core.types import ApiTimeouts
 from avito.cpa import CallTrackingCall, CpaArchive, CpaCall, CpaChat, CpaLead
 from avito.jobs import Application, JobDictionary, JobWebhook, Resume, Vacancy
@@ -34,6 +34,20 @@ from avito.realty import RealtyAnalyticsReport, RealtyBooking, RealtyListing, Re
 from avito.summary import AccountHealthSummary, CapabilityDiscoveryResult, ListingHealthSummary
 from avito.tariffs import Tariff
 from tests.helpers.transport import make_transport
+
+
+def make_client_with_transport(
+    handler: httpx.MockTransport,
+    *,
+    user_id: int | None = None,
+) -> AvitoClient:
+    settings = AvitoSettings(auth=AuthSettings(client_id="client-id", client_secret="client-secret"))
+    auth_provider = AuthProvider(settings.auth)
+    return AvitoClient._from_transport(
+        settings,
+        transport=make_transport(handler, user_id=user_id),
+        auth_provider=auth_provider,
+    )
 
 
 def test_single_client_exposes_domain_factories() -> None:
@@ -140,10 +154,7 @@ def test_listing_health_combines_listing_stats_calls_and_spendings() -> None:
             return httpx.Response(200, json={"items": [{"item_id": 101, "amount": 77.5}]})
         raise AssertionError(request.url.path)
 
-    client = AvitoClient(
-        AvitoSettings(auth=AuthSettings(client_id="client-id", client_secret="client-secret"))
-    )
-    client.transport = make_transport(httpx.MockTransport(handler), user_id=7)
+    client = make_client_with_transport(httpx.MockTransport(handler), user_id=7)
 
     summary = client.listing_health()
 
@@ -184,10 +195,7 @@ def test_listing_health_degrades_when_spendings_are_rate_limited() -> None:
             )
         raise AssertionError(request.url.path)
 
-    client = AvitoClient(
-        AvitoSettings(auth=AuthSettings(client_id="client-id", client_secret="client-secret"))
-    )
-    client.transport = make_transport(httpx.MockTransport(handler), user_id=7)
+    client = make_client_with_transport(httpx.MockTransport(handler), user_id=7)
 
     summary = client.listing_health()
 
@@ -225,10 +233,7 @@ def test_listing_health_keeps_unknown_total_separate_from_loaded_count() -> None
             return httpx.Response(200, json={"items": []})
         raise AssertionError(request.url.path)
 
-    client = AvitoClient(
-        AvitoSettings(auth=AuthSettings(client_id="client-id", client_secret="client-secret"))
-    )
-    client.transport = make_transport(httpx.MockTransport(handler), user_id=7)
+    client = make_client_with_transport(httpx.MockTransport(handler), user_id=7)
 
     summary = client.listing_health(limit=50, page_size=50)
 
@@ -284,10 +289,7 @@ def test_account_health_builds_final_business_summary() -> None:
             )
         raise AssertionError(path)
 
-    client = AvitoClient(
-        AvitoSettings(auth=AuthSettings(client_id="client-id", client_secret="client-secret"))
-    )
-    client.transport = make_transport(httpx.MockTransport(handler), user_id=7)
+    client = make_client_with_transport(httpx.MockTransport(handler), user_id=7)
 
     summary = client.business_summary()
 
@@ -337,9 +339,11 @@ def test_debug_info_and_context_manager_do_not_leak_secrets() -> None:
         alternate_token_client=AlternateTokenClient(settings.auth, client=alternate_http_client),
         autoteka_token_client=TokenClient(settings.auth, client=autoteka_http_client),
     )
-    client = AvitoClient(settings)
-    client.transport = Transport(settings, auth_provider=auth_provider, client=transport_http_client)
-    client.auth_provider = auth_provider
+    client = AvitoClient._from_transport(
+        settings,
+        transport=Transport(settings, auth_provider=auth_provider, client=transport_http_client),
+        auth_provider=auth_provider,
+    )
 
     info = client.debug_info()
     assert info.requires_auth is True
@@ -354,7 +358,7 @@ def test_debug_info_and_context_manager_do_not_leak_secrets() -> None:
     assert autoteka_http_client.is_closed is True
 
 
-def test_auth_token_clients_use_explicit_sdk_timeouts() -> None:
+def test_auth_token_clients_use_explicit_sdk_settings() -> None:
     settings = AvitoSettings(
         base_url="https://api.avito.ru",
         timeouts=ApiTimeouts(connect=2.5, read=11.0, write=13.0, pool=3.0),
@@ -362,22 +366,27 @@ def test_auth_token_clients_use_explicit_sdk_timeouts() -> None:
     )
 
     client = AvitoClient(settings)
-    token_timeout = client.auth_provider.token_flow().client.timeout
-    alternate_timeout = client.auth_provider.alternate_token_flow().client.timeout
-    autoteka_timeout = client.auth_provider.autoteka_token_client.client.timeout
+    token_settings = client.auth_provider.token_flow().sdk_settings
+    alternate_settings = client.auth_provider.alternate_token_flow().sdk_settings
+    autoteka_settings = client.auth_provider.autoteka_token_client.sdk_settings
 
-    assert token_timeout.connect == 2.5
-    assert token_timeout.read == 11.0
-    assert token_timeout.write == 13.0
-    assert token_timeout.pool == 3.0
-    assert alternate_timeout.connect == 2.5
-    assert alternate_timeout.read == 11.0
-    assert alternate_timeout.write == 13.0
-    assert alternate_timeout.pool == 3.0
-    assert autoteka_timeout.connect == 2.5
-    assert autoteka_timeout.read == 11.0
-    assert autoteka_timeout.write == 13.0
-    assert autoteka_timeout.pool == 3.0
+    assert token_settings is settings
+    assert alternate_settings is settings
+    assert autoteka_settings is settings
+
+    client.close()
+
+
+def test_client_core_attributes_are_read_only() -> None:
+    settings = AvitoSettings(auth=AuthSettings(client_id="client-id", client_secret="client-secret"))
+    client = AvitoClient(settings)
+
+    with pytest.raises(AttributeError):
+        client.settings = settings  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        client.transport = client.transport  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        client.auth_provider = client.auth_provider  # type: ignore[misc]
 
     client.close()
 
@@ -389,5 +398,5 @@ def test_closed_client_rejects_new_domain_factories() -> None:
 
     client.close()
 
-    with pytest.raises(ConfigurationError, match="Клиент закрыт"):
+    with pytest.raises(ClientClosedError, match="Клиент закрыт"):
         client.account()

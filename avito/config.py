@@ -84,7 +84,9 @@ class AvitoSettings:
         if not suffix.strip():
             raise ConfigurationError("Поле `user_agent_suffix` не должно быть пустым.")
         if "\r" in suffix or "\n" in suffix:
-            raise ConfigurationError("Поле `user_agent_suffix` не должно содержать переводы строки.")
+            raise ConfigurationError(
+                "Поле `user_agent_suffix` не должно содержать переводы строки."
+            )
         lowered = suffix.lower()
         if any(fragment in lowered for fragment in _FORBIDDEN_USER_AGENT_SUFFIX_FRAGMENTS):
             raise ConfigurationError(

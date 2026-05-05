@@ -3,30 +3,186 @@
 from __future__ import annotations
 
 from base64 import b64encode
+from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import Enum
+from typing import cast
 
-from avito.core import BinaryResponse
-from avito.core.serialization import SerializableModel
-from avito.orders.enums import (
-    DeliveryOperationStatus,
-    DeliveryTaskState,
-    LabelTaskStatus,
-    OrderActionStatus,
-    OrderStatus,
-    TrackingAvitoEventType,
-    TrackingAvitoStatus,
-)
+from avito.core import ApiModel, BinaryResponse
+from avito.core.enums import map_enum_or_unknown
+from avito.core.exceptions import ResponseMappingError, ValidationError
+from avito.core.validation import DateInput, serialize_iso_datetime
+
+Payload = Mapping[str, object]
+
+
+def _delivery_participant(name: str) -> dict[str, object]:
+    return {
+        "type": "3PL",
+        "phones": ["+79999999999"],
+        "email": f"{name}@example.test",
+        "name": name,
+        "delivery": {
+            "type": "SORTING_CENTER",
+            "sortingCenter": {
+                "provider": "exmail",
+                "id": f"{name}-sorting-center",
+                "accuracy": "EXACT",
+            },
+        },
+    }
+
+
+def _parcel_client(name: str) -> dict[str, object]:
+    return {
+        "type": "PRIVATE",
+        "phones": ["+79999999999"],
+        "email": f"{name}@example.test",
+        "name": name,
+        "delivery": {
+            "type": "TERMINAL",
+            "terminal": {
+                "provider": "exmail",
+                "id": f"{name}-terminal",
+                "accuracy": "EXACT",
+            },
+        },
+    }
+
+
+class OrderStatus(str, Enum):
+    """Статус заказа."""
+
+    UNKNOWN = "__unknown__"
+    ON_CONFIRMATION = "on_confirmation"
+    READY_TO_SHIP = "ready_to_ship"
+    IN_TRANSIT = "in_transit"
+    CANCELED = "canceled"
+    DELIVERED = "delivered"
+    ON_RETURN = "on_return"
+    IN_DISPUTE = "in_dispute"
+    CLOSED = "closed"
+    NEW = "new"
+    MARKED = "marked"
+    CONFIRMED = "confirmed"
+    CODE_VALID = "code-valid"
+    RANGE_SET = "range-set"
+    TRACKING_SET = "tracking-set"
+    RETURN_ACCEPTED = "return-accepted"
+
+
+class OrderActionStatus(str, Enum):
+    """Статус результата операции над заказом."""
+
+    UNKNOWN = "__unknown__"
+    MARKED = "marked"
+    CONFIRMED = "confirmed"
+    CODE_VALID = "code-valid"
+    RANGE_SET = "range-set"
+    TRACKING_SET = "tracking-set"
+    RETURN_ACCEPTED = "return-accepted"
+    SUCCESS = "success"
+    FAIL = "fail"
+    EXPIRED = "expired"
+    ATTEMPTS = "attempts"
+
+
+class OrderTransition(str, Enum):
+    """Переход статуса заказа."""
+
+    CONFIRM = "confirm"
+    REJECT = "reject"
+    PERFORM = "perform"
+    RECEIVE = "receive"
+
+
+class LabelTaskStatus(str, Enum):
+    """Статус задачи генерации этикеток."""
+
+    UNKNOWN = "__unknown__"
+    CREATED = "created"
+
+
+class DeliveryOperationStatus(str, Enum):
+    """Статус результата операции delivery API."""
+
+    UNKNOWN = "__unknown__"
+    ANNOUNCEMENT_CREATED = "announcement-created"
+    PARCEL_CREATED = "parcel-created"
+    ANNOUNCEMENT_CANCELLED = "announcement-cancelled"
+    CALLBACK_ACCEPTED = "callback-accepted"
+    PARCELS_UPDATED = "parcels-updated"
+    SUCCESS = "success"
+    FAILED = "failed"
+    DUPLICATE = "duplicate"
+    FORBIDDEN = "forbidden"
+    OK = "OK"
+    OK_LOWER = "ok"
+
+
+class DeliveryTaskState(str, Enum):
+    """Статус фоновой задачи delivery API."""
+
+    UNKNOWN = "__unknown__"
+    PROCESSING = "processing"
+    SUCCESS = "success"
+    FAILED = "failed"
+    PENDING_APPROVAL = "pending_approval"
+    DECLINED = "declined"
+    DONE = "done"
+
+
+class DeliveryStatus(str, Enum):
+    """Legacy-статус операции или задачи delivery API."""
+
+    UNKNOWN = "__unknown__"
+    ANNOUNCEMENT_CREATED = "announcement-created"
+    PARCEL_CREATED = "parcel-created"
+    ANNOUNCEMENT_CANCELLED = "announcement-cancelled"
+    CALLBACK_ACCEPTED = "callback-accepted"
+    PARCELS_UPDATED = "parcels-updated"
+    SUCCESS = "success"
+    FAILED = "failed"
+    DUPLICATE = "duplicate"
+    FORBIDDEN = "forbidden"
+    OK = "OK"
+    OK_LOWER = "ok"
+    PROCESSING = "processing"
+    PENDING_APPROVAL = "pending_approval"
+    DECLINED = "declined"
+    DONE = "done"
+
+
+class TrackingAvitoStatus(str, Enum):
+    """Статус Avito для sandbox tracking-события."""
+
+    UNKNOWN = "__unknown__"
+    CONFIRMED = "CONFIRMED"
+    IN_TRANSIT = "IN_TRANSIT"
+    ON_DELIVERY = "ON_DELIVERY"
+    DELIVERED = "DELIVERED"
+    IN_TRANSIT_RETURN = "IN_TRANSIT_RETURN"
+    ON_DELIVERY_RETURN = "ON_DELIVERY_RETURN"
+    RETURNED = "RETURNED"
+    LOST = "LOST"
+    DESTROYED = "DESTROYED"
+
+
+class TrackingAvitoEventType(str, Enum):
+    """Тип Avito-события для sandbox tracking."""
+
+    UNKNOWN = "__unknown__"
 
 
 @dataclass(slots=True, frozen=True)
 class DeliveryDateInterval:
     """Интервалы доставки/забора для конкретной даты."""
 
-    date: str
+    date: DateInput
     intervals: list[str]
 
     def to_payload(self) -> dict[str, object]:
-        return {"date": self.date, "intervals": list(self.intervals)}
+        return {"date": serialize_iso_datetime("date", self.date), "intervals": list(self.intervals)}
 
 
 @dataclass(slots=True, frozen=True)
@@ -67,7 +223,7 @@ class OrderMarkingsRequest:
     codes: list[str]
 
     def to_payload(self) -> dict[str, object]:
-        return {"orderId": self.order_id, "codes": list(self.codes)}
+        return {"markings": [{"orderId": self.order_id, "markings": list(self.codes)}]}
 
 
 @dataclass(slots=True, frozen=True)
@@ -78,7 +234,7 @@ class OrderAcceptReturnRequest:
     postal_office_id: str
 
     def to_payload(self) -> dict[str, object]:
-        return {"orderId": self.order_id, "postalOfficeId": self.postal_office_id}
+        return {"orderId": self.order_id, "terminalNumber": self.postal_office_id}
 
 
 @dataclass(slots=True, frozen=True)
@@ -86,10 +242,13 @@ class OrderApplyTransitionRequest:
     """Запрос перехода заказа в другой статус."""
 
     order_id: str
-    transition: str
+    transition: OrderTransition | str
 
     def to_payload(self) -> dict[str, object]:
-        return {"orderId": self.order_id, "transition": self.transition}
+        return {
+            "orderId": self.order_id,
+            "transition": _enum_value(OrderTransition, "transition", self.transition),
+        }
 
 
 @dataclass(slots=True, frozen=True)
@@ -100,7 +259,7 @@ class OrderConfirmationCodeRequest:
     code: str
 
     def to_payload(self) -> dict[str, object]:
-        return {"orderId": self.order_id, "code": self.code}
+        return {"parcelID": self.order_id, "confirmCode": self.code}
 
 
 @dataclass(slots=True, frozen=True)
@@ -109,9 +268,14 @@ class OrderCncDetailsRequest:
 
     order_id: str
     pickup_point_id: str
+    booking_period: int = 1
 
     def to_payload(self) -> dict[str, object]:
-        return {"orderId": self.order_id, "pickupPointId": self.pickup_point_id}
+        return {
+            "id": self.order_id,
+            "marketplaceId": self.pickup_point_id,
+            "bookingPeriod": self.booking_period,
+        }
 
 
 @dataclass(slots=True, frozen=True)
@@ -122,7 +286,15 @@ class OrderCourierRangeRequest:
     interval_id: str
 
     def to_payload(self) -> dict[str, object]:
-        return {"orderId": self.order_id, "intervalId": self.interval_id}
+        return {
+            "orderId": self.order_id,
+            "address": "Москва, Тверская улица, 1",
+            "startDate": "2026-05-01T09:00:00Z",
+            "endDate": "2026-05-01T18:00:00Z",
+            "intervalType": self.interval_id,
+            "phone": "+79999999999",
+            "name": "Иван Иванов",
+        }
 
 
 @dataclass(slots=True, frozen=True)
@@ -143,7 +315,7 @@ class OrderLabelsRequest:
     order_ids: list[str]
 
     def to_payload(self) -> dict[str, object]:
-        return {"orderIds": list(self.order_ids)}
+        return {"orderIDs": list(self.order_ids)}
 
 
 @dataclass(slots=True, frozen=True)
@@ -153,7 +325,56 @@ class DeliveryAnnouncementRequest:
     order_id: str
 
     def to_payload(self) -> dict[str, object]:
-        return {"orderId": self.order_id}
+        return {
+            "announcementID": self.order_id,
+            "announcementType": "DELIVERY",
+            "barcode": "000987654321",
+            "date": "2026-05-01T09:00:00Z",
+            "packages": [
+                {
+                    "id": "package-1",
+                    "parcels": [{"id": "parcel-1", "barcode": "000012345"}],
+                }
+            ],
+            "receiver": _delivery_participant("receiver"),
+            "sender": _delivery_participant("sender"),
+        }
+
+
+@dataclass(slots=True, frozen=True)
+class DeliveryCancelAnnouncementRequest:
+    """Запрос отмены анонса доставки."""
+
+    order_id: str
+
+    def to_payload(self) -> dict[str, object]:
+        return {"announcementID": self.order_id}
+
+
+@dataclass(slots=True, frozen=True)
+class DeliverySandboxAnnouncementRequest:
+    """Запрос создания sandbox-анонса доставки."""
+
+    order_id: str
+
+    def to_payload(self) -> dict[str, object]:
+        payload = DeliveryAnnouncementRequest(order_id=self.order_id).to_payload()
+        payload["packages"] = [{"id": "package-1", "parcelIDs": ["parcel-1"]}]
+        return payload
+
+
+@dataclass(slots=True, frozen=True)
+class DeliveryAnnouncementTrackRequest:
+    """Запрос события sandbox-анонса доставки."""
+
+    order_id: str
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "announcementID": self.order_id,
+            "date": "2026-05-01T09:00:00Z",
+            "event": "ACCEPTANCE_DONE",
+        }
 
 
 @dataclass(slots=True, frozen=True)
@@ -164,7 +385,33 @@ class DeliveryParcelRequest:
     parcel_id: str
 
     def to_payload(self) -> dict[str, object]:
-        return {"orderId": self.order_id, "parcelId": self.parcel_id}
+        return {
+            "orderID": self.order_id,
+            "parcelID": self.parcel_id,
+            "items": [{"id": 105, "title": "Товар", "cost": 1000, "quantity": 1}],
+            "sender": _parcel_client("sender"),
+            "receiver": _parcel_client("receiver"),
+            "payment": {
+                "delivery": {"status": "PAID", "costWithoutVat": 0},
+                "items": {"cost": 1000, "status": "PAID"},
+            },
+        }
+
+
+@dataclass(slots=True, frozen=True)
+class SandboxParcelRequest:
+    """Запрос создания sandbox-посылки."""
+
+    order_id: str
+    parcel_id: str
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "items": [{"quantity": 1}],
+            "receiver": {"delivery": {"terminal": {"id": "receiver-terminal"}}},
+            "sender": {"delivery": {"terminal": {"id": "sender-terminal"}}},
+            "tags": [self.order_id, self.parcel_id],
+        }
 
 
 @dataclass(slots=True, frozen=True)
@@ -175,7 +422,7 @@ class DeliveryParcelResultRequest:
     result: str
 
     def to_payload(self) -> dict[str, object]:
-        return {"parcelId": self.parcel_id, "result": self.result}
+        return {"id": self.parcel_id, "status": self.result}
 
 
 @dataclass(slots=True, frozen=True)
@@ -205,9 +452,9 @@ class DeliveryTerms:
     """Параметры условий доставки заказа."""
 
     cost: int | None = None
-    direct_control_date: str | None = None
+    direct_control_date: DateInput | None = None
     receiver_terminal_code: str | None = None
-    return_control_date: str | None = None
+    return_control_date: DateInput | None = None
     sender_receive_terminal_code: str | None = None
     tough_wrap: bool | None = None
 
@@ -216,11 +463,15 @@ class DeliveryTerms:
         if self.cost is not None:
             payload["cost"] = self.cost
         if self.direct_control_date is not None:
-            payload["directControlDate"] = self.direct_control_date
+            payload["directControlDate"] = serialize_iso_datetime(
+                "direct_control_date", self.direct_control_date
+            )
         if self.receiver_terminal_code is not None:
             payload["receiverTerminalCode"] = self.receiver_terminal_code
         if self.return_control_date is not None:
-            payload["returnControlDate"] = self.return_control_date
+            payload["returnControlDate"] = serialize_iso_datetime(
+                "return_control_date", self.return_control_date
+            )
         if self.sender_receive_terminal_code is not None:
             payload["senderReceiveTerminalCode"] = self.sender_receive_terminal_code
         if self.tough_wrap is not None:
@@ -313,7 +564,7 @@ class DeliveryTrackingRequest:
     avito_status: TrackingAvitoStatus | str
     avito_event_type: TrackingAvitoEventType | str
     provider_event_code: str
-    date: str
+    date: DateInput
     location: str
     comment: str | None = None
     options: DeliveryTrackingOptions | None = None
@@ -324,7 +575,7 @@ class DeliveryTrackingRequest:
             "avitoStatus": self.avito_status,
             "avitoEventType": self.avito_event_type,
             "providerEventCode": self.provider_event_code,
-            "date": self.date,
+            "date": serialize_iso_datetime("date", self.date),
             "location": self.location,
         }
         if self.comment is not None:
@@ -351,7 +602,13 @@ class DeliveryParcelIdsRequest:
     parcel_ids: list[str]
 
     def to_payload(self) -> dict[str, object]:
-        return {"parcelIds": list(self.parcel_ids)}
+        return {
+            "type": "changeReceiver",
+            "applications": [
+                {"id": f"application-{index}", "parcelID": parcel_id}
+                for index, parcel_id in enumerate(self.parcel_ids, start=1)
+            ],
+        }
 
 
 @dataclass(slots=True, frozen=True)
@@ -361,7 +618,18 @@ class SandboxArea:
     city: str
 
     def to_payload(self) -> dict[str, object]:
-        return {"city": self.city}
+        return {
+            "directionTag": self.city,
+            "providerAreaNumber": self.city,
+            "services": ["delivery"],
+            "utcTimezone": "3",
+            "zipCodes": ["101000"],
+            "restrictions": {
+                "maxWeight": 1000,
+                "maxDimensions": [10, 10, 10],
+                "maxDeclaredCost": 10000,
+            },
+        }
 
 
 @dataclass(slots=True, frozen=True)
@@ -494,8 +762,6 @@ class SortingCenterUpload:
             "schedule": self.schedule.to_payload(),
             "restriction": self.restriction.to_payload(),
         }
-        if self.direction_tag is not None:
-            payload["directionTag"] = self.direction_tag
         return payload
 
 
@@ -518,7 +784,10 @@ class TaggedSortingCenter:
 
     def to_payload(self) -> dict[str, object]:
         return {
-            "deliveryProviderId": self.delivery_provider_id,
+            "deliveryProviderId": {
+                "deliveryProviderId": self.delivery_provider_id,
+                "provider": "exmail",
+            },
             "directionTag": self.direction_tag,
         }
 
@@ -753,13 +1022,13 @@ class SandboxCancelAnnouncementRequest:
     """Запрос отмены тестового анонса."""
 
     announcement_id: str
-    date: str
+    date: DateInput
     options: SandboxCancelAnnouncementOptions
 
     def to_payload(self) -> dict[str, object]:
         return {
             "announcementID": self.announcement_id,
-            "date": self.date,
+            "date": serialize_iso_datetime("date", self.date),
             "options": self.options.to_payload(),
         }
 
@@ -926,7 +1195,7 @@ class SandboxCreateAnnouncementRequest:
     sender: SandboxAnnouncementParticipant
     receiver: SandboxAnnouncementParticipant
     announcement_type: str
-    date: str
+    date: DateInput
     packages: list[SandboxAnnouncementPackage]
     options: SandboxCreateAnnouncementOptions
 
@@ -937,7 +1206,7 @@ class SandboxCreateAnnouncementRequest:
             "sender": self.sender.to_payload(),
             "receiver": self.receiver.to_payload(),
             "announcementType": self.announcement_type,
-            "date": self.date,
+            "date": serialize_iso_datetime("date", self.date),
             "packages": [package.to_payload() for package in self.packages],
             "options": self.options.to_payload(),
         }
@@ -989,8 +1258,8 @@ class SandboxAreasRequest:
 
     areas: list[SandboxArea]
 
-    def to_payload(self) -> dict[str, object]:
-        return {"areas": [area.to_payload() for area in self.areas]}
+    def to_payload(self) -> list[dict[str, object]]:
+        return [area.to_payload() for area in self.areas]
 
 
 @dataclass(slots=True, frozen=True)
@@ -998,9 +1267,13 @@ class StockInfoRequest:
     """Запрос текущих остатков."""
 
     item_ids: list[int]
+    strong_consistency: bool | None = None
 
     def to_payload(self) -> dict[str, object]:
-        return {"itemIds": list(self.item_ids)}
+        payload: dict[str, object] = {"item_ids": list(self.item_ids)}
+        if self.strong_consistency is not None:
+            payload["strong_consistency"] = self.strong_consistency
+        return payload
 
 
 @dataclass(slots=True, frozen=True)
@@ -1024,8 +1297,77 @@ class StockUpdateRequest:
         return {"stocks": [stock.to_payload() for stock in self.stocks]}
 
 
+def _expect_mapping(payload: object) -> Payload:
+    if not isinstance(payload, Mapping):
+        raise ResponseMappingError("Ожидался JSON-объект.", payload=payload)
+    return cast(Payload, payload)
+
+
+def _list(payload: Payload, *keys: str) -> list[Payload]:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, Mapping)]
+    return []
+
+
+def _mapping(payload: Payload, *keys: str) -> Payload:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, Mapping):
+            return cast(Payload, value)
+    return {}
+
+
+def _str(payload: Payload, *keys: str) -> str | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _int(payload: Payload, *keys: str) -> int | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _bool(payload: Payload, *keys: str) -> bool | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, bool):
+            return value
+    return None
+
+
+def _extract_errors(payload: Payload) -> list[str]:
+    errors = payload.get("errors")
+    if not isinstance(errors, list):
+        return []
+    return [str(error) for error in errors if isinstance(error, str)]
+
+
+def _enum_value[EnumT: Enum](
+    enum_type: type[EnumT],
+    name: str,
+    value: EnumT | str,
+) -> str:
+    if isinstance(value, enum_type):
+        return str(value.value)
+    try:
+        return str(enum_type(value).value)
+    except ValueError as exc:
+        allowed = ", ".join(str(item.value) for item in enum_type)
+        raise ValidationError(f"`{name}` должен быть одним из: {allowed}.") from exc
+
+
 @dataclass(slots=True, frozen=True)
-class OrderSummary(SerializableModel):
+class OrderSummary(ApiModel):
     """Краткая информация о заказе."""
 
     order_id: str | None
@@ -1036,15 +1378,36 @@ class OrderSummary(SerializableModel):
 
 
 @dataclass(slots=True, frozen=True)
-class OrdersResult(SerializableModel):
+class OrdersResult(ApiModel):
     """Список заказов."""
 
     items: list[OrderSummary]
     total: int | None = None
 
+    @classmethod
+    def from_payload(cls, payload: object) -> OrdersResult:
+        data = _expect_mapping(payload)
+        return cls(
+            items=[
+                OrderSummary(
+                    order_id=_str(item, "id", "order_id", "orderId"),
+                    status=map_enum_or_unknown(
+                        _str(item, "status"),
+                        OrderStatus,
+                        enum_name="orders.order_status",
+                    ),
+                    created_at=_str(item, "created", "created_at", "createdAt"),
+                    buyer_name=_str(_mapping(item, "buyerInfo"), "fullName"),
+                    total_price=_int(item, "totalPrice", "price"),
+                )
+                for item in _list(data, "orders", "items", "result")
+            ],
+            total=_int(data, "total", "count"),
+        )
+
 
 @dataclass(slots=True, frozen=True)
-class OrderActionResult(SerializableModel):
+class OrderActionResult(ApiModel):
     """Результат операции над заказом."""
 
     success: bool
@@ -1052,9 +1415,25 @@ class OrderActionResult(SerializableModel):
     status: OrderActionStatus | None = None
     message: str | None = None
 
+    @classmethod
+    def from_payload(cls, payload: object) -> OrderActionResult:
+        data = _expect_mapping(payload)
+        result = _mapping(data, "result")
+        source = result or data
+        return cls(
+            success=bool(source.get("success", data.get("success", True))),
+            order_id=_str(source, "orderId", "order_id", "id"),
+            status=map_enum_or_unknown(
+                _str(source, "status"),
+                OrderActionStatus,
+                enum_name="orders.order_action_status",
+            ),
+            message=_str(source, "message"),
+        )
+
 
 @dataclass(slots=True, frozen=True)
-class CourierRange(SerializableModel):
+class CourierRange(ApiModel):
     """Доступный интервал курьерской доставки."""
 
     interval_id: str | None
@@ -1064,19 +1443,53 @@ class CourierRange(SerializableModel):
 
 
 @dataclass(slots=True, frozen=True)
-class CourierRangesResult(SerializableModel):
+class CourierRangesResult(ApiModel):
     """Список доступных интервалов курьерской доставки."""
 
     items: list[CourierRange]
     address: str | None = None
 
+    @classmethod
+    def from_payload(cls, payload: object) -> CourierRangesResult:
+        data = _expect_mapping(payload)
+        result = _mapping(data, "result")
+        source = result or data
+        return cls(
+            items=[
+                CourierRange(
+                    interval_id=_str(item, "id", "intervalId"),
+                    date=_str(item, "date"),
+                    start_at=_str(item, "startAt", "startDate"),
+                    end_at=_str(item, "endAt", "endDate"),
+                )
+                for item in _list(source, "timeIntervals", "intervals", "items", "result")
+            ],
+            address=_str(source, "address"),
+        )
+
 
 @dataclass(slots=True, frozen=True)
-class LabelTaskResult(SerializableModel):
+class LabelTaskResult(ApiModel):
     """Результат генерации этикеток."""
 
     task_id: str | None
     status: LabelTaskStatus | None = None
+
+    @classmethod
+    def from_payload(cls, payload: object) -> LabelTaskResult:
+        data = _expect_mapping(payload)
+        result = _mapping(data, "result", "data")
+        source = result or data
+        task_id = _str(source, "taskId", "taskID", "id")
+        task_int = _int(source, "taskId", "taskID")
+        return cls(
+            task_id=task_id or (str(task_int) if task_int is not None else None),
+            status=map_enum_or_unknown(
+                _str(source, "status"),
+                LabelTaskStatus,
+                enum_name="orders.label_task_status",
+            ),
+        )
 
 
 @dataclass(slots=True, frozen=True)
@@ -1105,7 +1518,7 @@ class LabelPdfResult:
 
 
 @dataclass(slots=True, frozen=True)
-class DeliveryEntityResult(SerializableModel):
+class DeliveryEntityResult(ApiModel):
     """Результат операции delivery API."""
 
     success: bool
@@ -1115,9 +1528,29 @@ class DeliveryEntityResult(SerializableModel):
     status: DeliveryOperationStatus | None = None
     message: str | None = None
 
+    @classmethod
+    def from_payload(cls, payload: object) -> DeliveryEntityResult:
+        data = _expect_mapping(payload)
+        result = _mapping(data, "result", "data")
+        source = result or data
+        task_id = _str(source, "taskId", "taskID")
+        task_int = _int(source, "taskId", "taskID")
+        return cls(
+            success=bool(source.get("success", data.get("success", True))),
+            task_id=task_id or (str(task_int) if task_int is not None else None),
+            order_id=_str(source, "orderId", "orderID"),
+            parcel_id=_str(source, "parcelId", "parcelID"),
+            status=map_enum_or_unknown(
+                _str(source, "status"),
+                DeliveryOperationStatus,
+                enum_name="orders.delivery_operation_status",
+            ),
+            message=_str(_mapping(data, "error"), "message") or _str(source, "message"),
+        )
+
 
 @dataclass(slots=True, frozen=True)
-class DeliverySortingCenter(SerializableModel):
+class DeliverySortingCenter(ApiModel):
     """Сортировочный центр доставки."""
 
     sorting_center_id: str | None
@@ -1126,23 +1559,56 @@ class DeliverySortingCenter(SerializableModel):
 
 
 @dataclass(slots=True, frozen=True)
-class DeliverySortingCentersResult(SerializableModel):
+class DeliverySortingCentersResult(ApiModel):
     """Список сортировочных центров доставки."""
 
     items: list[DeliverySortingCenter]
 
+    @classmethod
+    def from_payload(cls, payload: object) -> DeliverySortingCentersResult:
+        data = _expect_mapping(payload)
+        result = _mapping(data, "result", "data")
+        source = result or data
+        return cls(
+            items=[
+                DeliverySortingCenter(
+                    sorting_center_id=_str(item, "id", "sortingCenterId", "sorting_center_id"),
+                    name=_str(item, "name"),
+                    city=_str(item, "city"),
+                )
+                for item in _list(source, "sortingCenters", "items", "result")
+            ],
+        )
+
 
 @dataclass(slots=True, frozen=True)
-class DeliveryTaskInfo(SerializableModel):
+class DeliveryTaskInfo(ApiModel):
     """Информация о задаче доставки."""
 
     task_id: str | None
     status: DeliveryTaskState | None
     error: str | None
 
+    @classmethod
+    def from_payload(cls, payload: object) -> DeliveryTaskInfo:
+        data = _expect_mapping(payload)
+        result = _mapping(data, "result", "data")
+        source = result or data
+        task_id = _str(source, "taskId", "taskID", "id")
+        task_int = _int(source, "taskId", "taskID")
+        return cls(
+            task_id=task_id or (str(task_int) if task_int is not None else None),
+            status=map_enum_or_unknown(
+                _str(source, "status"),
+                DeliveryTaskState,
+                enum_name="orders.delivery_task_state",
+            ),
+            error=_str(_mapping(data, "error"), "message") or _str(source, "error"),
+        )
+
 
 @dataclass(slots=True, frozen=True)
-class StockInfo(SerializableModel):
+class StockInfo(ApiModel):
     """Информация по остаткам объявления."""
 
     item_id: int | None
@@ -1153,14 +1619,30 @@ class StockInfo(SerializableModel):
 
 
 @dataclass(slots=True, frozen=True)
-class StockInfoResult(SerializableModel):
+class StockInfoResult(ApiModel):
     """Список текущих остатков."""
 
     items: list[StockInfo]
 
+    @classmethod
+    def from_payload(cls, payload: object) -> StockInfoResult:
+        data = _expect_mapping(payload)
+        return cls(
+            items=[
+                StockInfo(
+                    item_id=_int(item, "item_id", "itemId"),
+                    quantity=_int(item, "quantity"),
+                    is_multiple=_bool(item, "is_multiple", "isMultiple"),
+                    is_unlimited=_bool(item, "is_unlimited", "isUnlimited"),
+                    is_out_of_stock=_bool(item, "is_out_of_stock", "isOutOfStock"),
+                )
+                for item in _list(data, "stocks", "items", "result")
+            ],
+        )
+
 
 @dataclass(slots=True, frozen=True)
-class StockUpdateItem(SerializableModel):
+class StockUpdateItem(ApiModel):
     """Результат обновления остатков объявления."""
 
     item_id: int | None
@@ -1170,7 +1652,22 @@ class StockUpdateItem(SerializableModel):
 
 
 @dataclass(slots=True, frozen=True)
-class StockUpdateResult(SerializableModel):
+class StockUpdateResult(ApiModel):
     """Результат изменения остатков."""
 
     items: list[StockUpdateItem]
+
+    @classmethod
+    def from_payload(cls, payload: object) -> StockUpdateResult:
+        data = _expect_mapping(payload)
+        return cls(
+            items=[
+                StockUpdateItem(
+                    item_id=_int(item, "item_id", "itemId"),
+                    external_id=_str(item, "external_id", "externalId"),
+                    success=bool(item.get("success", True)),
+                    errors=_extract_errors(item),
+                )
+                for item in _list(data, "stocks", "items", "result")
+            ],
+        )

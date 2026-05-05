@@ -31,11 +31,8 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction --with docs
 
-      - name: Run strict Swagger coverage gate
-        run: make swagger-coverage
-
       - name: Run quality gate
-        run: make check
+        run: make quality
 
       - name: Run docs strict gate
         run: make docs-strict

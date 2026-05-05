@@ -25,7 +25,7 @@ from avito import AvitoClient
 
 with AvitoClient.from_env() as avito:
     preview = avito.ad_promotion(item_id=101, user_id=7).apply_vas(
-        codes=["xl"],
+        vas_id="xl",
         dry_run=True,
     )
 
@@ -58,7 +58,7 @@ print(preview.target["item_id"])
 ```text
 with AvitoClient.from_env() as avito:
     result = avito.ad_promotion(item_id=101, user_id=7).apply_vas(
-        codes=["xl"],
+        vas_id="xl",
         idempotency_key="promotion-apply-vas-2026-04-23-101",
     )
 ```

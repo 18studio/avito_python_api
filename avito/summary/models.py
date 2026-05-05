@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from avito.ads.enums import ListingStatus
+from avito.ads.models import ListingStatus
 from avito.core.serialization import SerializableModel
 
 

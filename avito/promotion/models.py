@@ -2,19 +2,156 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TypedDict
+from enum import Enum
+from typing import cast
 
+from avito.core.enums import map_enum_or_unknown
+from avito.core.exceptions import ResponseMappingError
 from avito.core.serialization import SerializableModel
-from avito.promotion.enums import (
-    CampaignType,
-    PromotionOrderServiceStatus,
-    PromotionOrderStatus,
-    PromotionStatus,
-    TargetActionBudgetType,
-    TargetActionSelectedType,
-)
+
+
+class PromotionStatus(str, Enum):
+    """Статус promotion-объекта или операции."""
+
+    UNKNOWN = "__unknown__"
+    UPSTREAM_UNKNOWN = "unknown"
+    AVAILABLE = "available"
+    ACTIVE = "active"
+    CREATED = "created"
+    INITIALIZED = "initialized"
+    WAITING = "waiting"
+    IN_PROCESS = "in_process"
+    PROCESSED = "processed"
+    CANCELED = "canceled"
+    ERROR = "error"
+    REMOVED = "removed"
+    AUTO = "auto"
+    MANUAL = "manual"
+    APPLIED = "applied"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    PREVIEW = "preview"
+
+
+class PromotionOrderStatus(str, Enum):
+    """Статус заявки на продвижение."""
+
+    UNKNOWN = "__unknown__"
+    UPSTREAM_UNKNOWN = "unknown"
+    APPLIED = "applied"
+    CREATED = "created"
+    AUTO = "auto"
+    MANUAL = "manual"
+    PARTIAL = "partial"
+    INITIALIZED = "initialized"
+    WAITING = "waiting"
+    IN_PROCESS = "in_process"
+    PROCESSED = "processed"
+
+
+class PromotionOrderServiceStatus(str, Enum):
+    """Статус услуги внутри заявки на продвижение."""
+
+    UNKNOWN = "__unknown__"
+    UPSTREAM_UNKNOWN = "unknown"
+    AVAILABLE = "available"
+    ACTIVE = "active"
+    ERROR = "error"
+    CANCELED = "canceled"
+    PROCESSED = "processed"
+
+
+class TargetActionBudgetType(str, Enum):
+    """Тип бюджета цены целевого действия."""
+
+    UNKNOWN = "__unknown__"
+    DAILY = "1d"
+    WEEKLY = "7d"
+    MONTHLY = "30d"
+
+
+class TargetActionSelectedType(str, Enum):
+    """Выбранный тип продвижения цены целевого действия."""
+
+    UNKNOWN = "__unknown__"
+    AUTO = "auto"
+    MANUAL = "manual"
+
+
+class CampaignType(str, Enum):
+    """Тип автокампании."""
+
+    UNKNOWN = "__unknown__"
+    AUTOSTRATEGY = "AS"
+
+
+_Payload = Mapping[str, object]
+
+
+def _expect_mapping(payload: object) -> _Payload:
+    if not isinstance(payload, Mapping):
+        raise ResponseMappingError("Ожидался JSON-объект.", payload=payload)
+    return cast(_Payload, payload)
+
+
+def _list(payload: _Payload, *keys: str) -> list[_Payload]:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, Mapping)]
+    return []
+
+
+def _mapping(payload: _Payload, *keys: str) -> _Payload:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, Mapping):
+            return cast(_Payload, value)
+    return {}
+
+
+def _str(payload: _Payload, *keys: str) -> str | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _int(payload: _Payload, *keys: str) -> int | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _bool(payload: _Payload, *keys: str) -> bool | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, bool):
+            return value
+    return None
+
+
+def _datetime(payload: _Payload, *keys: str) -> datetime | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+    return None
+
+
+def _items_payload(payload: _Payload) -> list[_Payload]:
+    return _list(payload, "items", "result", "services", "orders", "campaigns")
 
 
 @dataclass(slots=True, frozen=True)
@@ -30,6 +167,25 @@ class PromotionServiceDictionary(SerializableModel):
     """Словарь услуг продвижения."""
 
     items: list[PromotionServiceType]
+
+    @classmethod
+    def from_payload(cls, payload: object) -> PromotionServiceDictionary:
+        """Преобразует словарь услуг продвижения."""
+
+        if isinstance(payload, list):
+            items_payload = [item for item in payload if isinstance(item, Mapping)]
+        else:
+            data = _expect_mapping(payload)
+            items_payload = _items_payload(data)
+        return cls(
+            items=[
+                PromotionServiceType(
+                    code=_str(item, "code", "serviceCode", "id", "slug"),
+                    title=_str(item, "title", "name", "description"),
+                )
+                for item in items_payload
+            ],
+        )
 
 
 @dataclass(slots=True, frozen=True)
@@ -61,6 +217,28 @@ class PromotionServicesResult(SerializableModel):
 
     items: list[PromotionService]
 
+    @classmethod
+    def from_payload(cls, payload: object) -> PromotionServicesResult:
+        """Преобразует список услуг продвижения."""
+
+        data = _expect_mapping(payload)
+        return cls(
+            items=[
+                PromotionService(
+                    item_id=_int(item, "itemId", "itemID"),
+                    service_code=_str(item, "serviceCode", "code"),
+                    service_name=_str(item, "serviceName", "name", "title"),
+                    price=_int(item, "price", "pricePenny"),
+                    status=map_enum_or_unknown(
+                        _str(item, "status"),
+                        PromotionOrderServiceStatus,
+                        enum_name="promotion.order_service_status",
+                    ),
+                )
+                for item in _items_payload(data)
+            ],
+        )
+
 
 @dataclass(slots=True, frozen=True)
 class ListPromotionOrdersRequest:
@@ -72,12 +250,7 @@ class ListPromotionOrdersRequest:
     def to_payload(self) -> dict[str, object]:
         """Сериализует запрос списка заявок."""
 
-        payload: dict[str, object] = {}
-        if self.item_ids is not None:
-            payload["itemIds"] = self.item_ids
-        if self.order_ids is not None:
-            payload["orderIds"] = self.order_ids
-        return payload
+        return {}
 
 
 @dataclass(slots=True, frozen=True)
@@ -97,6 +270,28 @@ class PromotionOrdersResult(SerializableModel):
 
     items: list[PromotionOrderInfo]
 
+    @classmethod
+    def from_payload(cls, payload: object) -> PromotionOrdersResult:
+        """Преобразует список заявок на продвижение."""
+
+        data = _expect_mapping(payload)
+        return cls(
+            items=[
+                PromotionOrderInfo(
+                    order_id=_str(item, "orderId", "orderID", "id"),
+                    item_id=_int(item, "itemId", "itemID"),
+                    service_code=_str(item, "serviceCode", "code"),
+                    status=map_enum_or_unknown(
+                        _str(item, "status"),
+                        PromotionOrderStatus,
+                        enum_name="promotion.order_status",
+                    ),
+                    created_at=_datetime(item, "createdAt", "created_at"),
+                )
+                for item in _items_payload(data)
+            ],
+        )
+
 
 @dataclass(slots=True, frozen=True)
 class GetPromotionOrderStatusRequest:
@@ -107,7 +302,7 @@ class GetPromotionOrderStatusRequest:
     def to_payload(self) -> dict[str, object]:
         """Сериализует запрос статуса заявок."""
 
-        return {"orderIds": self.order_ids}
+        return {"orderId": self.order_ids[0]}
 
 
 @dataclass(slots=True, frozen=True)
@@ -140,35 +335,53 @@ class PromotionOrderStatusResult(SerializableModel):
     items: list[PromotionOrderStatusItem]
     errors: list[PromotionOrderError]
 
+    @classmethod
+    def from_payload(cls, payload: object) -> PromotionOrderStatusResult:
+        """Преобразует documented shape статуса заявки на продвижение."""
 
-class BbipItemInput(TypedDict):
-    """Входные параметры одного объявления для BBIP-методов."""
-
-    item_id: int
-    duration: int
-    price: int
-    old_price: int
-
-
-class _TrxItemInputRequired(TypedDict):
-    """Обязательные поля входных параметров TrxPromo."""
-
-    item_id: int
-    commission: int
-    date_from: datetime
-
-
-class TrxItemInput(_TrxItemInputRequired, total=False):
-    """Входные параметры одного объявления для TrxPromo-методов."""
-
-    date_to: datetime | None
-
-
-class BidItemInput(TypedDict):
-    """Входные параметры одной ставки CPA-аукциона."""
-
-    item_id: int
-    price_penny: int
+        data = _expect_mapping(payload)
+        order_id = _str(data, "orderId", "orderID", "id")
+        status = map_enum_or_unknown(
+            _str(data, "status"),
+            PromotionOrderStatus,
+            enum_name="promotion.order_status",
+        )
+        if order_id is None or status is None:
+            raise ResponseMappingError(
+                "Статус заявки promotion должен содержать `orderId` и `status`.",
+                payload=payload,
+            )
+        errors_payload = data.get("errors", [])
+        if errors_payload is not None and not isinstance(errors_payload, list):
+            raise ResponseMappingError("Поле `errors` должно быть массивом.", payload=payload)
+        return cls(
+            order_id=order_id,
+            status=status,
+            total_price=_int(data, "totalPrice"),
+            items=[
+                PromotionOrderStatusItem(
+                    item_id=_int(item, "itemId", "itemID"),
+                    price=_int(item, "price"),
+                    slug=_str(item, "slug"),
+                    status=map_enum_or_unknown(
+                        _str(item, "status"),
+                        PromotionOrderServiceStatus,
+                        enum_name="promotion.order_service_status",
+                    ),
+                    error_reason=_str(item, "errorReason"),
+                )
+                for item in _list(data, "items")
+            ],
+            errors=[
+                PromotionOrderError(
+                    item_id=_int(item, "itemId", "itemID"),
+                    error_code=_int(item, "errorCode"),
+                    error_text=_str(item, "errorText"),
+                )
+                for item in errors_payload or []
+                if isinstance(item, Mapping)
+            ],
+        )
 
 
 @dataclass(slots=True, frozen=True)
@@ -220,6 +433,24 @@ class BbipForecastsResult(SerializableModel):
 
     items: list[PromotionForecast]
 
+    @classmethod
+    def from_payload(cls, payload: object) -> BbipForecastsResult:
+        """Преобразует прогнозы BBIP."""
+
+        data = _expect_mapping(payload)
+        return cls(
+            items=[
+                PromotionForecast(
+                    item_id=_int(item, "itemId", "itemID"),
+                    min_views=_int(item, "min"),
+                    max_views=_int(item, "max"),
+                    total_price=_int(item, "totalPrice"),
+                    total_old_price=_int(item, "totalOldPrice"),
+                )
+                for item in _items_payload(data)
+            ],
+        )
+
 
 @dataclass(slots=True, frozen=True)
 class CreateBbipOrderRequest:
@@ -255,6 +486,19 @@ class PromotionActionItem(SerializableModel):
 
 
 @dataclass(slots=True, frozen=True)
+class PromotionActionPayload(SerializableModel):
+    """Raw upstream payload for promotion write operations enriched by domain methods."""
+
+    raw_payload: Mapping[str, object]
+
+    @classmethod
+    def from_payload(cls, payload: object) -> PromotionActionPayload:
+        """Preserve upstream action payload for domain-level normalization."""
+
+        return cls(raw_payload=_expect_mapping(payload))
+
+
+@dataclass(slots=True, frozen=True)
 class PromotionActionResult(SerializableModel):
     """Стабильный результат write-операции продвижения."""
 
@@ -266,6 +510,102 @@ class PromotionActionResult(SerializableModel):
     warnings: list[str] = field(default_factory=list)
     upstream_reference: str | None = None
     details: dict[str, object] = field(default_factory=dict)
+
+    @classmethod
+    def from_action_payload(
+        cls,
+        payload: object,
+        *,
+        action: str,
+        target: Mapping[str, object] | None,
+        request_payload: Mapping[str, object],
+    ) -> PromotionActionResult:
+        """Преобразует результат действия по продвижению."""
+
+        if isinstance(payload, PromotionActionPayload):
+            payload = payload.raw_payload
+        data = _expect_mapping(payload)
+        items_payload = _items_payload(data)
+        if not items_payload:
+            success_payload = _mapping(data, "success")
+            items_payload = _list(success_payload, "items", "result")
+        items = [
+            PromotionActionItem(
+                item_id=_int(item, "itemId", "itemID"),
+                success=bool(item.get("success", True)),
+                status=map_enum_or_unknown(
+                    _str(item, "status"),
+                    PromotionStatus,
+                    enum_name="promotion.status",
+                ),
+                message=_str(_mapping(item, "error"), "message") or _str(item, "message"),
+                upstream_reference=_str(item, "orderId", "requestId", "promotionId", "id"),
+            )
+            for item in items_payload
+        ]
+        applied = (
+            bool(data.get("success", True)) if not items else all(item.success for item in items)
+        )
+        statuses = [item.status for item in items if item.status is not None]
+        messages = [item.message for item in items if item.message]
+        resolved_status = _resolve_action_status(payload=data, statuses=statuses, applied=applied)
+        details: dict[str, object] = {}
+        if items:
+            details["items"] = [
+                {
+                    "item_id": item.item_id,
+                    "success": item.success,
+                    "status": item.status,
+                    "message": item.message,
+                }
+                for item in items
+            ]
+        elif message := _str(data, "message", "status"):
+            details["message"] = message
+        return cls(
+            action=action,
+            target=dict(target) if target is not None else None,
+            status=resolved_status,
+            applied=applied,
+            request_payload=dict(request_payload),
+            warnings=messages if not applied else [],
+            upstream_reference=_extract_upstream_reference(data, items),
+            details=details,
+        )
+
+
+def _resolve_action_status(
+    *,
+    payload: _Payload,
+    statuses: list[PromotionStatus],
+    applied: bool,
+) -> PromotionStatus:
+    if statuses:
+        unique_statuses = list(dict.fromkeys(statuses))
+        if len(unique_statuses) == 1:
+            return unique_statuses[0]
+        return PromotionStatus.APPLIED if applied else PromotionStatus.PARTIAL
+    payload_status = map_enum_or_unknown(
+        _str(payload, "status"),
+        PromotionStatus,
+        enum_name="promotion.status",
+    )
+    if payload_status is not None:
+        return payload_status
+    return PromotionStatus.APPLIED if applied else PromotionStatus.FAILED
+
+
+def _extract_upstream_reference(
+    payload: _Payload,
+    items: list[PromotionActionItem],
+) -> str | None:
+    reference = _str(payload, "orderId", "requestId", "promotionId", "id")
+    if reference is not None:
+        return reference
+    for item in items:
+        if item.upstream_reference is not None:
+            return item.upstream_reference
+    return None
 
 
 @dataclass(slots=True, frozen=True)
@@ -313,6 +653,40 @@ class BbipSuggestsResult(SerializableModel):
 
     items: list[BbipSuggest]
 
+    @classmethod
+    def from_payload(cls, payload: object) -> BbipSuggestsResult:
+        """Преобразует варианты бюджета BBIP."""
+
+        data = _expect_mapping(payload)
+        return cls(
+            items=[
+                BbipSuggest(
+                    item_id=_int(item, "itemId", "itemID"),
+                    duration=_map_bbip_duration(_mapping(item, "duration")),
+                    budgets=[_map_bbip_budget(option) for option in _list(item, "budgets")],
+                )
+                for item in _items_payload(data)
+            ],
+        )
+
+
+def _map_bbip_budget(payload: _Payload) -> BbipBudgetOption:
+    return BbipBudgetOption(
+        price=_int(payload, "price"),
+        old_price=_int(payload, "oldPrice"),
+        is_recommended=_bool(payload, "isRecommended"),
+    )
+
+
+def _map_bbip_duration(payload: _Payload) -> BbipDurationRange | None:
+    if not payload:
+        return None
+    return BbipDurationRange(
+        start=_int(payload, "from"),
+        stop=_int(payload, "to"),
+        recommended=_int(payload, "recommended"),
+    )
+
 
 @dataclass(slots=True, frozen=True)
 class TrxItem(SerializableModel):
@@ -355,7 +729,19 @@ class CancelTrxPromotionRequest:
     def to_payload(self) -> dict[str, object]:
         """Сериализует запрос остановки TrxPromo."""
 
-        return {"items": [{"itemID": item_id} for item_id in self.item_ids]}
+        return {"itemIDs": list(self.item_ids)}
+
+
+@dataclass(slots=True, frozen=True)
+class GetTrxCommissionsRequest:
+    """Запрос доступных комиссий TrxPromo."""
+
+    item_ids: list[int]
+
+    def to_payload(self) -> dict[str, object]:
+        """Сериализует запрос доступных комиссий."""
+
+        return {"itemIDs": self.item_ids}
 
 
 @dataclass(slots=True, frozen=True)
@@ -383,6 +769,37 @@ class TrxCommissionsResult(SerializableModel):
 
     items: list[TrxCommissionInfo]
 
+    @classmethod
+    def from_payload(cls, payload: object) -> TrxCommissionsResult:
+        """Преобразует комиссии TrxPromo."""
+
+        data = _expect_mapping(payload)
+        items_payload = _items_payload(data)
+        if not items_payload:
+            success_payload = _mapping(data, "success")
+            items_payload = _list(success_payload, "items", "result")
+        return cls(
+            items=[
+                TrxCommissionInfo(
+                    item_id=_int(item, "itemId", "itemID"),
+                    commission=_int(item, "commission"),
+                    is_active=_bool(item, "isActive", "active"),
+                    valid_commission_range=_map_trx_range(_mapping(item, "validCommissionRange")),
+                )
+                for item in items_payload
+            ],
+        )
+
+
+def _map_trx_range(payload: _Payload) -> TrxCommissionRange | None:
+    if not payload:
+        return None
+    return TrxCommissionRange(
+        value_min=_int(payload, "valueMin"),
+        value_max=_int(payload, "valueMax"),
+        step=_int(payload, "step"),
+    )
+
 
 @dataclass(slots=True, frozen=True)
 class CpaAuctionBidOption(SerializableModel):
@@ -407,6 +824,37 @@ class CpaAuctionBidsResult(SerializableModel):
     """Список ставок CPA-аукциона."""
 
     items: list[CpaAuctionItemBid]
+
+    @classmethod
+    def from_payload(cls, payload: object) -> CpaAuctionBidsResult:
+        """Преобразует действующие и доступные ставки CPA-аукциона."""
+
+        data = _expect_mapping(payload)
+        return cls(
+            items=[
+                CpaAuctionItemBid(
+                    item_id=_int(item, "itemId", "itemID"),
+                    price_penny=_int(item, "pricePenny"),
+                    expiration_time=_datetime(item, "expirationTime"),
+                    available_prices=[
+                        CpaAuctionBidOption(
+                            price_penny=_int(option, "pricePenny"),
+                            goodness=_int(option, "goodness"),
+                        )
+                        for option in _list(item, "availablePrices")
+                    ],
+                )
+                for item in _items_payload(data)
+            ],
+        )
+
+
+@dataclass(slots=True, frozen=True)
+class CpaAuctionBidInput(SerializableModel):
+    """Входные параметры одной ставки CPA-аукциона."""
+
+    item_id: int
+    price_penny: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -490,15 +938,100 @@ class TargetActionGetBidsResult(SerializableModel):
     auto: TargetActionAutoBids | None = None
     manual: TargetActionManualBids | None = None
 
+    @classmethod
+    def from_payload(cls, payload: object) -> TargetActionGetBidsResult:
+        """Преобразует documented shape GET /cpxpromo/1/getBids/{itemId}."""
 
-@dataclass(slots=True, frozen=True)
-class TargetActionPromotion(SerializableModel):
-    """Текущая настройка цены целевого действия по объявлению."""
+        data = _expect_mapping(payload)
+        action_type_id = _int(data, "actionTypeID")
+        selected_type = map_enum_or_unknown(
+            _str(data, "selectedType"),
+            TargetActionSelectedType,
+            enum_name="promotion.target_action_selected_type",
+        )
+        if action_type_id is None or selected_type is None:
+            raise ResponseMappingError(
+                "Ответ getBids должен содержать `actionTypeID` и `selectedType`.",
+                payload=payload,
+            )
+        return cls(
+            action_type_id=action_type_id,
+            selected_type=selected_type,
+            auto=(
+                _map_target_action_auto(cast(_Payload, data["auto"]))
+                if isinstance(data.get("auto"), Mapping)
+                else None
+            ),
+            manual=(
+                _map_target_action_manual(cast(_Payload, data["manual"]))
+                if isinstance(data.get("manual"), Mapping)
+                else None
+            ),
+        )
 
-    item_id: int
-    action_type_id: int
-    auto: TargetActionAutoPromotion | None = None
-    manual: TargetActionManualPromotion | None = None
+
+def _map_target_action_bid(item: _Payload) -> TargetActionBid:
+    return TargetActionBid(
+        value_penny=_int(item, "valuePenny"),
+        min_forecast=_int(item, "minForecast"),
+        max_forecast=_int(item, "maxForecast"),
+        compare=_int(item, "compare"),
+    )
+
+
+def _map_target_action_budget(item: _Payload) -> TargetActionBudget:
+    return TargetActionBudget(
+        budget_penny=_int(item, "valuePenny"),
+        min_forecast=_int(item, "minForecast"),
+        max_forecast=_int(item, "maxForecast"),
+        compare=_int(item, "compare"),
+    )
+
+
+def _map_target_action_manual(payload: _Payload) -> TargetActionManualBids:
+    bids_payload = payload.get("bids")
+    if bids_payload is not None and not isinstance(bids_payload, list):
+        raise ResponseMappingError("Поле `manual.bids` должно быть массивом.", payload=payload)
+    return TargetActionManualBids(
+        bid_penny=_int(payload, "bidPenny"),
+        limit_penny=_int(payload, "limitPenny"),
+        rec_bid_penny=_int(payload, "recBidPenny"),
+        min_bid_penny=_int(payload, "minBidPenny"),
+        max_bid_penny=_int(payload, "maxBidPenny"),
+        min_limit_penny=_int(payload, "minLimitPenny"),
+        max_limit_penny=_int(payload, "maxLimitPenny"),
+        bids=[
+            _map_target_action_bid(item) for item in bids_payload or [] if isinstance(item, Mapping)
+        ],
+    )
+
+
+def _map_budget_values(payload: _Payload, key: str) -> list[TargetActionBudget]:
+    budget = payload.get(key)
+    if budget is None:
+        return []
+    if not isinstance(budget, Mapping):
+        raise ResponseMappingError(f"Поле `{key}` должно быть объектом.", payload=payload)
+    values = budget.get("budgets")
+    if values is not None and not isinstance(values, list):
+        raise ResponseMappingError(f"Поле `{key}.budgets` должно быть массивом.", payload=payload)
+    return [_map_target_action_budget(item) for item in values or [] if isinstance(item, Mapping)]
+
+
+def _map_target_action_auto(payload: _Payload) -> TargetActionAutoBids:
+    return TargetActionAutoBids(
+        budget_penny=_int(payload, "budgetPenny"),
+        budget_type=map_enum_or_unknown(
+            _str(payload, "budgetType"),
+            TargetActionBudgetType,
+            enum_name="promotion.target_action_budget_type",
+        ),
+        min_budget_penny=_int(payload, "minBudgetPenny"),
+        max_budget_penny=_int(payload, "maxBudgetPenny"),
+        daily_budget=_map_budget_values(payload, "dailyBudget"),
+        weekly_budget=_map_budget_values(payload, "weeklyBudget"),
+        monthly_budget=_map_budget_values(payload, "monthlyBudget"),
+    )
 
 
 @dataclass(slots=True, frozen=True)
@@ -518,10 +1051,70 @@ class TargetActionManualPromotion(SerializableModel):
 
 
 @dataclass(slots=True, frozen=True)
+class TargetActionPromotion(SerializableModel):
+    """Текущая настройка цены целевого действия по объявлению."""
+
+    item_id: int
+    action_type_id: int
+    auto: TargetActionAutoPromotion | None = None
+    manual: TargetActionManualPromotion | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class TargetActionPromotionsByItemIdsResult(SerializableModel):
     """Ответ POST /cpxpromo/1/getPromotionsByItemIds."""
 
     items: list[TargetActionPromotion]
+
+    @classmethod
+    def from_payload(cls, payload: object) -> TargetActionPromotionsByItemIdsResult:
+        """Преобразует documented shape POST /cpxpromo/1/getPromotionsByItemIds."""
+
+        data = _expect_mapping(payload)
+        items_payload = data.get("items")
+        if not isinstance(items_payload, list):
+            raise ResponseMappingError(
+                "Ответ getPromotionsByItemIds должен содержать массив `items`.",
+                payload=payload,
+            )
+        items: list[TargetActionPromotion] = []
+        for item in items_payload:
+            if not isinstance(item, Mapping):
+                continue
+            item_id = _int(item, "itemID")
+            action_type_id = _int(item, "actionTypeID")
+            if item_id is None or action_type_id is None:
+                raise ResponseMappingError(
+                    "Элемент getPromotionsByItemIds должен содержать `itemID` и `actionTypeID`.",
+                    payload=item,
+                )
+            items.append(
+                TargetActionPromotion(
+                    item_id=item_id,
+                    action_type_id=action_type_id,
+                    auto=(
+                        TargetActionAutoPromotion(
+                            budget_penny=_int(cast(_Payload, item["autoPromotion"]), "budgetPenny"),
+                            budget_type=map_enum_or_unknown(
+                                _str(cast(_Payload, item["autoPromotion"]), "budgetType"),
+                                TargetActionBudgetType,
+                                enum_name="promotion.target_action_budget_type",
+                            ),
+                        )
+                        if isinstance(item.get("autoPromotion"), Mapping)
+                        else None
+                    ),
+                    manual=(
+                        TargetActionManualPromotion(
+                            bid_penny=_int(cast(_Payload, item["manualPromotion"]), "bidPenny"),
+                            limit_penny=_int(cast(_Payload, item["manualPromotion"]), "limitPenny"),
+                        )
+                        if isinstance(item.get("manualPromotion"), Mapping)
+                        else None
+                    ),
+                )
+            )
+        return cls(items=items)
 
 
 @dataclass(slots=True, frozen=True)
@@ -626,6 +1219,46 @@ class AutostrategyBudget(SerializableModel):
     maximal: AutostrategyBudgetPoint | None
     price_ranges: list[AutostrategyPriceRange]
 
+    @classmethod
+    def from_payload(cls, payload: object) -> AutostrategyBudget:
+        """Преобразует расчет бюджета автокампании."""
+
+        data = _expect_mapping(payload)
+        source = _mapping(data, "budget")
+        return cls(
+            calc_id=_int(data, "calcId"),
+            recommended=_map_budget_point(_mapping(source, "recommended")),
+            minimal=_map_budget_point(_mapping(source, "minimal")),
+            maximal=_map_budget_point(_mapping(source, "maximal")),
+            price_ranges=[_map_price_range(item) for item in _list(source, "priceRanges")],
+        )
+
+
+def _map_budget_point(payload: _Payload) -> AutostrategyBudgetPoint | None:
+    if not payload:
+        return None
+    return AutostrategyBudgetPoint(
+        total=_int(payload, "total"),
+        real=_int(payload, "real"),
+        bonus=_int(payload, "bonus"),
+        calls_from=_int(payload, "callsFrom"),
+        calls_to=_int(payload, "callsTo"),
+        views_from=_int(payload, "viewsFrom"),
+        views_to=_int(payload, "viewsTo"),
+    )
+
+
+def _map_price_range(payload: _Payload) -> AutostrategyPriceRange:
+    return AutostrategyPriceRange(
+        price_from=_int(payload, "priceFrom"),
+        price_to=_int(payload, "priceTo"),
+        percent=_int(payload, "percent"),
+        calls_from=_int(payload, "callsFrom"),
+        calls_to=_int(payload, "callsTo"),
+        views_from=_int(payload, "viewsFrom"),
+        views_to=_int(payload, "viewsTo"),
+    )
+
 
 @dataclass(slots=True, frozen=True)
 class CreateAutostrategyBudgetRequest:
@@ -650,13 +1283,6 @@ class CreateAutostrategyBudgetRequest:
 
 
 @dataclass(slots=True, frozen=True)
-class CampaignActionResult(SerializableModel):
-    """Результат операции с автокампанией."""
-
-    campaign: CampaignInfo | None
-
-
-@dataclass(slots=True, frozen=True)
 class CampaignInfo(SerializableModel):
     """Информация об автокампании."""
 
@@ -674,6 +1300,45 @@ class CampaignInfo(SerializableModel):
     update_time: datetime | None
     user_id: int | None
     version: int | None
+
+
+@dataclass(slots=True, frozen=True)
+class CampaignActionResult(SerializableModel):
+    """Результат операции с автокампанией."""
+
+    campaign: CampaignInfo | None
+
+    @classmethod
+    def from_payload(cls, payload: object) -> CampaignActionResult:
+        """Преобразует результат операции с автокампанией."""
+
+        data = _expect_mapping(payload)
+        return cls(campaign=_map_campaign(_mapping(data, "campaign")))
+
+
+def _map_campaign(payload: _Payload) -> CampaignInfo | None:
+    if not payload:
+        return None
+    return CampaignInfo(
+        campaign_id=_int(payload, "campaignId"),
+        campaign_type=map_enum_or_unknown(
+            _str(payload, "campaignType"),
+            CampaignType,
+            enum_name="promotion.campaign_type",
+        ),
+        budget=_int(payload, "budget"),
+        balance=_int(payload, "balance"),
+        create_time=_datetime(payload, "createTime"),
+        description=_str(payload, "description"),
+        finish_time=_datetime(payload, "finishTime"),
+        items_count=_int(payload, "itemsCount"),
+        start_time=_datetime(payload, "startTime"),
+        status_id=_int(payload, "statusId"),
+        title=_str(payload, "title"),
+        update_time=_datetime(payload, "updateTime"),
+        user_id=_int(payload, "userId"),
+        version=_int(payload, "version"),
+    )
 
 
 @dataclass(slots=True, frozen=True)
@@ -708,6 +1373,42 @@ class CampaignDetailsResult(SerializableModel):
     forecast: CampaignForecast | None
     items: list[CampaignItem]
 
+    @classmethod
+    def from_payload(cls, payload: object) -> CampaignDetailsResult:
+        """Преобразует полную информацию об автокампании."""
+
+        data = _expect_mapping(payload)
+        return cls(
+            campaign=_map_campaign(_mapping(data, "campaign")),
+            forecast=_map_campaign_forecast(_mapping(data, "forecast")),
+            items=[_map_campaign_item(item) for item in _list(data, "items")],
+        )
+
+
+def _map_campaign_forecast(payload: _Payload) -> CampaignForecast | None:
+    if not payload:
+        return None
+    return CampaignForecast(
+        calls=_map_campaign_forecast_range(_mapping(payload, "calls")),
+        views=_map_campaign_forecast_range(_mapping(payload, "views")),
+    )
+
+
+def _map_campaign_forecast_range(payload: _Payload) -> CampaignForecastRange | None:
+    if not payload:
+        return None
+    return CampaignForecastRange(
+        from_value=_int(payload, "from"),
+        to_value=_int(payload, "to"),
+    )
+
+
+def _map_campaign_item(payload: _Payload) -> CampaignItem:
+    return CampaignItem(
+        item_id=_int(payload, "itemId"),
+        is_active=_bool(payload, "isActive"),
+    )
+
 
 @dataclass(slots=True, frozen=True)
 class CampaignsResult(SerializableModel):
@@ -716,6 +1417,38 @@ class CampaignsResult(SerializableModel):
     items: list[CampaignInfo]
     total_count: int | None = None
 
+    @classmethod
+    def from_payload(cls, payload: object) -> CampaignsResult:
+        """Преобразует список автокампаний."""
+
+        data = _expect_mapping(payload)
+        items: list[CampaignInfo] = []
+        for raw in _list(data, "campaigns"):
+            campaign = _map_campaign(raw)
+            if campaign is None:
+                raise ResponseMappingError("Не удалось смэппить кампанию.", payload=raw)
+            items.append(campaign)
+        return cls(items=items, total_count=_int(data, "totalCount"))
+
+
+@dataclass(slots=True, frozen=True)
+class AutostrategyStatItem(SerializableModel):
+    """Статистика кампании за день."""
+
+    date: datetime | None
+    calls: int | None
+    views: int | None
+    calls_forecast: CampaignForecastRange | None = None
+    views_forecast: CampaignForecastRange | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class AutostrategyStatTotals(SerializableModel):
+    """Суммарная статистика кампании."""
+
+    calls: int | None
+    views: int | None
+
 
 @dataclass(slots=True, frozen=True)
 class AutostrategyStat(SerializableModel):
@@ -723,6 +1456,35 @@ class AutostrategyStat(SerializableModel):
 
     items: list[AutostrategyStatItem]
     totals: AutostrategyStatTotals | None
+
+    @classmethod
+    def from_payload(cls, payload: object) -> AutostrategyStat:
+        """Преобразует статистику автокампании."""
+
+        data = _expect_mapping(payload)
+        return cls(
+            items=[_map_autostrategy_stat_item(item) for item in _list(data, "stat")],
+            totals=_map_autostrategy_stat_totals(_mapping(data, "totals")),
+        )
+
+
+def _map_autostrategy_stat_item(payload: _Payload) -> AutostrategyStatItem:
+    return AutostrategyStatItem(
+        date=_datetime(payload, "date"),
+        calls=_int(payload, "calls"),
+        views=_int(payload, "views"),
+        calls_forecast=_map_campaign_forecast_range(_mapping(payload, "callsForecast")),
+        views_forecast=_map_campaign_forecast_range(_mapping(payload, "viewsForecast")),
+    )
+
+
+def _map_autostrategy_stat_totals(payload: _Payload) -> AutostrategyStatTotals | None:
+    if not payload:
+        return None
+    return AutostrategyStatTotals(
+        calls=_int(payload, "calls"),
+        views=_int(payload, "views"),
+    )
 
 
 @dataclass(slots=True, frozen=True)
@@ -910,22 +1672,3 @@ class GetAutostrategyStatRequest:
         """Сериализует запрос статистики кампании."""
 
         return {"campaignId": self.campaign_id}
-
-
-@dataclass(slots=True, frozen=True)
-class AutostrategyStatItem(SerializableModel):
-    """Статистика кампании за день."""
-
-    date: datetime | None
-    calls: int | None
-    views: int | None
-    calls_forecast: CampaignForecastRange | None = None
-    views_forecast: CampaignForecastRange | None = None
-
-
-@dataclass(slots=True, frozen=True)
-class AutostrategyStatTotals(SerializableModel):
-    """Суммарная статистика кампании."""
-
-    calls: int | None
-    views: int | None

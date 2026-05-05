@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import random as random_module
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -20,8 +21,8 @@ from avito.core import (
     RateLimitError,
     RequestContext,
     ResponseMappingError,
-    ServerError,
     Transport,
+    TransportError,
     UnsupportedOperationError,
     UpstreamApiError,
     ValidationError,
@@ -108,6 +109,54 @@ def test_transport_appends_user_agent_suffix() -> None:
     transport.request_json("GET", "/items", context=RequestContext("list_items"))
 
     assert fake_transport.last(path="/items").headers["user-agent"].endswith("ci/transport-tests")
+
+
+def test_transport_logs_http_exchange_without_sensitive_fields(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger="avito.transport")
+    transport = Transport(
+        make_settings(retry_policy=RetryPolicy(max_attempts=1)),
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={"ok": True},
+                    headers={"X-Request-Id": "req-123"},
+                )
+            ),
+            base_url="https://api.avito.ru",
+        ),
+        sleep=lambda _: None,
+    )
+
+    payload = transport.request_json(
+        "POST",
+        "/items",
+        context=RequestContext("create_item", allow_retry=True),
+        json_body={"secret": "value"},
+        headers={"Authorization": "Bearer should-not-log"},
+        idempotency_key="idem-should-not-log",
+    )
+
+    assert payload == {"ok": True}
+    exchange_records = [
+        record for record in caplog.records if record.message == "transport http exchange"
+    ]
+    assert len(exchange_records) == 1
+    record = exchange_records[0]
+    assert record.operation == "create_item"
+    assert record.endpoint == "/items"
+    assert record.method == "POST"
+    assert record.attempt == 1
+    assert record.status == 200
+    assert isinstance(record.latency_ms, int)
+    assert record.latency_ms >= 0
+    assert record.request_id == "req-123"
+    assert not hasattr(record, "headers")
+    assert not hasattr(record, "json_body")
+    assert not hasattr(record, "idempotency_key")
+    assert "should-not-log" not in record.getMessage()
 
 
 def test_transport_refreshes_token_after_401() -> None:
@@ -228,6 +277,33 @@ def test_transport_does_not_retry_non_idempotent_request_without_explicit_permis
     assert calls["count"] == 1
 
 
+def test_transport_retry_disabled_context_prevents_retryable_method_retry() -> None:
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return httpx.Response(500, json={"message": "server error"})
+        return httpx.Response(200, json={"ok": True})
+
+    transport = Transport(
+        make_settings(),
+        client=httpx.Client(
+            transport=httpx.MockTransport(handler), base_url="https://api.avito.ru"
+        ),
+        sleep=lambda _: None,
+    )
+
+    with pytest.raises(UpstreamApiError):
+        transport.request_json(
+            "GET",
+            "/items",
+            context=RequestContext("list_items", retry_disabled=True),
+        )
+
+    assert calls["count"] == 1
+
+
 def test_transport_retries_post_with_same_idempotency_key_for_whole_retry_chain() -> None:
     calls = {"count": 0}
     seen_keys: list[str | None] = []
@@ -286,6 +362,141 @@ def test_transport_does_not_retry_post_without_idempotency_key_even_with_allow_r
     assert calls["count"] == 1
 
 
+@pytest.mark.parametrize("failure", ("timeout", "server_error"))
+def test_transport_does_not_retry_delete_without_idempotency_key(failure: str) -> None:
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        if failure == "timeout":
+            raise httpx.ConnectError("offline", request=request)
+        return httpx.Response(500, json={"message": "server error"})
+
+    transport = Transport(
+        make_settings(),
+        client=httpx.Client(
+            transport=httpx.MockTransport(handler), base_url="https://api.avito.ru"
+        ),
+        sleep=lambda _: None,
+    )
+
+    if failure == "timeout":
+        with pytest.raises(Exception, match="offline"):
+            transport.request_json(
+                "DELETE",
+                "/items/1",
+                context=RequestContext("delete_item"),
+            )
+    else:
+        with pytest.raises(UpstreamApiError):
+            transport.request_json(
+                "DELETE",
+                "/items/1",
+                context=RequestContext("delete_item"),
+            )
+
+    assert calls["count"] == 1
+
+
+def test_transport_retries_delete_with_same_idempotency_key_for_whole_retry_chain() -> None:
+    calls = {"count": 0}
+    seen_keys: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        seen_keys.append(request.headers.get("Idempotency-Key"))
+        if calls["count"] == 1:
+            raise httpx.ConnectError("offline", request=request)
+        return httpx.Response(200, json={"ok": True})
+
+    transport = Transport(
+        make_settings(),
+        client=httpx.Client(
+            transport=httpx.MockTransport(handler), base_url="https://api.avito.ru"
+        ),
+        sleep=lambda _: None,
+    )
+
+    payload = transport.request_json(
+        "DELETE",
+        "/items/1",
+        context=RequestContext("delete_item"),
+        idempotency_key="idem-123",
+    )
+
+    assert payload == {"ok": True}
+    assert calls["count"] == 2
+    assert seen_keys == ["idem-123", "idem-123"]
+
+
+def test_transport_retries_delete_with_explicit_retry_override() -> None:
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return httpx.Response(500, json={"message": "server error"})
+        return httpx.Response(200, json={"ok": True})
+
+    transport = Transport(
+        make_settings(),
+        client=httpx.Client(
+            transport=httpx.MockTransport(handler), base_url="https://api.avito.ru"
+        ),
+        sleep=lambda _: None,
+    )
+
+    payload = transport.request_json(
+        "DELETE",
+        "/items/1",
+        context=RequestContext("delete_item", allow_retry=True),
+    )
+
+    assert payload == {"ok": True}
+    assert calls["count"] == 2
+
+
+def test_transport_exposes_request_context_on_transport_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger="avito.transport")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("offline", request=request)
+
+    transport = Transport(
+        make_settings(retry_policy=RetryPolicy(max_attempts=1)),
+        client=httpx.Client(
+            transport=httpx.MockTransport(handler), base_url="https://api.avito.ru"
+        ),
+        sleep=lambda _: None,
+    )
+
+    with pytest.raises(TransportError, match="offline") as error:
+        transport.request_json(
+            "POST",
+            "/items",
+            context=RequestContext("create_item", allow_retry=True),
+            json_body={"name": "item"},
+            idempotency_key="idem-123",
+        )
+
+    assert error.value.operation == "create_item"
+    assert error.value.attempt == 1
+    assert error.value.method == "POST"
+    assert error.value.endpoint == "/items"
+    exchange_records = [
+        record for record in caplog.records if record.message == "transport http exchange"
+    ]
+    assert len(exchange_records) == 1
+    assert exchange_records[0].operation == "create_item"
+    assert exchange_records[0].endpoint == "/items"
+    assert exchange_records[0].method == "POST"
+    assert exchange_records[0].attempt == 1
+    assert exchange_records[0].status is None
+    assert exchange_records[0].request_id is None
+
+
 @pytest.mark.parametrize(
     ("status_code", "error_cls"),
     (
@@ -297,7 +508,7 @@ def test_transport_does_not_retry_post_without_idempotency_key_even_with_allow_r
         (418, UpstreamApiError),
         (422, ValidationError),
         (429, RateLimitError),
-        (500, ServerError),
+        (500, UpstreamApiError),
     ),
 )
 def test_transport_maps_http_statuses_to_typed_sdk_errors(
@@ -342,6 +553,9 @@ def test_transport_exposes_structured_error_fields() -> None:
         transport.request_json("GET", "/limited", context=RequestContext("limited"))
 
     assert error.value.operation == "limited"
+    assert error.value.attempt == 1
+    assert error.value.method == "GET"
+    assert error.value.endpoint == "/limited"
     assert error.value.status == 429
     assert error.value.error_code == "rate_limit"
     assert error.value.details == {"limit": "minute"}
@@ -416,7 +630,10 @@ def test_transport_uses_half_second_retry_after_default_without_header() -> None
     assert error.value.retry_after == 0.5
 
 
-def test_transport_retries_rate_limit_without_retry_after_using_backoff() -> None:
+def test_transport_retries_rate_limit_without_retry_after_using_backoff(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger="avito.transport")
     responses = iter(
         (
             httpx.Response(429, json={"message": "Слишком много запросов."}),
@@ -443,6 +660,17 @@ def test_transport_retries_rate_limit_without_retry_after_using_backoff() -> Non
 
     assert payload == {"ok": True}
     assert sleeps == [pytest.approx(random_module.Random(2).random())]
+    exchange_records = [
+        record for record in caplog.records if record.message == "transport http exchange"
+    ]
+    assert [record.status for record in exchange_records] == [429, 200]
+    assert [record.attempt for record in exchange_records] == [1, 2]
+    retry_records = [record for record in caplog.records if record.message == "transport retry"]
+    assert len(retry_records) == 1
+    assert retry_records[0].operation == "limited"
+    assert retry_records[0].endpoint == "/limited"
+    assert retry_records[0].method == "GET"
+    assert retry_records[0].status == 429
 
 
 def test_transport_raises_mapping_error_for_invalid_json() -> None:

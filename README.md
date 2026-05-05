@@ -118,10 +118,13 @@ with AvitoClient.from_env() as avito:
     account = avito.account(user_id=123)
     balance = account.get_balance()
     ad = avito.ad(item_id=42, user_id=123).get()
-    stats = avito.ad_stats(item_id=42, user_id=123).get_item_stats()
+    stats = avito.ad_stats(item_id=42, user_id=123).get_item_stats(
+        date_from="2026-04-01",
+        date_to="2026-04-23",
+    )
 ```
 
-`user_id` можно передать явно, задать через `AVITO_USER_ID` или оставить пустым для read-only вызовов, где SDK может определить пользователя через `account().get_self()`. Если идентификатор не удалось определить, SDK поднимает `ValidationError` с подсказкой, как вызвать метод правильно. Для OAuth secret поддерживаются `AVITO_CLIENT_SECRET` и alias `AVITO_SECRET`.
+`user_id` можно передать явно, задать через `AVITO_USER_ID` или оставить пустым для read-only вызовов, где SDK может определить пользователя через `account().get_self()`. Если идентификатор не удалось определить, SDK поднимает `ValidationError` с подсказкой, как вызвать метод правильно. Для OAuth secret используйте `AVITO_CLIENT_SECRET`.
 
 Статистические методы принимают `date`, `datetime` и ISO-строки, а в Avito API отправляют дату в формате `YYYY-MM-DD`. Модель `Listing` нормализует основные поля объявления: `title`, `price`, `status`, `description`, `url`, `category`, `city`, `published_at`, `updated_at`, `is_moderated`, `is_visible`.
 
@@ -206,14 +209,12 @@ with AvitoClient.from_env() as avito:
 
 ```python
 from avito import AvitoClient
-from avito.jobs import ApplicationIdsQuery, ResumeSearchQuery
 
 with AvitoClient.from_env() as avito:
-    vacancies = avito.vacancy().list()
-    applications = avito.application().list(
-        query=ApplicationIdsQuery(updated_at_from="2026-04-18")
-    )
-    resumes = avito.resume().list(query=ResumeSearchQuery(query="оператор"))
+    vacancies = avito.vacancy().list(query="python")
+    application_ids = avito.application().get_ids(updated_at_from="2026-04-18")
+    applications = avito.application().get_by_ids(ids=[application_ids.items[0].id])
+    resumes = avito.resume().list(query="оператор")
     webhooks = avito.job_webhook().list()
 ```
 
@@ -225,7 +226,7 @@ from avito import AvitoClient
 with AvitoClient.from_env() as avito:
     calls = avito.cpa_call().list(
         date_time_from="2026-04-18T00:00:00Z",
-        date_time_to="2026-04-19T00:00:00Z",
+        limit=100,
     )
     calltracking = avito.call_tracking_call(10).get()
     records = avito.call_tracking_call(10).download()
@@ -260,7 +261,7 @@ with AvitoClient.from_env() as avito:
     tariff = avito.tariff().get_tariff_info()
 ```
 
-`review().list()` по умолчанию запрашивает первую страницу отзывов (`page=1`, `limit=50`). Для явной пагинации передайте `ReviewsQuery(page=..., limit=...)`.
+`review().list()` по умолчанию запрашивает первую страницу отзывов (`page=1`, `limit=50`). Для явной пагинации передайте `page`, `offset` или `limit` напрямую.
 
 ## Пагинация
 
@@ -340,6 +341,7 @@ make fmt
 make lint
 make typecheck
 make test
+make quality
 make build
 ```
 
@@ -347,7 +349,7 @@ make build
 
 Для репозитория настроены два workflow:
 
-- `CI` запускается на каждый `push` в `main`/`master` и на каждый `pull_request`, выполняет `make check`.
+- `CI` запускается на каждый `push` в `main`/`master` и на каждый `pull_request`, выполняет `make quality`, docs-gates и один полный pytest-прогон через coverage.
 - `Release` запускается при пуше тега вида `v*`, выставляет версию пакета из тега, повторно выполняет `make check`, публикует пакет на PyPI и создаёт GitHub Release.
 
 Для публикации релиза нужно добавить secret:

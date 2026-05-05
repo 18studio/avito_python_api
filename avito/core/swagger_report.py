@@ -38,21 +38,13 @@ class SwaggerBindingReport:
             _build_operation_entry(operation, binding_groups.get(operation.key, ()))
             for operation in self.registry.operations
         ]
-        binding_entries = [
-            _build_binding_entry(binding) for binding in self.discovery.bindings
-        ]
-        duplicate_operations = sum(
-            1 for bindings in binding_groups.values() if len(bindings) > 1
-        )
+        binding_entries = [_build_binding_entry(binding) for binding in self.discovery.bindings]
+        duplicate_operations = sum(1 for bindings in binding_groups.values() if len(bindings) > 1)
         ambiguous_bindings = sum(
             1 for binding in self.discovery.bindings if binding.operation_key is None
         )
-        bound_operations = sum(
-            1 for entry in operation_entries if entry["status"] == "bound"
-        )
-        unbound_operations = sum(
-            1 for entry in operation_entries if entry["status"] == "unbound"
-        )
+        bound_operations = sum(1 for entry in operation_entries if entry["status"] == "bound")
+        unbound_operations = sum(1 for entry in operation_entries if entry["status"] == "unbound")
 
         return {
             "summary": {

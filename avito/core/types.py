@@ -10,6 +10,7 @@ from typing import ClassVar, Literal
 from avito._env import parse_env_float, resolve_env_aliases
 
 HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+RetryOverride = Literal["default", "enabled", "disabled"]
 
 
 @dataclass(slots=True, frozen=True)
@@ -46,6 +47,7 @@ class RequestContext:
 
     operation_name: str
     allow_retry: bool = False
+    retry_disabled: bool = False
     requires_auth: bool = True
     timeout: ApiTimeouts | None = None
     headers: Mapping[str, str] = field(default_factory=dict)
@@ -108,5 +110,6 @@ __all__ = (
     "HttpMethod",
     "JsonPage",
     "RequestContext",
+    "RetryOverride",
     "TransportDebugInfo",
 )

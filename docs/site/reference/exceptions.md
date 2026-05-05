@@ -2,7 +2,8 @@
 
 `AvitoError` — базовый тип ошибок SDK. Специализированные исключения отражают
 класс сбоя: аутентификация, авторизация, validation, rate limit, transport и
-ошибки upstream API.
+ошибки upstream API. Вызовы после `AvitoClient.close()` поднимают
+`ClientClosedError`.
 
 ## Диагностические поля
 

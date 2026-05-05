@@ -4,7 +4,8 @@ Explanations описывают причины архитектурных реш
 
 | Статья | Что объясняет |
 |---|---|
-| [Архитектура SDK](architecture.md) | Как `AvitoClient`, домены, section clients, transport, auth и mappers разделяют ответственность |
+| [Архитектура SDK](architecture.md) | Как `AvitoClient`, домены, `OperationSpec`, executor, transport, auth и модели разделяют ответственность |
+| [Целевая структура доменов](domain-architecture-v2.md) | Как API-домены используют dataclass-модели для сериализации, десериализации, нормализации и enum-ов |
 | [OAuth и токены](auth-flow.md) | Почему token-flow скрыт за `AuthProvider` |
 | [Transport и retry](transport-and-retries.md) | Почему retry живёт в transport-слое и как учитываются 429/5xx |
 | [Модель ошибок](error-model.md) | Как HTTP-коды превращаются в typed exceptions |

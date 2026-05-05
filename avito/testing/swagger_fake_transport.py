@@ -5,10 +5,13 @@ from __future__ import annotations
 import inspect
 import json
 import re
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import MISSING as DATACLASS_MISSING
+from dataclasses import dataclass, fields, is_dataclass
+from datetime import UTC, date, datetime
+from enum import Enum
+from types import UnionType
+from typing import Union, cast, get_args, get_origin, get_type_hints
 from urllib.parse import parse_qs
 
 import httpx
@@ -18,25 +21,41 @@ from avito.auth.models import ClientCredentialsRequest, RefreshTokenRequest
 from avito.auth.provider import AlternateTokenClient, TokenClient
 from avito.client import AvitoClient
 from avito.core.swagger_discovery import DiscoveredSwaggerBinding
-from avito.core.swagger_registry import SwaggerOperation, SwaggerRegistry, SwaggerResponse
+from avito.core.swagger_names import swagger_field_aliases
+from avito.core.swagger_registry import (
+    SwaggerOperation,
+    SwaggerRegistry,
+    SwaggerResponse,
+    SwaggerSchema,
+)
+from avito.core.swagger_schema_paths import (
+    SwaggerBodyPath,
+    SwaggerSchemaPathError,
+    resolve_body_path,
+)
 from avito.testing.fake_transport import FakeTransport, JsonValue, RecordedRequest
 
-if TYPE_CHECKING:
-    from avito.orders.models import DeliveryAddress, DeliveryRestriction, WeeklySchedule
-
 SdkValue = object
+_MISSING = object()
 
 _PATH_PARAMETER_RE = re.compile(r"{([A-Za-z_][A-Za-z0-9_]*)}")
+_NAME_ALIASES: Mapping[str, tuple[str, ...]] = {
+    "campaignId": ("campaign_id",),
+    "minimal_duration": ("min_stay_days",),
+}
 _SDK_CONSTANTS: Mapping[str, SdkValue] = {
     "account_id": 7,
     "action_id": 101,
     "call_id": 102,
     "campaign_id": 103,
+    "category_id": 1,
     "chat_id": "chat-1",
     "delivery_provider_id": "provider-1",
     "dictionary_id": 104,
     "employee_id": 10,
     "grant_type": "client_credentials",
+    "grouping": "day",
+    "is_enabled": True,
     "item_id": 105,
     "item_ids": [105],
     "limit": 2,
@@ -57,7 +76,9 @@ _SDK_CONSTANTS: Mapping[str, SdkValue] = {
     "vacancy_id": 113,
     "vacancy_uuid": "vacancy-uuid-1",
     "value": "value",
-    "vehicle_id": 114,
+    "subscriptionId": 1,
+    "vehicle_id": "XTA210990Y2766384",
+    "version": 1,
     "voice_ids": ["voice-1"],
 }
 _BODY_VALUES: Mapping[str, SdkValue] = {
@@ -67,33 +88,45 @@ _BODY_VALUES: Mapping[str, SdkValue] = {
     "action_ids": [101],
     "applies": [],
     "auto_renewal": True,
+    "autoload_enabled": True,
     "bid_penny": 1000,
     "billing_type": "package",
     "blacklisted_user_id": 7,
-    "blocked_dates": [{"date": "2026-05-01"}],
+    "blocked_dates": ["2026-05-01"],
     "brand_id": 1,
     "budget_penny": 1000,
     "budget_type": "daily",
+    "business_area": 7,
     "call_id": 102,
     "campaign_id": 103,
     "code": "1234",
     "codes": ["xl"],
     "date_time_from": "2026-04-01T00:00:00+00:00",
     "date_time_to": "2026-04-02T00:00:00+00:00",
+    "dateFrom": "2026-04-01",
+    "dateTo": "2026-04-02",
+    "description": "Описание вакансии",
+    "dispatch_id": 1,
     "employee_id": 10,
+    "employment": "full",
+    "experience": "noMatter",
     "files": ["file-1"],
+    "grouping": "day",
+    "is_enabled": True,
     "ids": [101],
     "image_id": "image-1",
-    "intervals": [{"date_from": "2026-05-01", "date_to": "2026-05-02"}],
+    "intervals": [],
     "item_id": 105,
     "item_ids": [105],
     "limit": 2,
     "message": "Тестовое сообщение",
+    "metrics": ["views"],
     "mileage": 10000,
     "min_stay_days": 2,
     "name": "Тариф",
     "order_id": 106,
     "package_code": "xl",
+    "offer_slug": "discount",
     "periods": [{"date_from": "2026-05-01", "date_to": "2026-05-02"}],
     "pickup_point_id": 1,
     "plate_number": "А123АА77",
@@ -102,14 +135,22 @@ _BODY_VALUES: Mapping[str, SdkValue] = {
     "price": 1500,
     "reason": "test",
     "reg_number": "А123АА77",
+    "report_email": "autoload@example.test",
+    "recipients_count": 1,
+    "schedule": "fixed",
+    "schedule_rate": 100,
+    "secret": "cb1e150b-c5bf-4c3e-acd1-20ec88bdb3a1",
     "specification_id": 1,
+    "spendingTypes": ["promotion"],
+    "slugs": ["xl"],
     "task_id": 112,
     "text": "Ответ",
     "title": "Тест",
     "transition": "confirm",
     "url": "https://example.test/file.xml",
     "vacancy_id": 113,
-    "vehicle_id": 114,
+    "vacancy_schedule": "fixed",
+    "vehicle_id": "XTA210990Y2766384",
     "vehicles": [{"vin": "XTA210990Y2766384"}],
     "vin": "XTA210990Y2766384",
 }
@@ -194,7 +235,7 @@ class SwaggerFakeTransport(FakeTransport):
         """Build and invoke SDK call from discovered Swagger binding metadata."""
 
         if binding.operation_key is None:
-            raise AssertionError(f"Binding ambiguous: {binding.sdk_method}")
+            raise AssertionError(f"Привязка Swagger неоднозначна: {binding.sdk_method}")
         if binding.domain == "auth":
             target = self._build_auth_target(binding)
             method = getattr(target, binding.method_name)
@@ -264,6 +305,7 @@ class SwaggerFakeTransport(FakeTransport):
         callable_object: Callable[..., object],
     ) -> dict[str, object]:
         signature = inspect.signature(callable_object)
+        type_hints = _callable_type_hints(callable_object)
         arguments = {}
         for argument_name, expression in mapping.items():
             parameter = signature.parameters.get(argument_name)
@@ -271,6 +313,7 @@ class SwaggerFakeTransport(FakeTransport):
                 argument_name,
                 expression,
                 parameter,
+                type_hints.get(argument_name),
             )
         for name, parameter in signature.parameters.items():
             if name == "self" or name in arguments:
@@ -279,7 +322,12 @@ class SwaggerFakeTransport(FakeTransport):
                 parameter.default is inspect.Parameter.empty
                 or self._should_supply_optional_argument(name, parameter)
             ):
-                arguments[name] = self._value_for_argument(name, f"constant.{name}", parameter)
+                arguments[name] = self._value_for_argument(
+                    name,
+                    f"constant.{name}",
+                    parameter,
+                    type_hints.get(name),
+                )
         return arguments
 
     def _value_for_argument(
@@ -287,6 +335,7 @@ class SwaggerFakeTransport(FakeTransport):
         argument_name: str,
         expression: str,
         parameter: inspect.Parameter | None,
+        annotation_type: object | None,
     ) -> object:
         annotation = _annotation_name(parameter)
         if "ClientCredentialsRequest" in annotation:
@@ -316,8 +365,18 @@ class SwaggerFakeTransport(FakeTransport):
                 )
             ]
         if expression == "body":
-            return self._body_value(argument_name, annotation)
-        return self._value_for_expression(expression, argument_name=argument_name, annotation=annotation)
+            return self._body_value(
+                argument_name,
+                annotation,
+                annotation_type,
+                self._current_request_body_schema(),
+            )
+        return self._value_for_expression(
+            expression,
+            argument_name=argument_name,
+            annotation=annotation,
+            annotation_type=annotation_type,
+        )
 
     def _value_for_expression(
         self,
@@ -325,16 +384,22 @@ class SwaggerFakeTransport(FakeTransport):
         *,
         argument_name: str,
         annotation: str,
+        annotation_type: object | None,
     ) -> object:
         if expression == "body":
-            return self._body_value(argument_name, annotation)
+            return self._body_value(
+                argument_name,
+                annotation,
+                annotation_type,
+                self._current_request_body_schema(),
+            )
         prefix, separator, field_name = expression.partition(".")
         if not separator:
             raise AssertionError(f"Некорректное binding expression: {expression}")
         if prefix in {"path", "query", "header", "constant"}:
             return self._value_for_name(field_name)
         if prefix == "body":
-            return self._body_field_value(argument_name, field_name, annotation)
+            return self._body_path_value(argument_name, field_name, annotation, annotation_type)
         raise AssertionError(f"Неподдерживаемое binding expression: {expression}")
 
     def _query_value(self, annotation: str) -> object:
@@ -360,131 +425,152 @@ class SwaggerFakeTransport(FakeTransport):
             return ReviewsQuery(offset=0, limit=10)
         return self._value_for_name("query")
 
-    def _body_value(self, argument_name: str, annotation: str) -> object:
-        if "SandboxArea" in annotation:
-            from avito.orders.models import SandboxArea
+    def _body_value(
+        self,
+        argument_name: str,
+        annotation: str,
+        annotation_type: object | None,
+        schema: SwaggerSchema | None,
+    ) -> object:
+        value = self._value_for_type(argument_name, annotation_type, schema)
+        if value is not _MISSING:
+            return value
+        return self._body_field_value(argument_name, argument_name, annotation, annotation_type, schema)
 
-            return [SandboxArea(city="Москва")]
-        if "SortingCenterUpload" in annotation:
-            return [self._sorting_center_upload()]
-        if "TaggedSortingCenter" in annotation:
-            from avito.orders.models import TaggedSortingCenter
+    def _body_path_value(
+        self,
+        argument_name: str,
+        path: str,
+        annotation: str,
+        annotation_type: object | None,
+    ) -> object:
+        binding = self._binding_body_path(path)
+        if "datetime" in annotation:
+            return datetime(2026, 5, 1, tzinfo=UTC)
+        if _is_nested_body_path(binding):
+            value = _known_value(argument_name)
+            if value is not _MISSING:
+                return _coerce_schema_value(value, binding)
+            value = _known_value(*_name_aliases(binding.leaf_name))
+            if value is not _MISSING:
+                return _coerce_schema_value(value, binding)
+        return _coerce_schema_value(
+            self._body_field_value(
+                argument_name,
+                binding.leaf_name,
+                annotation,
+                annotation_type,
+                binding.leaf_schema,
+            ),
+            binding,
+        )
 
-            return [TaggedSortingCenter(delivery_provider_id="provider-1", direction_tag="tag-1")]
-        if "TerminalUpload" in annotation:
-            return [self._terminal_upload()]
-        if "DeliveryTermsZone" in annotation:
-            from avito.orders.models import DeliveryTermsZone
+    def _binding_body_path(self, path: str) -> SwaggerBodyPath:
+        for route in self._swagger_routes.values():
+            request_body = route.operation.request_body
+            if request_body is None or request_body.schema is None:
+                continue
+            try:
+                return resolve_body_path(request_body.schema, path)
+            except SwaggerSchemaPathError:
+                continue
+        raise AssertionError(f"Swagger body path не найден: body.{path}")
 
-            return [DeliveryTermsZone(delivery_provider_zone_id="zone-1", min_term=1, max_term=2)]
-        if "StockUpdateEntry" in annotation:
-            from avito.orders.models import StockUpdateEntry
+    def _current_request_body_schema(self) -> SwaggerSchema | None:
+        for route in self._swagger_routes.values():
+            if route.operation.request_body is not None:
+                return route.operation.request_body.schema
+        return None
 
-            return [StockUpdateEntry(item_id=105, quantity=5)]
-        return self._body_field_value(argument_name, argument_name, annotation)
-
-    def _body_field_value(self, argument_name: str, field_name: str, annotation: str) -> object:
-        if argument_name == "applies" or "ApplicationViewedItem" in annotation:
-            from avito.jobs.models import ApplicationViewedItem
-
-            return [ApplicationViewedItem(id="apply-1", is_viewed=True)]
-        if "BbipItemInput" in annotation:
-            return [{"item_id": 105, "duration": 7, "price": 1500, "old_price": 2000}]
-        if "TrxItemInput" in annotation:
-            return [
-                {
-                    "item_id": 105,
-                    "commission": 10,
-                    "date_from": datetime(2026, 5, 1, tzinfo=UTC),
-                }
-            ]
-        if "BidItemInput" in annotation:
-            return [{"item_id": 105, "price_penny": 1000}]
-        if "StockUpdateEntry" in annotation:
-            from avito.orders.models import StockUpdateEntry
-
-            return [StockUpdateEntry(item_id=105, quantity=5)]
-        if field_name == "directions":
-            from avito.orders.models import DeliveryDirection, DeliveryDirectionZone
-
-            return [
-                DeliveryDirection(
-                    provider_direction_id="direction-1",
-                    tag_from="from",
-                    tag_to="to",
-                    zones=[DeliveryDirectionZone(tariff_zone_id="tariff-zone-1")],
-                )
-            ]
-        if field_name == "tariff_zones":
-            from avito.orders.models import (
-                DeliveryTariffItem,
-                DeliveryTariffValue,
-                DeliveryTariffZone,
-            )
-
-            return [
-                DeliveryTariffZone(
-                    name="Зона",
-                    delivery_provider_zone_id="zone-1",
-                    items=[
-                        DeliveryTariffItem(
-                            calculation_mechanic="fixed",
-                            chargeable_parameter="weight",
-                            service_name="delivery",
-                            values=[DeliveryTariffValue(cost=100)],
-                        )
-                    ],
-                )
-            ]
-        if field_name == "terms_zones":
-            from avito.orders.models import DeliveryTermsZone
-
-            return [DeliveryTermsZone(delivery_provider_zone_id="zone-1", min_term=1, max_term=2)]
-        if field_name == "periods" or "RealtyPricePeriod" in annotation:
-            from avito.realty.models import RealtyPricePeriod
-
-            return [RealtyPricePeriod(date_from="2026-05-01", price=1500)]
-        if "SandboxCancelAnnouncementOptions" in annotation:
-            from avito.orders.models import SandboxCancelAnnouncementOptions
-
-            return SandboxCancelAnnouncementOptions(
-                url_to_cancel_announcement="https://example.test/cancel"
-            )
-        if field_name == "sender" or "SandboxAnnouncementParticipant" in annotation:
-            return self._sandbox_participant("sender")
-        if field_name == "receiver":
-            return self._sandbox_participant("receiver")
-        if field_name == "packages" or "SandboxAnnouncementPackage" in annotation:
-            from avito.orders.models import SandboxAnnouncementPackage
-
-            return [SandboxAnnouncementPackage(package_id="package-1", parcel_ids=["parcel-1"])]
-        if "SandboxCreateAnnouncementOptions" in annotation:
-            from avito.orders.models import SandboxCreateAnnouncementOptions
-
-            return SandboxCreateAnnouncementOptions(
-                url_to_send_announcement="https://example.test/send"
-            )
-        if "OrderDeliveryProperties" in annotation:
-            from avito.orders.models import OrderDeliveryProperties
-
-            return OrderDeliveryProperties(dimensions=[10, 10, 10], weight=100)
-        if "RealAddress" in annotation:
-            from avito.orders.models import RealAddress
-
-            return RealAddress(address_type="terminal", terminal_number="terminal-1")
-        if "CustomAreaScheduleEntry" in annotation:
-            from avito.orders.models import CustomAreaScheduleEntry, DeliveryDateInterval
-
-            return [
-                CustomAreaScheduleEntry(
-                    provider_area_numbers=["area-1"],
-                    services=["delivery"],
-                    custom_schedule=[
-                        DeliveryDateInterval(date="2026-05-01", intervals=["09:00-18:00"])
-                    ],
-                )
-            ]
+    def _body_field_value(
+        self,
+        argument_name: str,
+        field_name: str,
+        annotation: str,
+        annotation_type: object | None,
+        schema: SwaggerSchema | None,
+    ) -> object:
+        if field_name == "ids" and "str" in annotation:
+            return ["id-1"]
+        value = _known_value(*_name_aliases(field_name))
+        if value is not _MISSING:
+            return value
+        typed_value = self._value_for_type(field_name, annotation_type, schema)
+        if typed_value is not _MISSING:
+            return typed_value
+        if "datetime" in annotation:
+            return datetime(2026, 5, 1, tzinfo=UTC)
         return self._value_for_name(field_name)
+
+    def _value_for_type(
+        self,
+        name: str,
+        annotation_type: object | None,
+        schema: SwaggerSchema | None,
+    ) -> object:
+        if annotation_type is None:
+            return _MISSING
+        annotation_type = _unwrap_optional(annotation_type)
+        origin = get_origin(annotation_type)
+        if origin in {list, Sequence}:
+            item_type = _first_type_arg(annotation_type)
+            item_schema = schema.items if schema is not None and schema.is_array else None
+            item = self._value_for_type(_singular_name(name), item_type, item_schema)
+            if item is not _MISSING:
+                return [item]
+            return _MISSING
+        if annotation_type is datetime:
+            return datetime(2026, 5, 1, tzinfo=UTC)
+        if _is_date_input_type(annotation_type):
+            value = _dateish_value(name)
+            return "2026-05-01" if value is _MISSING else value
+        if inspect.isclass(annotation_type) and issubclass(annotation_type, Enum):
+            enum_values = list(annotation_type)
+            if enum_values:
+                return enum_values[0]
+        if is_dataclass(annotation_type):
+            return self._dataclass_value(cast(type, annotation_type), schema)
+        if annotation_type is str:
+            return self._string_value(name, schema)
+        if annotation_type is int:
+            return 1
+        if annotation_type is float:
+            return 1.5
+        if annotation_type is bool:
+            return True
+        return _MISSING
+
+    def _dataclass_value(self, model_type: type, schema: SwaggerSchema | None) -> object:
+        type_hints = get_type_hints(model_type)
+        kwargs: dict[str, object] = {}
+        schema_properties = schema.properties if schema is not None and schema.is_object else {}
+        schema_required = schema.required if schema is not None and schema.is_object else frozenset()
+        for field in fields(model_type):
+            field_schema = _schema_for_dataclass_field(field.name, schema_properties)
+            field_type = type_hints.get(field.name)
+            should_fill = (
+                field.default is DATACLASS_MISSING
+                and field.default_factory is DATACLASS_MISSING
+            )
+            if schema_properties:
+                serialized_names = _name_aliases(field.name)
+                should_fill = should_fill or any(name in schema_required for name in serialized_names)
+                should_fill = should_fill or field_schema is not None and not _allows_none(field_type)
+            if not should_fill:
+                continue
+            value = self._value_for_type(field.name, field_type, field_schema)
+            if value is _MISSING:
+                value = self._value_for_name(field.name)
+            kwargs[field.name] = value
+        return model_type(**kwargs)
+
+    def _string_value(self, name: str, schema: SwaggerSchema | None) -> str:
+        if schema is not None and schema.enum:
+            enum_value = schema.enum[0]
+            if isinstance(enum_value, str):
+                return enum_value
+        value = self._value_for_name(name)
+        return value if isinstance(value, str) else str(value)
 
     def _should_supply_optional_argument(
         self,
@@ -502,100 +588,29 @@ class SwaggerFakeTransport(FakeTransport):
             return [RealtyInterval(date="2026-05-01", available=True)]
         if name == "blocked_dates":
             return ["2026-05-01"]
+        if name == "data":
+            return ["XTA210990Y2766384"]
+        if name == "autoload_enabled":
+            return True
+        if name == "feeds_data":
+            return "https://example.test/feed.xml"
+        if name == "report_email":
+            return "autoload@example.test"
+        if name == "schedule":
+            return 100
+        if name == "upload_url":
+            return "https://example.test/feed.xml"
         if name == "date_start":
             return "2026-05-01"
         if name == "date_end":
             return "2026-05-02"
-        if name in _BODY_VALUES:
-            return _BODY_VALUES[name]
-        if name in _SDK_CONSTANTS:
-            return _SDK_CONSTANTS[name]
+        dateish_value = _dateish_value(name)
+        if dateish_value is not _MISSING:
+            return dateish_value
+        value = _known_value(*_name_aliases(name))
+        if value is not _MISSING:
+            return value
         return f"{name}-value"
-
-    def _sorting_center_upload(self) -> object:
-        from avito.orders.models import SortingCenterUpload
-
-        return SortingCenterUpload(
-            delivery_provider_id="provider-1",
-            name="СЦ",
-            address=self._delivery_address(),
-            phones=["+70000000000"],
-            itinerary="Вход",
-            photos=["photo-1"],
-            schedule=self._weekly_schedule(),
-            restriction=self._delivery_restriction(),
-            direction_tag="tag-1",
-        )
-
-    def _terminal_upload(self) -> object:
-        from avito.orders.models import TerminalUpload
-
-        return TerminalUpload(
-            delivery_provider_id="provider-1",
-            name="ПВЗ",
-            address=self._delivery_address(),
-            phones=["+70000000000"],
-            itinerary="Вход",
-            photos=["photo-1"],
-            direction_tag="tag-1",
-            services=["pickup"],
-            schedule=self._weekly_schedule(),
-            restriction=self._delivery_restriction(),
-        )
-
-    def _delivery_address(self) -> DeliveryAddress:
-        from avito.orders.models import DeliveryAddress
-
-        return DeliveryAddress(
-            country="RU",
-            region="Москва",
-            locality="Москва",
-            fias="fias-1",
-            zip_code="101000",
-            lat=55.75,
-            lng=37.62,
-        )
-
-    def _weekly_schedule(self) -> WeeklySchedule:
-        from avito.orders.models import WeeklySchedule
-
-        hours = ["09:00-18:00"]
-        return WeeklySchedule(
-            mon=hours,
-            tue=hours,
-            wed=hours,
-            thu=hours,
-            fri=hours,
-            sat=hours,
-            sun=hours,
-        )
-
-    def _delivery_restriction(self) -> DeliveryRestriction:
-        from avito.orders.models import DeliveryRestriction
-
-        return DeliveryRestriction(
-            max_weight=1000,
-            max_dimensions=[10, 10, 10],
-            max_declared_cost=10000,
-        )
-
-    def _sandbox_participant(self, participant_type: str) -> object:
-        from avito.orders.models import (
-            SandboxAnnouncementDelivery,
-            SandboxAnnouncementParticipant,
-            SandboxDeliveryPoint,
-        )
-
-        return SandboxAnnouncementParticipant(
-            type=participant_type,
-            phones=["+70000000000"],
-            email=f"{participant_type}@example.test",
-            name=participant_type,
-            delivery=SandboxAnnouncementDelivery(
-                type="terminal",
-                terminal=SandboxDeliveryPoint(provider="pochta", point_id="point-1"),
-            ),
-        )
 
     def _match_route(self, request: RecordedRequest) -> SwaggerRoute:
         for route in self._swagger_routes.values():
@@ -634,7 +649,9 @@ class SwaggerFakeTransport(FakeTransport):
             raise AssertionError(f"{operation.key}: requestBody обязателен.")
         content_type = request.headers.get("content-type", "")
         if request.content and operation.request_body.content_types:
-            if not any(expected in content_type for expected in operation.request_body.content_types):
+            if not any(
+                expected in content_type for expected in operation.request_body.content_types
+            ):
                 raise AssertionError(
                     f"{operation.key}: content-type `{content_type}` не описан в Swagger."
                 )
@@ -663,7 +680,9 @@ class SwaggerFakeTransport(FakeTransport):
             )
 
     def _path_matches(self, template: str, path: str) -> bool:
-        return self._path_pattern(template).fullmatch(self._normalize_swagger_path(path)) is not None
+        return (
+            self._path_pattern(template).fullmatch(self._normalize_swagger_path(path)) is not None
+        )
 
     def _extract_path_values(self, template: str, path: str) -> Mapping[str, str]:
         match = self._path_pattern(template).fullmatch(self._normalize_swagger_path(path))
@@ -699,7 +718,9 @@ def error_payload(status_code: int) -> JsonValue:
 def success_payload(operation: SwaggerOperation) -> JsonValue:
     """Build deterministic success payload for one operation."""
 
-    if operation.spec in {"Авторизация.json", "Автотека.json"} and operation.path.startswith("/token"):
+    if operation.spec in {"Авторизация.json", "Автотека.json"} and operation.path.startswith(
+        "/token"
+    ):
         return {
             "access_token": "access-token",
             "token_type": "Bearer",
@@ -713,7 +734,10 @@ def success_payload(operation: SwaggerOperation) -> JsonValue:
         return {"orderId": "order-1", "status": "active", "items": [], "errors": []}
     if operation.key == "Настройкаценыцелевогодействия.json GET /cpxpromo/1/getBids/{itemId}":
         return {"actionTypeID": 1, "selectedType": "manual", "manual": {}, "auto": {}}
-    if operation.key == "Настройкаценыцелевогодействия.json POST /cpxpromo/1/getPromotionsByItemIds":
+    if (
+        operation.key
+        == "Настройкаценыцелевогодействия.json POST /cpxpromo/1/getPromotionsByItemIds"
+    ):
         return {"items": []}
     return {}
 
@@ -732,6 +756,98 @@ def _annotation_name(parameter: inspect.Parameter | None) -> str:
     if annotation is inspect.Parameter.empty:
         return ""
     return str(annotation)
+
+
+def _callable_type_hints(callable_object: Callable[..., object]) -> Mapping[str, object]:
+    try:
+        return get_type_hints(callable_object)
+    except (NameError, TypeError):
+        return {}
+
+
+def _known_value(*names: str) -> object:
+    for name in names:
+        if name in _BODY_VALUES:
+            return _BODY_VALUES[name]
+        if name in _SDK_CONSTANTS:
+            return _SDK_CONSTANTS[name]
+    return _MISSING
+
+
+def _name_aliases(name: str) -> tuple[str, ...]:
+    aliases = _NAME_ALIASES.get(name, ())
+    return (*swagger_field_aliases(name), *aliases)
+
+
+def _schema_for_dataclass_field(
+    field_name: str,
+    schema_properties: Mapping[str, SwaggerSchema],
+) -> SwaggerSchema | None:
+    for name in _name_aliases(field_name):
+        if name in schema_properties:
+            return schema_properties[name]
+    return None
+
+
+def _unwrap_optional(annotation_type: object) -> object:
+    origin = get_origin(annotation_type)
+    if origin not in {UnionType, Union}:
+        return annotation_type
+    args = tuple(item for item in get_args(annotation_type) if item is not type(None))
+    if len(args) == 1:
+        return args[0]
+    return annotation_type
+
+
+def _allows_none(annotation_type: object | None) -> bool:
+    if annotation_type is None:
+        return True
+    origin = get_origin(annotation_type)
+    if origin not in {UnionType, Union}:
+        return False
+    return any(item is type(None) for item in get_args(annotation_type))
+
+
+def _first_type_arg(annotation_type: object) -> object | None:
+    args = get_args(annotation_type)
+    return args[0] if args else None
+
+
+def _is_date_input_type(annotation_type: object) -> bool:
+    origin = get_origin(annotation_type)
+    if origin not in {UnionType, Union}:
+        return False
+    args = set(get_args(annotation_type))
+    return date in args and datetime in args and str in args
+
+
+def _dateish_value(name: str) -> object:
+    normalized = name.lower()
+    if normalized in {"date", "created_at", "updated_at"}:
+        return "2026-05-01T00:00:00+00:00"
+    if "date" in normalized or "time" in normalized or normalized.endswith("_at"):
+        return "2026-05-01T00:00:00+00:00"
+    return _MISSING
+
+
+def _singular_name(name: str) -> str:
+    if name.endswith("ies"):
+        return f"{name[:-3]}y"
+    if name.endswith("s"):
+        return name[:-1]
+    return name
+
+
+def _is_nested_body_path(path: SwaggerBodyPath) -> bool:
+    return len(path.segments) > 1 or any(segment.array for segment in path.segments)
+
+
+def _coerce_schema_value(value: object, path: SwaggerBodyPath) -> object:
+    if path.leaf_schema.kind == "string" and isinstance(value, int | float) and not isinstance(
+        value, bool
+    ):
+        return str(value)
+    return value
 
 
 __all__ = ("SwaggerFakeTransport", "SwaggerRoute", "error_payload", "success_payload")

@@ -23,7 +23,7 @@ Principles are listed in descending priority order when they conflict.
 - For each task there must be one obvious way — not two, not three.
 - Errors must not pass silently: invalid state is detected as early as possible.
 - The public API of the library must be simple; internal details must be encapsulated.
-- Each layer is responsible for its own task only: transport, auth, API clients, domain models, mapping, errors.
+- Each layer is responsible for its own task only: transport, auth, operation execution, domain models, mapping, errors.
 - External code must not work with raw `dict[str, Any]` when a typed object can be returned instead.
 - Exceptions must be explicit and domain-specific; no `assert False` for flow control.
 - All network interaction is considered potentially unstable.
@@ -34,7 +34,12 @@ Principles are listed in descending priority order when they conflict.
 
 ## Target Package Architecture
 
-Avito API sections are organized as packages. Recommended structure:
+Avito API sections are organized as packages. The target architecture for new and
+materially refactored domains is documented in
+`docs/site/explanations/domain-architecture-v2.md` and uses explicit domain
+methods, per-domain operation specs, and dataclass-owned payload mapping.
+
+Recommended structure for a simple domain:
 
 ```text
 avito/
@@ -53,35 +58,36 @@ avito/
     exceptions.py
     types.py
     pagination.py
-  accounts/
-    __init__.py
-    client.py
     models.py
-    mappers.py
-  ads/
+    operations.py
+    payload.py
+    fields.py
+  ratings/
     __init__.py
-    client.py
+    domain.py
+    operations.py
     models.py
-    enums.py
-    mappers.py
-  promotion/
-    __init__.py
-    client.py
-    models.py
-    enums.py
-    mappers.py
-  messenger/
-    __init__.py
-    client.py
-    models.py
-    enums.py
-    mappers.py
+```
+
+Recommended structure for a large domain:
+
+```text
+avito/
   orders/
     __init__.py
-    client.py
-    models.py
-    enums.py
-    mappers.py
+    domain.py
+    operations/
+      __init__.py
+      orders.py
+      labels.py
+      delivery.py
+      stock.py
+    models/
+      __init__.py
+      orders.py
+      labels.py
+      delivery.py
+      stock.py
 ```
 
 Rules:
@@ -90,6 +96,14 @@ Rules:
 - Each API section lives in its own package: `ads`, `messenger`, `orders`, `autoload`, etc.
 - Only modules belonging to that section are allowed inside each section package.
 - `avito/client.py` and `avito/__init__.py` contain only the high-level entry point and public exports.
+- `domain.py` contains public `DomainObject` classes, explicit public methods, reference-ready docstrings, `@swagger_operation(...)` bindings, business validation, and construction of internal request models.
+- `operations.py` or `operations/` contains internal `OperationSpec` definitions: HTTP method, path, operation name, retry policy, path rendering, request model class, response model class, and pagination/binary/multipart strategy when applicable.
+- `models.py` or `models/` contains public response dataclasses, internal request/query dataclasses, colocated enum types, `from_payload()`, `to_payload()`, `to_params()`, and normalization logic.
+- API domains must not introduce `client.py`, `mappers.py`, or standalone
+  `enums.py` unless the architecture note for the change explains why the target
+  layout is insufficient.
+- Domain-level `client.py`, `mappers.py`, standalone `enums.py`, compatibility
+  adapters, and compatibility exports are forbidden for API domains.
 
 ## Public API
 
@@ -132,7 +146,7 @@ The following are normatively part of the public contract:
 The following are normatively not part of the public contract:
 
 - transport request/response shapes;
-- internal mapper objects;
+- internal operation specs, mapping adapters, and request DTOs;
 - `raw_payload`, transport-layer service dataclasses, and internal DTOs;
 - the shape of the raw Avito API JSON response.
 
@@ -173,10 +187,12 @@ Rules:
 Required separation:
 
 - `AvitoClient` — the root SDK facade.
-- `SectionClient` classes — clients for specific API sections.
+- `DomainObject` classes — explicit public SDK methods for business scenarios.
+- `OperationSpec` and `OperationExecutor` — internal operation metadata and execution through transport.
 - `Transport` — HTTP request execution.
 - `AuthProvider` — token acquisition and refresh.
-- `Mapper` — JSON to domain model conversion.
+- `ApiModel` / dataclass models — JSON to domain model conversion and public serialization.
+- `RequestModel` / query dataclasses — request body and query serialization.
 - `Settings`/`Config` — SDK configuration.
 
 Rules:
@@ -184,6 +200,8 @@ Rules:
 - One class, one explicit area of responsibility.
 - Classes must not simultaneously handle HTTP, authorization, logging, and model transformation.
 - "God object" classes containing logic for all API sections are forbidden.
+- API domains execute through `OperationSpec` and model-owned mapping only.
+  Domain-level section clients and standalone mapper modules are forbidden.
 
 ## Dataclasses and Models
 
@@ -192,6 +210,10 @@ The primary model format for the SDK is `dataclass`.
 Rules:
 
 - Domain entities and response objects are described with `@dataclass(slots=True, frozen=True)` by default.
+- Public response models inherit `ApiModel` or another project-approved subclass of `SerializableModel` and implement `from_payload(cls, payload: object)`.
+- Request and query models inherit `RequestModel` or provide the same explicit `to_payload()` / `to_params()` contract.
+- Response JSON mapping belongs in `ResponseModel.from_payload()`, not in ad hoc mapper functions.
+- Request body and query mapping belongs in request/query dataclasses, not in public domain methods.
 - If a model must be mutable, that must be a conscious exception and explicitly documented.
 - Use concrete containers for lists: `list[Message]`, not just `list`.
 - Use `T | None` for optional fields, not implicit defaults.
@@ -249,7 +271,7 @@ A public method must not require the user to construct internal SDK objects.
 Rules:
 
 - Public method arguments must be primitive types (`int`, `str`, `bool`, `float`) or well-known domain result models (not request objects).
-- Request-DTOs used inside section clients must not appear in public domain method signatures.
+- Request/query dataclasses used by operation execution must not appear in public domain method signatures unless they are explicitly documented public input models.
 - If a method requires a complex input object, it must accept its fields directly as keyword-only arguments.
 - All optional arguments on public methods must be keyword-only. Positional slots are reserved for the primary domain inputs of the operation.
 - Public methods must accept per-operation overrides for `timeout` and retry behavior as keyword-only arguments. These overrides take precedence over the client-level configuration for the single call and must not mutate client state.
@@ -283,7 +305,9 @@ Fields with a fixed set of allowed values from the upstream specification must b
 
 Rules:
 
-- Every field whose set of allowed values is defined by the API specification in `docs/avito/api/` must be represented by a public `Enum` from `avito/<domain>/enums.py`.
+- Every field whose set of allowed values is defined by the API specification in `docs/avito/api/` must be represented by a public `Enum` colocated with the models that use it: in `avito/<domain>/models.py` for simple domains or `avito/<domain>/models/*.py` for large domains.
+- API-domain enum definitions belong next to their models. Domain-level
+  `enums.py` compatibility re-export modules are forbidden.
 - Enums are declared with string values matching the wire format exactly, so serialization is a direct dump without extra conversion.
 - Enums must be forward-compatible: an unknown upstream value must not crash mapping. Map unknown values to a designated `UNKNOWN` member or a typed fallback and log at `warning` level once per process.
 - Public method arguments that accept an enum may also accept the corresponding `str` literal for ergonomics, but the public method signature type annotation must be the enum type (optionally unioned with `Literal[...]`).
@@ -338,12 +362,13 @@ All HTTP must go through a single transport layer.
 
 Rules:
 
-- Direct calls to `httpx.get()`/`httpx.post()` inside section clients are forbidden.
+- Direct calls to `httpx.get()`/`httpx.post()` outside the transport layer are forbidden.
 - Use `httpx.Client` as an internal dependency of the transport layer.
 - Timeouts are set explicitly.
 - Authorization headers are injected by the transport/auth layer, not by business methods.
 - URL construction, error handling, retries, and logging are concentrated in the transport.
 - Transport details must not be part of public signatures, docstrings, or serialization.
+- Domain methods and operation executors call `Transport`; they do not create or own `httpx` clients.
 
 Recommendation:
 
@@ -461,18 +486,20 @@ JSON from Avito is an external contract, not an internal application model.
 
 Rules:
 
-- Raw JSON responses are mapped in a dedicated layer.
+- Raw JSON responses are mapped at the domain model boundary through `ResponseModel.from_payload()`.
 - Data enrichment logic executes after transport but before returning the object to the user.
 - Enrichment must be deterministic and must not break the original method contract.
 - If enrichment is expensive or requires additional requests, it must be explicitly indicated in the API.
-- Transformation of transport responses into public SDK models must be centralized.
+- Transformation of transport responses into public SDK models must be centralized in the model class or a model-local helper.
 - The same resource must always map to the same public type, regardless of upstream payload variations within the allowed range.
 - Public docstrings and signatures must not require knowledge of the upstream JSON shape.
+- Standalone API-domain `mappers.py` modules are forbidden. Model parsing belongs
+  in `Model.from_payload()` or model-local helpers.
 
 Recommendation:
 
-- Use `mappers.py` inside each API section.
-- Do not mix mapping with the HTTP call in the same method.
+- Put response mapping in `ApiModel.from_payload()` and request/query serialization in `RequestModel.to_payload()` / `to_params()`.
+- Do not mix mapping, HTTP execution, and public method argument validation in one method.
 
 ## Public Read Contracts
 
@@ -634,7 +661,7 @@ Rules:
 - the serialization result must be JSON-compatible;
 - nested public models must serialize recursively;
 - nullable and optional fields serialize per the fixed contract rules;
-- serialization must not expose transport objects, service references, or internal mapper fields;
+- serialization must not expose transport objects, service references, or internal operation/mapping fields;
 - `to_dict()` and `model_dump()` must be explicitly declared in the class or inherited from an explicit mixin — dynamic method injection via `globals()` or `setattr` at runtime is forbidden;
 - the presence of serialization methods must be visible in the class definition without tracking side-effect calls during module import.
 
@@ -659,7 +686,7 @@ Rules:
 - A public method docstring must describe the returned SDK model and behavior on nullable/empty cases.
 - A public method docstring must also document: every supported per-operation override, whether the method is idempotent, and the exception types the method raises on the most common failure modes.
 - Every new or changed public method that corresponds to an Avito API operation must have a docstring suitable for generated reference documentation. The docstring must identify the business action, public arguments, return model, pagination behavior if any, dry-run/idempotency behavior if any, and the common SDK exceptions.
-- Docstrings must not reference the shape of the raw upstream JSON, transport classes, or internal mapper objects.
+- Docstrings must not reference the shape of the raw upstream JSON, transport classes, operation specs, or internal mapping adapters.
 - Comments are used only where the intent cannot be expressed in code.
 - Comments must not duplicate what is obvious.
 
@@ -712,6 +739,34 @@ What is not tested:
 
 Criterion: if a test cannot be broken without violating a public contract or technical decision, the test is not needed.
 
+### Allowed Test Categories Are Closed
+
+The pytest suite has exactly two reasons to exist. Anything that does not fit one of these categories must be removed or moved out of `tests/`:
+
+1. **Functional tests** — verify runtime behavior of the SDK against a fake transport: domain methods return expected models for given payloads, error mapping, retries, auth refresh, pagination, dry-run, serialization, secret sanitization.
+2. **Swagger-spec compliance tests** — verify that the SDK matches `docs/avito/api/`: every Swagger operation has exactly one binding, `SwaggerFakeTransport` invokes every binding, error responses map to the correct SDK exception.
+
+Swagger-spec compliance tests are mandatory. They may inspect discovered bindings,
+public method signatures, operation metadata, and normalized Swagger schemas when
+that inspection is needed to prove SDK-to-Swagger coverage, request/response
+shape compatibility, binding uniqueness, or error-contract coverage. This is not
+considered forbidden public-surface introspection or linter-of-the-linter testing;
+the Swagger specification is an external API contract, and tests that prove
+coverage of that contract belong in pytest.
+
+Anything else is forbidden in pytest:
+
+- **Documentation checks** — markdown placeholders, README example execution, docstring presence/format, docs-harness surface diffs. If documentation matters, lint it with `mkdocs build --strict` or a dedicated docs-only linter, not pytest.
+- **Architecture / project-layout checks** — "no `client.py` in domain", "no `setattr` at runtime", "no legacy filename suffix", "no `Any` in signatures", "all public dataclasses are frozen", "module exports list X". These belong in a static linter (`scripts/lint_architecture.py`, ruff rules, mypy strict mode), not pytest.
+- **Naming / style checks** — "field is not named `resource_id`", "method has no `_legacy` suffix", "domain class follows naming convention". Linter, not pytest.
+- **Type-annotation checks** — these are mypy's job.
+- **Inventory / report-generation tests** — "report builder includes domain table", "snapshot of 11 domains and 204 operations". Reports are CI artifacts, not behavior.
+- **Linter-of-the-linter tests** — tests that exercise the SDK's own architecture/discovery linters by feeding them synthetic input. The linter is verified by running it against the real codebase in the gate, not by pytest. Swagger contract helpers are exempt only when they validate SDK-to-Swagger coverage or schema compatibility.
+- **Public-surface introspection** — walking `inspect.signature` over public methods to assert annotation shapes. Mypy strict mode catches the same problems with better signal. Swagger contract tests are exempt only when signature inspection is required to invoke a discovered binding or validate `factory_args` / `method_args` against `docs/avito/api/`.
+- **Reachability / import smoke tests** — "module X can be imported", "factory Y exists on `AvitoClient`". Mypy and the regular functional tests already prove this.
+
+If a rule is worth enforcing automatically, encode it in a linter and run the linter from `make check`. A pytest run must answer one question: does the SDK behave correctly at runtime? Any test that answers a different question is dead weight.
+
 ### Test Architecture
 
 Tests are divided by what they verify, not by which module they cover.
@@ -731,7 +786,7 @@ Tests do not make network calls. All HTTP is replaced by a controlled fake trans
 - allows verifying whether a call was made, how many times, with which method and body;
 - is used uniformly across all tests that verify the public API.
 
-Section clients, domain objects, and transport are tested in isolation from each other.
+Domain objects, operation executors, model mapping, and transport are tested in isolation from each other.
 
 ### Testing Utilities as a Public Contract
 
@@ -759,7 +814,7 @@ def test_transport_retries_on_server_error_and_raises_after_exhaustion():
     ])
 
     # Act / Assert
-    with pytest.raises(ServerError):
+    with pytest.raises(UpstreamApiError):
         transport.request_json("GET", "/some/path", context=ctx)
 
     assert transport.call_count == 3
@@ -890,7 +945,7 @@ Rules:
 - Widespread use of `Any`.
 - Error handling via `assert`.
 - Hidden network side effects in properties and dataclasses.
-- Leakage of transport-layer shapes and mapper details into public signatures and models.
+- Leakage of transport-layer shapes, operation specs, and mapping details into public signatures and models.
 - Implicit or undocumented config resolution through the environment.
 - Abstract field names (`resource_id`) where a domain-specific name is known and unambiguous.
 - Dynamic method injection into classes via `setattr`, patching via `globals()`, or other runtime magic.

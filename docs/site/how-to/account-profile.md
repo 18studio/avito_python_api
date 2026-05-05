@@ -51,7 +51,7 @@ from avito import AvitoClient
 with AvitoClient.from_env() as avito:
     history = avito.account(user_id=7).get_operations_history(
         date_from=datetime(2026, 4, 1, tzinfo=timezone.utc),
-        limit=2,
+        date_to=datetime(2026, 4, 30, tzinfo=timezone.utc),
     )
     operations = history.materialize()
 
@@ -90,7 +90,7 @@ with AvitoClient.from_env() as avito:
         item_ids=[101],
         idempotency_key="account-profile-example-1",
     )
-    items = hierarchy.list_items_by_employee(employee_id=10, limit=5)
+    items = hierarchy.list_items_by_employee(employee_id=10, category_id=24)
 
 print(result.success)
 print(items[0].title)

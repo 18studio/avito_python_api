@@ -4,7 +4,7 @@
 
 ## CPA-звонки за период
 
-`cpa_call().list()` принимает границы периода строками в формате upstream API и возвращает типизированный список звонков.
+`cpa_call().list()` принимает нижнюю границу периода строкой в формате upstream API и возвращает типизированный список звонков.
 
 ```python
 from avito import AvitoClient
@@ -12,7 +12,7 @@ from avito import AvitoClient
 with AvitoClient.from_env() as avito:
     calls = avito.cpa_call().list(
         date_time_from="2026-04-18T00:00:00Z",
-        date_time_to="2026-04-19T00:00:00Z",
+        limit=100,
     )
 
 print(calls.items[0].call_id)

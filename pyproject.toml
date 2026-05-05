@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "avito-py"
-version = "1.0.2"
+version = "2.0.0"
 description = "SDK для разработки инструментов на базе Avito API"
 authors = ["Nikolay Baryshnikov <root@k0d.ru>"]
 packages=[
@@ -32,6 +32,8 @@ coverage = "^7.10.6"
 mypy = "^1.18.2"
 ruff = "^0.12.12"
 respx = "^0.22.0"
+libcst = "^1.8.6"
+bowler = "^0.9.0"
 
 [tool.poetry.group.docs.dependencies]
 mkdocs-material = "^9.5"

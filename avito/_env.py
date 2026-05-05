@@ -7,8 +7,6 @@ from collections.abc import Mapping
 from json import JSONDecodeError, loads
 from pathlib import Path
 
-from avito.core.exceptions import ConfigurationError
-
 
 def read_dotenv(env_file: str | Path | None) -> dict[str, str]:
     """Читает простой `.env` файл без побочных эффектов."""
@@ -69,6 +67,8 @@ def _first_present(source: Mapping[str, str], aliases: tuple[str, ...]) -> str |
 def parse_env_int(value: str, *, field_name: str) -> int:
     """Преобразует env-значение в `int` с typed-ошибкой."""
 
+    from avito.core.exceptions import ConfigurationError
+
     try:
         return int(value)
     except ValueError as exc:
@@ -80,6 +80,8 @@ def parse_env_int(value: str, *, field_name: str) -> int:
 def parse_env_float(value: str, *, field_name: str) -> float:
     """Преобразует env-значение в `float` с typed-ошибкой."""
 
+    from avito.core.exceptions import ConfigurationError
+
     try:
         return float(value)
     except ValueError as exc:
@@ -90,6 +92,8 @@ def parse_env_float(value: str, *, field_name: str) -> float:
 
 def parse_env_bool(value: str, *, field_name: str) -> bool:
     """Преобразует env-значение в `bool` с typed-ошибкой."""
+
+    from avito.core.exceptions import ConfigurationError
 
     normalized = value.strip().lower()
     if normalized in {"1", "true", "yes", "on"}:
@@ -103,6 +107,8 @@ def parse_env_bool(value: str, *, field_name: str) -> bool:
 
 def parse_env_str_tuple(value: str, *, field_name: str) -> tuple[str, ...]:
     """Преобразует env-значение в кортеж строк."""
+
+    from avito.core.exceptions import ConfigurationError
 
     stripped = value.strip()
     if not stripped:

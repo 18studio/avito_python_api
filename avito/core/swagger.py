@@ -91,9 +91,7 @@ def swagger_operation(
 
     def decorate(func: Callable[P, R]) -> Callable[P, R]:
         if hasattr(func, "__swagger_binding__") or hasattr(func, "__swagger_bindings__"):
-            raise ConfigurationError(
-                "Несколько Swagger binding-ов на одном SDK method запрещены."
-            )
+            raise ConfigurationError("Несколько Swagger binding-ов на одном SDK method запрещены.")
         func.__swagger_binding__ = binding  # type: ignore[attr-defined]
         return func
 

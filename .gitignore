@@ -43,6 +43,8 @@ pip-delete-this-directory.txt
 
 # Unit test / coverage reports
 swagger-bindings-report.json
+architecture-inventory-report.json
+reference-explanation-examples-report.json
 htmlcov/
 .tox/
 .nox/

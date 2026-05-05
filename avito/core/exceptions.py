@@ -48,6 +48,9 @@ class AvitoError(Exception):
     status_code: int | None = None
     error_code: str | None = None
     operation: str | None = None
+    attempt: int | None = None
+    method: str | None = None
+    endpoint: str | None = None
     details: object | None = None
     retry_after: float | None = None
     request_id: str | None = None
@@ -78,6 +81,12 @@ class AvitoError(Exception):
         details: list[str] = [self.message]
         if self.operation is not None:
             details.append(f"operation={self.operation}")
+        if self.attempt is not None:
+            details.append(f"attempt={self.attempt}")
+        if self.method is not None:
+            details.append(f"method={self.method}")
+        if self.endpoint is not None:
+            details.append(f"endpoint={self.endpoint}")
         if self.status_code is not None:
             details.append(f"status={self.status_code}")
         if self.error_code is not None:
@@ -109,6 +118,10 @@ class ConfigurationError(AvitoError):
     """SDK сконфигурирован некорректно — ошибка обнаружена до выполнения HTTP-запроса."""
 
 
+class ClientClosedError(AvitoError):
+    """Вызов выполнен после закрытия `AvitoClient`."""
+
+
 class RateLimitError(AvitoError):
     """Превышен лимит запросов API (HTTP 429)."""
 
@@ -125,18 +138,6 @@ class UpstreamApiError(AvitoError):
     """Неизвестная ошибка upstream API вне специализированных типов SDK."""
 
 
-class NotFoundError(UpstreamApiError):
-    """Запрошенный ресурс не найден (HTTP 404)."""
-
-
-class ClientError(UpstreamApiError):
-    """Прочая клиентская ошибка диапазона 4xx без более конкретного типа."""
-
-
-class ServerError(UpstreamApiError):
-    """Серверная ошибка диапазона 5xx."""
-
-
 class ResponseMappingError(AvitoError):
     """Не удалось безопасно преобразовать ответ API в ожидаемый тип."""
 
@@ -145,13 +146,11 @@ __all__ = (
     "AuthenticationError",
     "AuthorizationError",
     "AvitoError",
-    "ClientError",
+    "ClientClosedError",
     "ConfigurationError",
     "ConflictError",
-    "NotFoundError",
     "RateLimitError",
     "ResponseMappingError",
-    "ServerError",
     "TransportError",
     "UnsupportedOperationError",
     "UpstreamApiError",

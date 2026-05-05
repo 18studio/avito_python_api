@@ -4,15 +4,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from avito.core import ValidationError
+from avito.core import ApiTimeouts, RetryOverride, ValidationError
 from avito.core.domain import DomainObject
 from avito.core.swagger import swagger_operation
-from avito.ratings.client import RatingsClient
 from avito.ratings.models import (
+    CreateReviewAnswerRequest,
     RatingProfileInfo,
     ReviewAnswerInfo,
     ReviewsQuery,
     ReviewsResult,
+)
+from avito.ratings.operations import (
+    CREATE_REVIEW_ANSWER,
+    DELETE_REVIEW_ANSWER,
+    GET_RATINGS_INFO,
+    LIST_REVIEWS,
 )
 
 
@@ -31,15 +37,41 @@ class Review(DomainObject):
         spec="Рейтингииотзывы.json",
         operation_id="getReviewsV1",
     )
-    def list(self, *, query: ReviewsQuery | None = None) -> ReviewsResult:
-        """Выполняет публичную операцию `Review.list` и возвращает типизированную SDK-модель.
+    def list(
+        self,
+        *,
+        offset: int | None = None,
+        page: int | None = None,
+        limit: int | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> ReviewsResult:
+        """Возвращает список отзывов.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            offset: задает смещение первой записи в выборке.
+            page: задает номер страницы для постраничной выборки.
+            limit: ограничивает размер возвращаемой выборки.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `ReviewsResult` с типизированными данными ответа API.
+
+        Поведение:
+            Параметры пагинации ограничивают объем данных без изменения модели ответа.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return RatingsClient(self.transport).list_reviews(query=query)
+        resolved_query = ReviewsQuery(
+            offset=offset if offset is not None else 0,
+            page=page if page is not None else 1,
+            limit=limit if limit is not None else 50,
+        )
+        return self._execute(LIST_REVIEWS, query=resolved_query, timeout=timeout, retry=retry)
 
 
 @dataclass(slots=True, frozen=True)
@@ -66,20 +98,35 @@ class ReviewAnswer(DomainObject):
         review_id: int,
         text: str,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> ReviewAnswerInfo:
-        """Выполняет публичную операцию `ReviewAnswer.create` и возвращает типизированную SDK-модель.
+        """Создает ответ на отзыв.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            review_id: идентифицирует отзыв.
+            text: передает текст ответа или сообщения.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `ReviewAnswerInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return RatingsClient(self.transport).create_review_answer(
-            review_id=review_id,
-            text=text,
+        return self._execute(
+            CREATE_REVIEW_ANSWER,
+            request=CreateReviewAnswerRequest(review_id=review_id, text=text),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -93,19 +140,34 @@ class ReviewAnswer(DomainObject):
         *,
         answer_id: int | str | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> ReviewAnswerInfo:
-        """Выполняет публичную операцию `ReviewAnswer.delete` и возвращает типизированную SDK-модель.
+        """Удаляет ответ на отзыв.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            answer_id: идентифицирует ответ на отзыв.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `ReviewAnswerInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return RatingsClient(self.transport).delete_review_answer(
-            answer_id=answer_id or self._require_answer_id(),
+        return self._execute(
+            DELETE_REVIEW_ANSWER,
+            path_params={"answer_id": answer_id or self._require_answer_id()},
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     def _require_answer_id(self) -> str:
@@ -129,15 +191,26 @@ class RatingProfile(DomainObject):
         spec="Рейтингииотзывы.json",
         operation_id="getRatingsInfoV1",
     )
-    def get(self) -> RatingProfileInfo:
-        """Выполняет публичную операцию `RatingProfile.get` и возвращает типизированную SDK-модель.
+    def get(
+        self, *, timeout: ApiTimeouts | None = None, retry: RetryOverride | None = None
+    ) -> RatingProfileInfo:
+        """Возвращает рейтинга профиля.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `RatingProfileInfo` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return RatingsClient(self.transport).get_ratings_info()
+        return self._execute(GET_RATINGS_INFO, timeout=timeout, retry=retry)
 
 
 __all__ = ("RatingProfile", "Review", "ReviewAnswer")

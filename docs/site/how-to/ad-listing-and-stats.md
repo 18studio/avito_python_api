@@ -54,8 +54,16 @@ with AvitoClient.from_env() as avito:
         date_from=date(2026, 4, 1),
         date_to="2026-04-23",
     )
-    calls = stats.get_calls_stats()
-    spendings = stats.get_account_spendings()
+    calls = stats.get_calls_stats(
+        date_from=date(2026, 4, 1),
+        date_to="2026-04-23",
+    )
+    spendings = stats.get_account_spendings(
+        date_from=date(2026, 4, 1),
+        date_to="2026-04-23",
+        spending_types=["promotion"],
+        grouping="day",
+    )
 
 print(item_stats.items[0].views)
 print(calls.items[0].answered_calls)
@@ -73,8 +81,12 @@ from avito import AvitoClient
 
 with AvitoClient.from_env() as avito:
     analytics = avito.ad_stats(user_id=7).get_item_analytics(
-        item_ids=[101],
-        fields=["views", "contacts", "favorites"],
+        date_from="2026-04-01",
+        date_to="2026-04-23",
+        metrics=["views", "contacts", "favorites"],
+        grouping="day",
+        limit=100,
+        offset=0,
     )
 
 print(analytics.items[0].contacts)
@@ -90,7 +102,7 @@ from avito import AvitoClient
 with AvitoClient.from_env() as avito:
     promotion = avito.ad_promotion(item_id=101, user_id=7)
     prices = promotion.get_vas_prices(item_ids=[101])
-    preview = promotion.apply_vas(codes=["xl"], dry_run=True)
+    preview = promotion.apply_vas(vas_id="xl", dry_run=True)
 
 print(prices.items[0].price)
 print(preview.applied)

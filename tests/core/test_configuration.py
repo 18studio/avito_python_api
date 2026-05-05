@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import pytest
@@ -95,7 +96,7 @@ def test_avito_settings_from_env_requires_explicit_auth_values(
         AvitoSettings.from_env(env_file=write_env_file(tmp_path / ".env", "AVITO_CLIENT_ID=x"))
 
 
-def test_avito_settings_from_env_accepts_avito_secret_alias(
+def test_avito_settings_from_env_accepts_avito_secret_alias_with_deprecation_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     clear_avito_env(monkeypatch)
@@ -109,9 +110,38 @@ def test_avito_settings_from_env_accepts_avito_secret_alias(
         ),
     )
 
-    settings = AvitoSettings.from_env(env_file=env_file)
+    with pytest.deprecated_call(match="AVITO_SECRET"):
+        settings = AvitoSettings.from_env(env_file=env_file)
 
     assert settings.auth.client_secret == "legacy-secret"
+
+
+def test_avito_settings_from_env_prefers_documented_client_secret_without_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    clear_avito_env(monkeypatch)
+    env_file = write_env_file(
+        tmp_path / ".env",
+        "\n".join(
+            (
+                "AVITO_CLIENT_ID=client-id",
+                "AVITO_CLIENT_SECRET=client-secret",
+                "AVITO_SECRET=legacy-secret",
+            )
+        ),
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        settings = AvitoSettings.from_env(env_file=env_file)
+
+    assert settings.auth.client_secret == "client-secret"
+
+
+def test_auth_settings_supported_env_vars_excludes_deprecated_secret_alias() -> None:
+    supported = AuthSettings.supported_env_vars()
+
+    assert supported["client_secret"] == ("AVITO_CLIENT_SECRET",)
 
 
 def test_avito_settings_from_env_ignores_unsupported_generic_aliases(

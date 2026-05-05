@@ -56,13 +56,13 @@ mark-read-{user_id}-{chat_id}-{date}
 ```text
 # dry-run — проверяем payload, ключ не нужен
 preview = avito.ad_promotion(item_id=101, user_id=7).apply_vas(
-    codes=["xl"],
+    vas_id="xl",
     dry_run=True,
 )
 
 # реальный вызов — добавляем ключ
 result = avito.ad_promotion(item_id=101, user_id=7).apply_vas(
-    codes=["xl"],
+    vas_id="xl",
     idempotency_key="apply-vas-user7-item101-xl-2026-04-24",
 )
 ```

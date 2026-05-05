@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
-from avito.core import ValidationError
+from avito.core import ApiTimeouts, RetryOverride, ValidationError
 from avito.core.domain import DomainObject
 from avito.core.swagger import swagger_operation
 from avito.core.validation import (
@@ -15,47 +15,81 @@ from avito.core.validation import (
     validate_non_empty_string,
     validate_positive_int,
 )
-from avito.promotion.client import (
-    AutostrategyClient,
-    BbipClient,
-    CpaAuctionClient,
-    PromotionClient,
-    TargetActionPriceClient,
-    TrxPromoClient,
-)
-from avito.promotion.enums import CampaignType, PromotionStatus, TargetActionBudgetType
 from avito.promotion.models import (
     AutostrategyBudget,
     AutostrategyStat,
     BbipForecastsResult,
     BbipItem,
-    BbipItemInput,
     BbipSuggestsResult,
-    BidItemInput,
     CampaignActionResult,
     CampaignDetailsResult,
     CampaignListFilter,
     CampaignOrderBy,
     CampaignsResult,
+    CampaignType,
     CampaignUpdateTimeFilter,
     CancelTrxPromotionRequest,
+    CpaAuctionBidInput,
     CpaAuctionBidsResult,
+    CreateAutostrategyBudgetRequest,
+    CreateAutostrategyCampaignRequest,
+    CreateBbipForecastsRequest,
     CreateBbipOrderRequest,
+    CreateBbipSuggestsRequest,
     CreateItemBid,
+    CreateItemBidsRequest,
     CreateTrxPromotionApplyRequest,
     DeletePromotionRequest,
+    GetAutostrategyCampaignInfoRequest,
+    GetAutostrategyStatRequest,
+    GetPromotionOrderStatusRequest,
+    GetPromotionsByItemIdsRequest,
+    GetTrxCommissionsRequest,
+    ListAutostrategyCampaignsRequest,
+    ListPromotionOrdersRequest,
+    ListPromotionServicesRequest,
     PromotionActionResult,
     PromotionOrdersResult,
     PromotionOrderStatusResult,
     PromotionServiceDictionary,
     PromotionServicesResult,
+    PromotionStatus,
+    StopAutostrategyCampaignRequest,
+    TargetActionBudgetType,
     TargetActionGetBidsResult,
     TargetActionPromotionsByItemIdsResult,
     TrxCommissionsResult,
     TrxItem,
-    TrxItemInput,
     UpdateAutoBidRequest,
+    UpdateAutostrategyCampaignRequest,
     UpdateManualBidRequest,
+)
+from avito.promotion.operations import (
+    APPLY_TRX,
+    CANCEL_TRX,
+    CREATE_AUTOSTRATEGY_BUDGET,
+    CREATE_AUTOSTRATEGY_CAMPAIGN,
+    CREATE_BBIP_ORDER,
+    CREATE_CPA_AUCTION_BIDS,
+    DELETE_AUTOSTRATEGY_CAMPAIGN,
+    DELETE_TARGET_ACTION_PROMOTION,
+    GET_AUTOSTRATEGY_CAMPAIGN,
+    GET_AUTOSTRATEGY_STAT,
+    GET_BBIP_FORECASTS,
+    GET_BBIP_SUGGESTS,
+    GET_CPA_AUCTION_BIDS,
+    GET_ORDER_STATUS,
+    GET_SERVICE_DICTIONARY,
+    GET_TARGET_ACTION_BIDS,
+    GET_TARGET_ACTION_PROMOTIONS,
+    GET_TRX_COMMISSIONS,
+    LIST_AUTOSTRATEGY_CAMPAIGNS,
+    LIST_ORDERS,
+    LIST_SERVICES,
+    TRX_HEADERS,
+    UPDATE_AUTOSTRATEGY_CAMPAIGN,
+    UPDATE_TARGET_ACTION_AUTO,
+    UPDATE_TARGET_ACTION_MANUAL,
 )
 
 
@@ -96,13 +130,26 @@ class PromotionOrder(DomainObject):
         spec="Продвижение.json",
         operation_id="get_dict_of_services_v1",
     )
-    def get_service_dictionary(self) -> PromotionServiceDictionary:
+    def get_service_dictionary(
+        self, *, timeout: ApiTimeouts | None = None, retry: RetryOverride | None = None
+    ) -> PromotionServiceDictionary:
         """Получает словарь услуг продвижения.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `PromotionServiceDictionary` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return PromotionClient(self.transport).get_service_dictionary()
+        return self._execute(GET_SERVICE_DICTIONARY, timeout=timeout, retry=retry)
 
     @swagger_operation(
         "POST",
@@ -111,15 +158,36 @@ class PromotionOrder(DomainObject):
         operation_id="get_services_by_items_v1",
         method_args={"item_ids": "body.item_ids"},
     )
-    def list_services(self, *, item_ids: list[int]) -> PromotionServicesResult:
-        """Получает список услуг продвижения по объявлениям.
+    def list_services(
+        self,
+        *,
+        item_ids: list[int],
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> PromotionServicesResult:
+        """Возвращает доступные услуги продвижения для объявлений.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            item_ids: передает идентификаторы объявлений или товаров.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `PromotionServicesResult` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return PromotionClient(self.transport).list_services(item_ids=item_ids)
+        return self._execute(
+            LIST_SERVICES,
+            request=ListPromotionServicesRequest(item_ids=item_ids),
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "POST",
@@ -132,17 +200,32 @@ class PromotionOrder(DomainObject):
         *,
         item_ids: list[int] | None = None,
         order_ids: list[str] | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> PromotionOrdersResult:
-        """Получает список заявок на продвижение.
+        """Возвращает заказы продвижения по объявлениям или идентификаторам заказов.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            item_ids: передает идентификаторы объявлений или товаров.
+            order_ids: передает идентификаторы заказов.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `PromotionOrdersResult` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return PromotionClient(self.transport).list_orders(
-            item_ids=item_ids,
-            order_ids=order_ids,
+        return self._execute(
+            LIST_ORDERS,
+            request=ListPromotionOrdersRequest(item_ids=item_ids, order_ids=order_ids),
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -151,10 +234,28 @@ class PromotionOrder(DomainObject):
         spec="Продвижение.json",
         operation_id="get_order_status_v1",
     )
-    def get_order_status(self, *, order_ids: list[str] | None = None) -> PromotionOrderStatusResult:
+    def get_order_status(
+        self,
+        *,
+        order_ids: list[str] | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> PromotionOrderStatusResult:
         """Получает статусы заявок на продвижение.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            order_ids: идентификаторы заказов продвижения.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `PromotionOrderStatusResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         resolved_order_ids = order_ids or (
@@ -162,7 +263,12 @@ class PromotionOrder(DomainObject):
         )
         if not resolved_order_ids:
             raise ValidationError("Для операции требуется хотя бы один `order_id`.")
-        return PromotionClient(self.transport).get_order_status(order_ids=resolved_order_ids)
+        return self._execute(
+            GET_ORDER_STATUS,
+            request=GetPromotionOrderStatusRequest(order_ids=resolved_order_ids),
+            timeout=timeout,
+            retry=retry,
+        )
 
 
 @dataclass(slots=True, frozen=True)
@@ -183,22 +289,36 @@ class BbipPromotion(DomainObject):
         operation_id="get_bbip_forecasts_by_items_v1",
         method_args={"items": "body.items"},
     )
-    def get_forecasts(self, *, items: list[BbipItemInput]) -> BbipForecastsResult:
+    def get_forecasts(
+        self,
+        *,
+        items: list[BbipItem],
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> BbipForecastsResult:
         """Получает прогнозы BBIP.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            items: элементы запроса с объявлениями, ставками или настройками продвижения.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `BbipForecastsResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        bbip_items = [
-            BbipItem(
-                item_id=item["item_id"],
-                duration=item["duration"],
-                price=item["price"],
-                old_price=item["old_price"],
-            )
-            for item in items
-        ]
-        return BbipClient(self.transport).get_forecasts(items=bbip_items)
+        return self._execute(
+            GET_BBIP_FORECASTS,
+            request=CreateBbipForecastsRequest(items=list(items)),
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "PUT",
@@ -210,45 +330,60 @@ class BbipPromotion(DomainObject):
     def create_order(
         self,
         *,
-        items: list[BbipItemInput],
+        items: list[BbipItem],
         dry_run: bool = False,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> PromotionActionResult:
         """Подключает BBIP-продвижение.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            items: элементы запроса с объявлениями, ставками или настройками продвижения.
+            dry_run: если `True`, метод собирает payload и возвращает результат без вызова транспорта.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        При `dry_run=True` payload строится без вызова транспорта.
+        Возвращает:
+            `PromotionActionResult` с типизированными данными ответа.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            При `dry_run=True` payload строится без вызова транспорта.
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         validate_non_empty("items", items)
         for index, item in enumerate(items):
-            validate_positive_int(f"items[{index}].item_id", item["item_id"])
-            validate_positive_int(f"items[{index}].duration", item["duration"])
-            validate_positive_int(f"items[{index}].price", item["price"])
-            validate_positive_int(f"items[{index}].old_price", item["old_price"])
-        bbip_items = [
-            BbipItem(
-                item_id=item["item_id"],
-                duration=item["duration"],
-                price=item["price"],
-                old_price=item["old_price"],
-            )
-            for item in items
-        ]
+            validate_positive_int(f"items[{index}].item_id", item.item_id)
+            validate_positive_int(f"items[{index}].duration", item.duration)
+            validate_positive_int(f"items[{index}].price", item.price)
+            validate_positive_int(f"items[{index}].old_price", item.old_price)
+        bbip_items = list(items)
         request_payload = CreateBbipOrderRequest(items=bbip_items).to_payload()
-        target: dict[str, object] = {"item_ids": [item["item_id"] for item in items]}
+        target: dict[str, object] = {"item_ids": [item.item_id for item in items]}
         if dry_run:
             return _preview_result(
                 action="create_order",
                 target=target,
                 request_payload=request_payload,
             )
-        return BbipClient(self.transport).create_order(
-            items=bbip_items,
+        payload = self._execute(
+            CREATE_BBIP_ORDER,
+            request=CreateBbipOrderRequest(items=bbip_items),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
+        )
+        return PromotionActionResult.from_action_payload(
+            payload,
+            action="create_order",
+            target=target,
+            request_payload=request_payload,
         )
 
     @swagger_operation(
@@ -257,14 +392,37 @@ class BbipPromotion(DomainObject):
         spec="Продвижение.json",
         operation_id="get_bbip_suggests_by_items_v1",
     )
-    def get_suggests(self, *, item_ids: list[int] | None = None) -> BbipSuggestsResult:
+    def get_suggests(
+        self,
+        *,
+        item_ids: list[int] | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> BbipSuggestsResult:
         """Получает варианты бюджета BBIP.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            item_ids: список идентификаторов объявлений.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `BbipSuggestsResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         resolved_item_ids = item_ids or self._resource_item_ids()
-        return BbipClient(self.transport).get_suggests(item_ids=resolved_item_ids)
+        return self._execute(
+            GET_BBIP_SUGGESTS,
+            request=CreateBbipSuggestsRequest(item_ids=resolved_item_ids),
+            timeout=timeout,
+            retry=retry,
+        )
 
     def _resource_item_ids(self) -> list[int]:
         if self.item_id is None:
@@ -293,41 +451,57 @@ class TrxPromotion(DomainObject):
     def apply(
         self,
         *,
-        items: list[TrxItemInput],
+        items: list[TrxItem],
         dry_run: bool = False,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> PromotionActionResult:
         """Запускает TrxPromo.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            items: элементы запроса с объявлениями, ставками или настройками продвижения.
+            dry_run: если `True`, метод собирает payload и возвращает результат без вызова транспорта.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        При `dry_run=True` payload строится без вызова транспорта.
+        Возвращает:
+            `PromotionActionResult` с типизированными данными ответа.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            При `dry_run=True` payload строится без вызова транспорта.
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         validate_non_empty("items", items)
         for index, item in enumerate(items):
-            validate_positive_int(f"items[{index}].item_id", item["item_id"])
-            validate_positive_int(f"items[{index}].commission", item["commission"])
-            if not isinstance(item.get("date_from"), datetime):
+            validate_positive_int(f"items[{index}].item_id", item.item_id)
+            validate_positive_int(f"items[{index}].commission", item.commission)
+            if not isinstance(item.date_from, datetime):
                 raise ValidationError(f"items[{index}].date_from должен быть datetime.")
-        trx_items = [
-            TrxItem(
-                item_id=item["item_id"],
-                commission=item["commission"],
-                date_from=item["date_from"],
-                date_to=item.get("date_to"),
-            )
-            for item in items
-        ]
+        trx_items = list(items)
         request_payload = CreateTrxPromotionApplyRequest(items=trx_items).to_payload()
-        target: dict[str, object] = {"item_ids": [item["item_id"] for item in items]}
+        target: dict[str, object] = {"item_ids": [item.item_id for item in items]}
         if dry_run:
             return _preview_result(action="apply", target=target, request_payload=request_payload)
-        return TrxPromoClient(self.transport).apply(
-            items=trx_items,
+        payload = self._execute(
+            APPLY_TRX,
+            request=CreateTrxPromotionApplyRequest(items=trx_items),
+            headers=TRX_HEADERS,
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
+        )
+        return PromotionActionResult.from_action_payload(
+            payload,
+            action="apply",
+            target=target,
+            request_payload=request_payload,
         )
 
     @swagger_operation(
@@ -335,6 +509,7 @@ class TrxPromotion(DomainObject):
         "/trx-promo/1/cancel",
         spec="TrxPromo.json",
         operation_id="api_trx_promo_open_api_cancel",
+        method_args={"item_ids": "body.itemIDs"},
     )
     def delete(
         self,
@@ -342,14 +517,28 @@ class TrxPromotion(DomainObject):
         item_ids: list[int] | None = None,
         dry_run: bool = False,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> PromotionActionResult:
         """Останавливает TrxPromo.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            item_ids: список идентификаторов объявлений.
+            dry_run: если `True`, метод собирает payload и возвращает результат без вызова транспорта.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        При `dry_run=True` payload строится без вызова транспорта.
+        Возвращает:
+            `PromotionActionResult` с типизированными данными ответа.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            При `dry_run=True` payload строится без вызова транспорта.
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         resolved_item_ids = item_ids or self._resource_item_ids()
@@ -358,9 +547,19 @@ class TrxPromotion(DomainObject):
         target = {"item_ids": list(resolved_item_ids)}
         if dry_run:
             return _preview_result(action="delete", target=target, request_payload=request_payload)
-        return TrxPromoClient(self.transport).cancel(
-            item_ids=resolved_item_ids,
+        payload = self._execute(
+            CANCEL_TRX,
+            request=CancelTrxPromotionRequest(item_ids=resolved_item_ids),
+            headers=TRX_HEADERS,
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
+        )
+        return PromotionActionResult.from_action_payload(
+            payload,
+            action="delete",
+            target=target,
+            request_payload=request_payload,
         )
 
     @swagger_operation(
@@ -368,15 +567,39 @@ class TrxPromotion(DomainObject):
         "/trx-promo/1/commissions",
         spec="TrxPromo.json",
         operation_id="api_trx_promo_open_api_commissions",
+        method_args={"item_ids": "body.item_ids"},
     )
-    def get_commissions(self, *, item_ids: list[int] | None = None) -> TrxCommissionsResult:
+    def get_commissions(
+        self,
+        *,
+        item_ids: list[int] | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> TrxCommissionsResult:
         """Получает доступные комиссии TrxPromo.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            item_ids: список идентификаторов объявлений.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `TrxCommissionsResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return TrxPromoClient(self.transport).get_commissions(
-            item_ids=item_ids or self._resource_item_ids()
+        resolved_item_ids = item_ids or self._resource_item_ids()
+        return self._execute(
+            GET_TRX_COMMISSIONS,
+            request=GetTrxCommissionsRequest(item_ids=resolved_item_ids),
+            headers=TRX_HEADERS,
+            timeout=timeout,
+            retry=retry,
         )
 
     def _resource_item_ids(self) -> list[int]:
@@ -406,15 +629,32 @@ class CpaAuction(DomainObject):
         *,
         from_item_id: int | None = None,
         batch_size: int | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> CpaAuctionBidsResult:
         """Получает действующие и доступные ставки.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            from_item_id: идентификатор объявления, с которого начинается выборка.
+            batch_size: размер пакетной выборки.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `CpaAuctionBidsResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return CpaAuctionClient(self.transport).get_user_bids(
-            from_item_id=from_item_id,
-            batch_size=batch_size,
+        return self._execute(
+            GET_CPA_AUCTION_BIDS,
+            query={"fromItemID": from_item_id, "batchSize": batch_size},
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -427,23 +667,44 @@ class CpaAuction(DomainObject):
     def create_item_bids(
         self,
         *,
-        items: list[BidItemInput],
+        items: list[CpaAuctionBidInput],
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> PromotionActionResult:
         """Сохраняет новые ставки по объявлениям.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            items: элементы запроса с объявлениями, ставками или настройками продвижения.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `PromotionActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        bids = [
-            CreateItemBid(item_id=item["item_id"], price_penny=item["price_penny"])
-            for item in items
-        ]
-        return CpaAuctionClient(self.transport).create_item_bids(
-            items=bids,
+        bids = [CreateItemBid(item_id=item.item_id, price_penny=item.price_penny) for item in items]
+        request = CreateItemBidsRequest(items=bids)
+        payload = self._execute(
+            CREATE_CPA_AUCTION_BIDS,
+            request=request,
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
+        )
+        return PromotionActionResult.from_action_payload(
+            payload,
+            action="create_item_bids",
+            target={"item_ids": [item.item_id for item in items]},
+            request_payload=request.to_payload(),
         )
 
 
@@ -464,14 +725,35 @@ class TargetActionPricing(DomainObject):
         spec="Настройкаценыцелевогодействия.json",
         operation_id="getBids",
     )
-    def get_bids(self, *, item_id: int | None = None) -> TargetActionGetBidsResult:
+    def get_bids(
+        self,
+        *,
+        item_id: int | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> TargetActionGetBidsResult:
         """Получает детализированные цены и бюджеты.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            item_id: идентификатор объявления.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `TargetActionGetBidsResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return TargetActionPriceClient(self.transport).get_bids(
-            item_id=item_id or self._require_item_id()
+        return self._execute(
+            GET_TARGET_ACTION_BIDS,
+            path_params={"itemId": item_id or self._require_item_id()},
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -481,16 +763,35 @@ class TargetActionPricing(DomainObject):
         operation_id="getPromotionsByItemIds",
     )
     def get_promotions_by_item_ids(
-        self, *, item_ids: list[int] | None = None
+        self,
+        *,
+        item_ids: list[int] | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> TargetActionPromotionsByItemIdsResult:
         """Получает текущие настройки по нескольким объявлениям.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            item_ids: список идентификаторов объявлений.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `TargetActionPromotionsByItemIdsResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         resolved_item_ids = item_ids or [self._require_item_id()]
-        return TargetActionPriceClient(self.transport).get_promotions_by_item_ids(
-            item_ids=resolved_item_ids
+        return self._execute(
+            GET_TARGET_ACTION_PROMOTIONS,
+            request=GetPromotionsByItemIdsRequest(item_ids=resolved_item_ids),
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -505,14 +806,28 @@ class TargetActionPricing(DomainObject):
         item_id: int | None = None,
         dry_run: bool = False,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> PromotionActionResult:
         """Останавливает продвижение.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            item_id: идентификатор объявления.
+            dry_run: если `True`, метод собирает payload и возвращает результат без вызова транспорта.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        При `dry_run=True` payload строится без вызова транспорта.
+        Возвращает:
+            `PromotionActionResult` с типизированными данными ответа.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            При `dry_run=True` payload строится без вызова транспорта.
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         resolved_item_id = item_id or self._require_item_id()
@@ -521,9 +836,18 @@ class TargetActionPricing(DomainObject):
         target = {"item_id": resolved_item_id}
         if dry_run:
             return _preview_result(action="delete", target=target, request_payload=request_payload)
-        return TargetActionPriceClient(self.transport).delete_promotion(
-            item_id=resolved_item_id,
+        payload = self._execute(
+            DELETE_TARGET_ACTION_PROMOTION,
+            request=DeletePromotionRequest(item_id=resolved_item_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
+        )
+        return PromotionActionResult.from_action_payload(
+            payload,
+            action="delete",
+            target=target,
+            request_payload=request_payload,
         )
 
     @swagger_operation(
@@ -546,14 +870,31 @@ class TargetActionPricing(DomainObject):
         item_id: int | None = None,
         dry_run: bool = False,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> PromotionActionResult:
         """Применяет автоматическую настройку.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            action_type_id: идентификатор целевого действия.
+            budget_penny: бюджет в копейках.
+            budget_type: тип бюджета кампании.
+            item_id: идентификатор объявления.
+            dry_run: если `True`, метод собирает payload и возвращает результат без вызова транспорта.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        При `dry_run=True` payload строится без вызова транспорта.
+        Возвращает:
+            `PromotionActionResult` с типизированными данными ответа.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            При `dry_run=True` payload строится без вызова транспорта.
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         resolved_item_id = item_id or self._require_item_id()
@@ -574,12 +915,23 @@ class TargetActionPricing(DomainObject):
                 target=target,
                 request_payload=request_payload,
             )
-        return TargetActionPriceClient(self.transport).update_auto_bid(
-            item_id=resolved_item_id,
-            action_type_id=action_type_id,
-            budget_penny=budget_penny,
-            budget_type=budget_type,
+        payload = self._execute(
+            UPDATE_TARGET_ACTION_AUTO,
+            request=UpdateAutoBidRequest(
+                item_id=resolved_item_id,
+                action_type_id=action_type_id,
+                budget_penny=budget_penny,
+                budget_type=budget_type,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
+        )
+        return PromotionActionResult.from_action_payload(
+            payload,
+            action="update_auto",
+            target=target,
+            request_payload=request_payload,
         )
 
     @swagger_operation(
@@ -598,14 +950,31 @@ class TargetActionPricing(DomainObject):
         item_id: int | None = None,
         dry_run: bool = False,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> PromotionActionResult:
         """Применяет ручную настройку.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            action_type_id: идентификатор целевого действия.
+            bid_penny: ставка в копейках.
+            limit_penny: лимит расходов в копейках.
+            item_id: идентификатор объявления.
+            dry_run: если `True`, метод собирает payload и возвращает результат без вызова транспорта.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        При `dry_run=True` payload строится без вызова транспорта.
+        Возвращает:
+            `PromotionActionResult` с типизированными данными ответа.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            При `dry_run=True` payload строится без вызова транспорта.
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         resolved_item_id = item_id or self._require_item_id()
@@ -627,12 +996,23 @@ class TargetActionPricing(DomainObject):
                 target=target,
                 request_payload=request_payload,
             )
-        return TargetActionPriceClient(self.transport).update_manual_bid(
-            item_id=resolved_item_id,
-            action_type_id=action_type_id,
-            bid_penny=bid_penny,
-            limit_penny=limit_penny,
+        payload = self._execute(
+            UPDATE_TARGET_ACTION_MANUAL,
+            request=UpdateManualBidRequest(
+                item_id=resolved_item_id,
+                action_type_id=action_type_id,
+                bid_penny=bid_penny,
+                limit_penny=limit_penny,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
+        )
+        return PromotionActionResult.from_action_payload(
+            payload,
+            action="update_manual",
+            target=target,
+            request_payload=request_payload,
         )
 
     def _require_item_id(self) -> int:
@@ -666,19 +1046,41 @@ class AutostrategyCampaign(DomainObject):
         start_time: datetime | None = None,
         finish_time: datetime | None = None,
         items: list[int] | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutostrategyBudget:
         """Рассчитывает бюджет кампании.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            campaign_type: тип автостратегии или рекламной кампании.
+            start_time: дата и время начала кампании.
+            finish_time: дата и время окончания кампании.
+            items: элементы запроса с объявлениями, ставками или настройками продвижения.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `AutostrategyBudget` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         _validate_optional_datetime("start_time", start_time)
         _validate_optional_datetime("finish_time", finish_time)
-        return AutostrategyClient(self.transport).create_budget(
-            campaign_type=campaign_type,
-            start_time=start_time,
-            finish_time=finish_time,
-            items=items,
+        return self._execute(
+            CREATE_AUTOSTRATEGY_BUDGET,
+            request=CreateAutostrategyBudgetRequest(
+                campaign_type=campaign_type,
+                start_time=start_time,
+                finish_time=finish_time,
+                items=items,
+            ),
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -702,28 +1104,56 @@ class AutostrategyCampaign(DomainObject):
         items: list[int] | None = None,
         start_time: datetime | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> CampaignActionResult:
         """Создает новую кампанию.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            campaign_type: тип автостратегии или рекламной кампании.
+            title: название кампании.
+            budget: бюджет кампании.
+            budget_bonus: бонусный бюджет кампании.
+            budget_real: реальный бюджет кампании.
+            calc_id: идентификатор расчета или прогноза кампании.
+            description: описание кампании.
+            finish_time: дата и время окончания кампании.
+            items: элементы запроса с объявлениями, ставками или настройками продвижения.
+            start_time: дата и время начала кампании.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `CampaignActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         _validate_optional_datetime("start_time", start_time)
         _validate_optional_datetime("finish_time", finish_time)
-        return AutostrategyClient(self.transport).create_campaign(
-            campaign_type=campaign_type,
-            title=title,
-            budget=budget,
-            budget_bonus=budget_bonus,
-            budget_real=budget_real,
-            calc_id=calc_id,
-            description=description,
-            finish_time=finish_time,
-            items=items,
-            start_time=start_time,
+        return self._execute(
+            CREATE_AUTOSTRATEGY_CAMPAIGN,
+            request=CreateAutostrategyCampaignRequest(
+                campaign_type=campaign_type,
+                title=title,
+                budget=budget,
+                budget_bonus=budget_bonus,
+                budget_real=budget_real,
+                calc_id=calc_id,
+                description=description,
+                finish_time=finish_time,
+                items=items,
+                start_time=start_time,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -731,7 +1161,7 @@ class AutostrategyCampaign(DomainObject):
         "/autostrategy/v1/campaign/edit",
         spec="Автостратегия.json",
         operation_id="editAutostrategyCampaign",
-        method_args={"version": "body.version"},
+        method_args={"campaign_id": "body.campaignId", "version": "body.version"},
     )
     def update(
         self,
@@ -746,27 +1176,54 @@ class AutostrategyCampaign(DomainObject):
         start_time: datetime | None = None,
         title: str | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> CampaignActionResult:
         """Редактирует кампанию.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            version: версия кампании для optimistic locking или согласованного обновления.
+            campaign_id: идентификатор кампании.
+            budget: бюджет кампании.
+            calc_id: идентификатор расчета или прогноза кампании.
+            description: описание кампании.
+            finish_time: дата и время окончания кампании.
+            items: элементы запроса с объявлениями, ставками или настройками продвижения.
+            start_time: дата и время начала кампании.
+            title: название кампании.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `CampaignActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         _validate_optional_datetime("start_time", start_time)
         _validate_optional_datetime("finish_time", finish_time)
-        return AutostrategyClient(self.transport).edit_campaign(
-            campaign_id=campaign_id or self._require_campaign_id(),
-            version=version,
-            budget=budget,
-            calc_id=calc_id,
-            description=description,
-            finish_time=finish_time,
-            items=items,
-            start_time=start_time,
-            title=title,
+        return self._execute(
+            UPDATE_AUTOSTRATEGY_CAMPAIGN,
+            request=UpdateAutostrategyCampaignRequest(
+                campaign_id=campaign_id or self._require_campaign_id(),
+                version=version,
+                budget=budget,
+                calc_id=calc_id,
+                description=description,
+                finish_time=finish_time,
+                items=items,
+                start_time=start_time,
+                title=title,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -776,14 +1233,37 @@ class AutostrategyCampaign(DomainObject):
         operation_id="getAutostrategyCampaignInfo",
         method_args={"campaign_id": "body.campaign_id"},
     )
-    def get(self, *, campaign_id: int | None = None) -> CampaignDetailsResult:
+    def get(
+        self,
+        *,
+        campaign_id: int | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> CampaignDetailsResult:
         """Получает полную информацию о кампании.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            campaign_id: идентификатор кампании.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `CampaignDetailsResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return AutostrategyClient(self.transport).get_campaign_info(
-            campaign_id=campaign_id or self._require_campaign_id()
+        return self._execute(
+            GET_AUTOSTRATEGY_CAMPAIGN,
+            request=GetAutostrategyCampaignInfoRequest(
+                campaign_id=campaign_id or self._require_campaign_id()
+            ),
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -791,7 +1271,7 @@ class AutostrategyCampaign(DomainObject):
         "/autostrategy/v1/campaign/stop",
         spec="Автостратегия.json",
         operation_id="stopAutostrategyCampaign",
-        method_args={"version": "body.version"},
+        method_args={"campaign_id": "body.campaignId", "version": "body.version"},
     )
     def delete(
         self,
@@ -799,18 +1279,38 @@ class AutostrategyCampaign(DomainObject):
         version: int,
         campaign_id: int | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> CampaignActionResult:
         """Останавливает кампанию.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            version: версия кампании для optimistic locking или согласованного обновления.
+            campaign_id: идентификатор кампании.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `CampaignActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return AutostrategyClient(self.transport).stop_campaign(
-            campaign_id=campaign_id or self._require_campaign_id(),
-            version=version,
+        return self._execute(
+            DELETE_AUTOSTRATEGY_CAMPAIGN,
+            request=StopAutostrategyCampaignRequest(
+                campaign_id=campaign_id or self._require_campaign_id(),
+                version=version,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -828,12 +1328,30 @@ class AutostrategyCampaign(DomainObject):
         order_by: builtins.list[tuple[str, str]] | None = None,
         updated_from: datetime | None = None,
         updated_to: datetime | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> CampaignsResult:
-        """Получает список кампаний.
+        """Возвращает кампании автостратегии с фильтрами и пагинацией.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            limit: ограничивает размер возвращаемой выборки.
+            offset: задает смещение первой записи в выборке.
+            status_id: фильтрует результат по числовому статусу.
+            order_by: задает порядок сортировки результата.
+            updated_from: фильтрует записи, обновленные не раньше указанного времени.
+            updated_to: фильтрует записи, обновленные не позже указанного времени.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `CampaignsResult` с типизированными данными ответа API.
+
+        Поведение:
+            Параметры пагинации ограничивают объем данных без изменения модели ответа.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         filter_payload = (
@@ -851,12 +1369,17 @@ class AutostrategyCampaign(DomainObject):
             if order_by is not None
             else None
         )
-        return AutostrategyClient(self.transport).list_campaigns(
-            limit=limit,
-            offset=offset,
-            status_id=status_id,
-            order_by=order_by_payload,
-            filter=filter_payload,
+        return self._execute(
+            LIST_AUTOSTRATEGY_CAMPAIGNS,
+            request=ListAutostrategyCampaignsRequest(
+                limit=limit,
+                offset=offset,
+                status_id=status_id,
+                order_by=order_by_payload,
+                filter=filter_payload,
+            ),
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -865,14 +1388,37 @@ class AutostrategyCampaign(DomainObject):
         spec="Автостратегия.json",
         operation_id="getAutostrategyStat",
     )
-    def get_stat(self, *, campaign_id: int | None = None) -> AutostrategyStat:
+    def get_stat(
+        self,
+        *,
+        campaign_id: int | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> AutostrategyStat:
         """Получает статистику кампании.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            campaign_id: идентификатор кампании.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `AutostrategyStat` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return AutostrategyClient(self.transport).get_stat(
-            campaign_id=campaign_id or self._require_campaign_id()
+        return self._execute(
+            GET_AUTOSTRATEGY_STAT,
+            request=GetAutostrategyStatRequest(
+                campaign_id=campaign_id or self._require_campaign_id()
+            ),
+            timeout=timeout,
+            retry=retry,
         )
 
     def _require_campaign_id(self) -> int:

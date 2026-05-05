@@ -22,9 +22,8 @@ def test_account_domain_maps_profile_balance_and_operations() -> None:
             )
         assert request.url.path == "/core/v1/accounts/operations_history/"
         assert json.loads(request.content.decode()) == {
-            "dateFrom": "2025-01-01T00:00:00+00:00",
-            "limit": 2,
-            "offset": 0,
+            "dateTimeFrom": "2025-01-01T00:00:00+00:00",
+            "dateTimeTo": "2025-01-31T00:00:00+00:00",
         }
         return httpx.Response(
             200,
@@ -49,7 +48,7 @@ def test_account_domain_maps_profile_balance_and_operations() -> None:
     balance = account.get_balance()
     history = account.get_operations_history(
         date_from=datetime.fromisoformat("2025-01-01T00:00:00+00:00"),
-        limit=2,
+        date_to=datetime.fromisoformat("2025-01-31T00:00:00+00:00"),
     )
 
     assert profile.user_id == 7
@@ -75,6 +74,17 @@ def test_account_balance_resolves_user_id_from_self_when_not_configured() -> Non
     assert seen_paths == ["/core/v1/accounts/self", "/core/v1/accounts/7/balance/"]
 
 
+def test_account_balance_requires_keyword_user_id() -> None:
+    account = Account(make_transport(httpx.MockTransport(lambda request: httpx.Response(200))))
+
+    try:
+        account.get_balance(7)  # type: ignore[misc]
+    except TypeError as error:
+        assert "positional" in str(error)
+    else:  # pragma: no cover
+        raise AssertionError("get_balance accepted positional user_id")
+
+
 def test_account_hierarchy_domain_maps_employees_phones_and_items() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/checkAhUserV1":
@@ -92,7 +102,7 @@ def test_account_hierarchy_domain_maps_employees_phones_and_items() -> None:
             assert json.loads(request.content.decode()) == {"employeeId": 10, "itemIds": [1, 2]}
             return httpx.Response(200, json={"success": True, "message": "linked"})
         assert request.url.path == "/listItemsByEmployeeIdV1"
-        assert json.loads(request.content.decode()) == {"employeeId": 10, "limit": 5, "offset": 0}
+        assert json.loads(request.content.decode()) == {"employeeId": 10, "categoryId": 24}
         return httpx.Response(
             200,
             json={
@@ -107,7 +117,7 @@ def test_account_hierarchy_domain_maps_employees_phones_and_items() -> None:
     employees = hierarchy.list_employees()
     phones = hierarchy.list_company_phones()
     linked = hierarchy.link_items(employee_id=10, item_ids=[1, 2])
-    items = hierarchy.list_items_by_employee(employee_id=10, limit=5)
+    items = hierarchy.list_items_by_employee(employee_id=10, category_id=24)
 
     assert status.is_active is True
     assert employees.items[0].employee_id == 10

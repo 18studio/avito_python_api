@@ -4,7 +4,9 @@ export
 REGISTRY=10.11.0.9:5000
 MKDOCS_ENV=DISABLE_MKDOCS_2_WARNING=true NO_MKDOCS_2_WARNING=1
 
-check: swagger-update test typecheck lint swagger-lint build
+check: test quality
+
+quality: typecheck lint swagger-lint architecture-lint docstring-lint build
 
 build: clean
 	poetry build
@@ -36,8 +38,14 @@ swagger-update:
 swagger-lint: swagger-update
 	poetry run python scripts/lint_swagger_bindings.py --strict
 
+architecture-lint:
+	poetry run python scripts/lint_architecture.py
+
+docstring-lint:
+	poetry run python scripts/lint_docstrings.py
+
 swagger-coverage: swagger-lint
-	poetry run pytest tests/core/test_swagger.py tests/core/test_swagger_discovery.py tests/core/test_swagger_linter.py tests/core/test_swagger_report.py tests/core/test_swagger_registry.py tests/contracts/test_swagger_contracts.py
+	poetry run pytest tests/core/test_swagger_registry.py tests/contracts/test_swagger_contracts.py
 
 minor: check
 	poetry version minor
@@ -57,7 +65,7 @@ docs-serve:
 docs-strict:
 	$(MKDOCS_ENV) poetry run mkdocs build --strict
 	poetry run python scripts/lint_swagger_bindings.py --strict
-	poetry run pytest tests/docs/
+	poetry run python scripts/lint_docstrings.py
 
 docs-build: docs-strict
 

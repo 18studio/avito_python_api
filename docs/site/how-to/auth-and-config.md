@@ -58,8 +58,6 @@ print(info.user_id)
 
 **`AVITO_CLIENT_SECRET`** — секрет OAuth-приложения. Храните только в переменных окружения или в vault — не в репозитории. SDK автоматически скрывает это значение из логов и `debug_info()`.
 
-**`AVITO_SECRET`** — поддерживаемый alias для `AVITO_CLIENT_SECRET`. Если заданы оба значения, приоритет остаётся у `AVITO_CLIENT_SECRET`.
-
 ### Опциональные — основные
 
 **`AVITO_BASE_URL`** — базовый URL API, по умолчанию `https://api.avito.ru`. Переопределяется при работе с sandbox или внутренним proxy.

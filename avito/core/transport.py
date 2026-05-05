@@ -13,7 +13,7 @@ from email.message import Message
 from email.utils import parsedate_to_datetime
 from io import BytesIO
 from typing import TYPE_CHECKING, cast
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -21,10 +21,8 @@ from avito.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
     ConflictError,
-    NotFoundError,
     RateLimitError,
     ResponseMappingError,
-    ServerError,
     TransportError,
     UnsupportedOperationError,
     UpstreamApiError,
@@ -153,12 +151,15 @@ class Transport:
                     "transport rate limit delay",
                     extra={
                         "operation": context.operation_name,
+                        "endpoint": self._safe_endpoint(normalized_path),
+                        "method": method,
                         "attempt": attempt,
                         "delay_ms": int(limiter_delay * 1000),
                         "reason": "client_rate_limit",
                     },
                 )
             try:
+                started_at = time.perf_counter()
                 response = self._client.request(
                     method=method,
                     url=normalized_path,
@@ -170,10 +171,28 @@ class Transport:
                     content=content,
                     timeout=timeout,
                 )
+                self._log_http_exchange(
+                    operation=context.operation_name,
+                    endpoint=normalized_path,
+                    method=method,
+                    attempt=attempt,
+                    status=response.status_code,
+                    latency_ms=self._elapsed_ms(started_at),
+                    request_id=self._extract_request_id(response.headers),
+                )
                 self._rate_limiter.observe_response(
                     headers=response.headers,
                 )
             except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                self._log_http_exchange(
+                    operation=context.operation_name,
+                    endpoint=normalized_path,
+                    method=method,
+                    attempt=attempt,
+                    status=None,
+                    latency_ms=self._elapsed_ms(started_at),
+                    request_id=None,
+                )
                 decision = self._decide_transport_retry(
                     method=method,
                     attempt=attempt,
@@ -184,6 +203,8 @@ class Transport:
                 if decision.should_retry:
                     self._log_retry(
                         operation=context.operation_name,
+                        endpoint=normalized_path,
+                        method=method,
                         attempt=attempt,
                         status=None,
                         decision=decision,
@@ -193,6 +214,9 @@ class Transport:
                 raise TransportError(
                     str(exc),
                     operation=context.operation_name,
+                    attempt=attempt,
+                    method=method,
+                    endpoint=self._safe_endpoint(normalized_path),
                     metadata={"timeout": isinstance(exc, httpx.TimeoutException)},
                 ) from exc
 
@@ -202,7 +226,11 @@ class Transport:
                 and self._auth_provider is not None
             ):
                 if unauthorized_refresh_used:
-                    raise self._map_http_error(response, operation=context.operation_name)
+                    raise self._map_http_error(
+                        response,
+                        operation=context.operation_name,
+                        attempt=attempt,
+                    )
                 unauthorized_refresh_used = True
                 self._auth_provider.invalidate_token()
                 refreshed_headers = dict(request_headers)
@@ -223,13 +251,19 @@ class Transport:
                 if decision.should_retry:
                     self._log_retry(
                         operation=context.operation_name,
+                        endpoint=normalized_path,
+                        method=method,
                         attempt=attempt,
                         status=response.status_code,
                         decision=decision,
                     )
                     self._sleep(decision.delay_seconds)
                     continue
-                raise self._map_http_error(response, operation=context.operation_name)
+                raise self._map_http_error(
+                    response,
+                    operation=context.operation_name,
+                    attempt=attempt,
+                )
 
             if 500 <= response.status_code < 600:
                 decision = self._decide_http_retry(
@@ -242,16 +276,26 @@ class Transport:
                 if decision.should_retry:
                     self._log_retry(
                         operation=context.operation_name,
+                        endpoint=normalized_path,
+                        method=method,
                         attempt=attempt,
                         status=response.status_code,
                         decision=decision,
                     )
                     self._sleep(decision.delay_seconds)
                     continue
-                raise self._map_http_error(response, operation=context.operation_name)
+                raise self._map_http_error(
+                    response,
+                    operation=context.operation_name,
+                    attempt=attempt,
+                )
 
             if response.is_error:
-                raise self._map_http_error(response, operation=context.operation_name)
+                raise self._map_http_error(
+                    response,
+                    operation=context.operation_name,
+                    attempt=attempt,
+                )
 
             return response
 
@@ -293,35 +337,6 @@ class Transport:
                 headers=dict(response.headers),
             ) from exc
 
-    def request_public_model[ModelT](
-        self,
-        method: HttpMethod,
-        path: str,
-        *,
-        context: RequestContext,
-        mapper: Callable[[object], ModelT],
-        params: Mapping[str, object] | None = None,
-        json_body: object | None = None,
-        data: Mapping[str, object] | None = None,
-        files: Mapping[str, object] | None = None,
-        headers: Mapping[str, str] | None = None,
-        idempotency_key: str | None = None,
-    ) -> ModelT:
-        """Выполняет запрос, получает JSON и маппит его в публичную SDK-модель."""
-
-        payload = self.request_json(
-            method,
-            path,
-            context=context,
-            params=params,
-            json_body=json_body,
-            data=data,
-            files=files,
-            headers=headers,
-            idempotency_key=idempotency_key,
-        )
-        return mapper(payload)
-
     def download_binary(
         self,
         path: str,
@@ -355,7 +370,7 @@ class Transport:
             return stripped
         has_trailing_slash = stripped.endswith("/")
         segments = [
-            quote(segment, safe=":@") for segment in stripped.strip("/").split("/") if segment
+            quote(segment, safe=":@%") for segment in stripped.strip("/").split("/") if segment
         ]
         normalized = "/" + "/".join(segments)
         if has_trailing_slash and normalized != "/":
@@ -492,8 +507,16 @@ class Transport:
         context: RequestContext,
         idempotency_key: str | None,
     ) -> bool:
+        if context.retry_disabled:
+            return False
         normalized_method = method.upper()
         if normalized_method in {"POST", "PATCH"} and idempotency_key is None:
+            return False
+        if (
+            normalized_method == "DELETE"
+            and idempotency_key is None
+            and not context.allow_retry
+        ):
             return False
         return self._retry_policy.is_retryable_method(
             normalized_method,
@@ -501,18 +524,26 @@ class Transport:
         )
 
     def _map_http_error(
-        self, response: httpx.Response, *, operation: str | None = None
+        self,
+        response: httpx.Response,
+        *,
+        operation: str | None = None,
+        attempt: int | None = None,
     ) -> Exception:
         payload = self._safe_payload(response)
         message = self._extract_message(payload) or f"HTTP {response.status_code}"
         error_code = self._extract_error_code(payload)
         details = self._extract_error_details(payload)
-        retry_after = self._get_retry_after_seconds(response.headers) if response.status_code == 429 else None
+        retry_after = (
+            self._get_retry_after_seconds(response.headers) if response.status_code == 429 else None
+        )
         request_id = self._extract_request_id(response.headers)
         headers = dict(response.headers)
+        method = response.request.method
+        endpoint = response.request.url.path
         metadata = {
-            "method": response.request.method,
-            "path": response.request.url.path,
+            "method": method,
+            "path": endpoint,
         }
 
         if response.status_code == 401:
@@ -521,6 +552,9 @@ class Transport:
                 status_code=401,
                 error_code=error_code,
                 operation=operation,
+                attempt=attempt,
+                method=method,
+                endpoint=endpoint,
                 details=details,
                 retry_after=retry_after,
                 request_id=request_id,
@@ -534,19 +568,9 @@ class Transport:
                 status_code=403,
                 error_code=error_code,
                 operation=operation,
-                details=details,
-                retry_after=retry_after,
-                request_id=request_id,
-                metadata=metadata,
-                payload=payload,
-                headers=headers,
-            )
-        if response.status_code == 404:
-            return NotFoundError(
-                message,
-                status_code=404,
-                error_code=error_code,
-                operation=operation,
+                attempt=attempt,
+                method=method,
+                endpoint=endpoint,
                 details=details,
                 retry_after=retry_after,
                 request_id=request_id,
@@ -560,6 +584,9 @@ class Transport:
                 status_code=response.status_code,
                 error_code=error_code,
                 operation=operation,
+                attempt=attempt,
+                method=method,
+                endpoint=endpoint,
                 details=details,
                 retry_after=retry_after,
                 request_id=request_id,
@@ -573,6 +600,9 @@ class Transport:
                 status_code=409,
                 error_code=error_code,
                 operation=operation,
+                attempt=attempt,
+                method=method,
+                endpoint=endpoint,
                 details=details,
                 retry_after=retry_after,
                 request_id=request_id,
@@ -586,6 +616,9 @@ class Transport:
                 status_code=429,
                 error_code=error_code,
                 operation=operation,
+                attempt=attempt,
+                method=method,
+                endpoint=endpoint,
                 details=details,
                 retry_after=retry_after,
                 request_id=request_id,
@@ -599,19 +632,9 @@ class Transport:
                 status_code=response.status_code,
                 error_code=error_code,
                 operation=operation,
-                details=details,
-                retry_after=retry_after,
-                request_id=request_id,
-                metadata=metadata,
-                payload=payload,
-                headers=headers,
-            )
-        if response.status_code >= 500:
-            return ServerError(
-                message,
-                status_code=response.status_code,
-                error_code=error_code,
-                operation=operation,
+                attempt=attempt,
+                method=method,
+                endpoint=endpoint,
                 details=details,
                 retry_after=retry_after,
                 request_id=request_id,
@@ -624,6 +647,9 @@ class Transport:
             status_code=response.status_code,
             error_code=error_code,
             operation=operation,
+            attempt=attempt,
+            method=method,
+            endpoint=endpoint,
             details=details,
             retry_after=retry_after,
             request_id=request_id,
@@ -692,6 +718,8 @@ class Transport:
         self,
         *,
         operation: str,
+        endpoint: str,
+        method: str,
         attempt: int,
         status: int | None,
         decision: RetryDecision,
@@ -700,12 +728,47 @@ class Transport:
             "transport retry",
             extra={
                 "operation": operation,
+                "endpoint": self._safe_endpoint(endpoint),
+                "method": method,
                 "attempt": attempt,
                 "status": status,
                 "delay_ms": int(decision.delay_seconds * 1000),
                 "reason": decision.reason,
             },
         )
+
+    def _log_http_exchange(
+        self,
+        *,
+        operation: str,
+        endpoint: str,
+        method: str,
+        attempt: int,
+        status: int | None,
+        latency_ms: int,
+        request_id: str | None,
+    ) -> None:
+        _LOGGER.debug(
+            "transport http exchange",
+            extra={
+                "operation": operation,
+                "endpoint": self._safe_endpoint(endpoint),
+                "method": method,
+                "attempt": attempt,
+                "status": status,
+                "latency_ms": latency_ms,
+                "request_id": request_id,
+            },
+        )
+
+    def _elapsed_ms(self, started_at: float) -> int:
+        return max(int((time.perf_counter() - started_at) * 1000), 0)
+
+    def _safe_endpoint(self, endpoint: str) -> str:
+        parsed = urlsplit(endpoint)
+        if parsed.scheme or parsed.netloc:
+            return parsed.path or "/"
+        return endpoint
 
     def _extract_filename(self, content_disposition: str | None) -> str | None:
         if content_disposition is None:
@@ -717,5 +780,6 @@ class Transport:
             _, _, decoded_value = filename
             return decoded_value
         return filename
+
 
 __all__ = ("Transport", "build_httpx_timeout")

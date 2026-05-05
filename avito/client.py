@@ -7,12 +7,9 @@ from datetime import date, datetime
 from pathlib import Path
 from types import TracebackType
 
-import httpx
-
 from avito.accounts import Account, AccountHierarchy
 from avito.ads import Ad, AdPromotion, AdStats, AutoloadArchive, AutoloadProfile, AutoloadReport
-from avito.ads.enums import ListingStatus
-from avito.ads.models import CallStats, ListingStats, SpendingRecord
+from avito.ads.models import CallStats, ListingStats, ListingStatus, SpendingRecord
 from avito.auth import AlternateTokenClient, AuthProvider, TokenClient
 from avito.autoteka import (
     AutotekaMonitoring,
@@ -23,13 +20,12 @@ from avito.autoteka import (
 )
 from avito.config import AvitoSettings
 from avito.core import Transport, TransportDebugInfo
-from avito.core.exceptions import AvitoError, ConfigurationError
-from avito.core.transport import build_httpx_timeout
+from avito.core.exceptions import AvitoError, ClientClosedError
 from avito.cpa import CallTrackingCall, CpaArchive, CpaCall, CpaChat, CpaLead
 from avito.jobs import Application, JobDictionary, JobWebhook, Resume, Vacancy
 from avito.messenger import Chat, ChatMedia, ChatMessage, ChatWebhook, SpecialOfferCampaign
 from avito.orders import DeliveryOrder, DeliveryTask, Order, OrderLabel, SandboxDelivery, Stock
-from avito.orders.enums import OrderStatus
+from avito.orders.models import OrderStatus
 from avito.promotion import (
     AutostrategyCampaign,
     BbipPromotion,
@@ -38,7 +34,7 @@ from avito.promotion import (
     TargetActionPricing,
     TrxPromotion,
 )
-from avito.promotion.enums import PromotionOrderServiceStatus, PromotionOrderStatus
+from avito.promotion.models import PromotionOrderServiceStatus, PromotionOrderStatus
 from avito.ratings import RatingProfile, Review, ReviewAnswer
 from avito.realty import RealtyAnalyticsReport, RealtyBooking, RealtyListing, RealtyPricing
 from avito.summary import (
@@ -56,6 +52,16 @@ from avito.summary import (
 from avito.tariffs import Tariff
 
 SummaryDate = date | datetime | str
+
+
+def _default_summary_date_range(
+    date_from: SummaryDate | None,
+    date_to: SummaryDate | None,
+) -> tuple[SummaryDate, SummaryDate]:
+    if date_from is not None and date_to is not None:
+        return date_from, date_to
+    today = date.today().isoformat()
+    return date_from or today, date_to or today
 
 
 def _sum_optional_int(values: Iterable[int | None]) -> int | None:
@@ -118,9 +124,9 @@ class AvitoClient:
             auth = AuthSettings(client_id=client_id, client_secret=client_secret)
             settings = AvitoSettings(auth=auth)
         self._closed = False
-        self.settings = (settings or AvitoSettings.from_env()).validate_required()
-        self.auth_provider = self._build_auth_provider()
-        self.transport = Transport(self.settings, auth_provider=self.auth_provider)
+        self._settings = (settings or AvitoSettings.from_env()).validate_required()
+        self._auth_provider = self._build_auth_provider()
+        self._transport = Transport(self.settings, auth_provider=self.auth_provider)
 
     @classmethod
     def from_env(cls, *, env_file: str | Path | None = ".env") -> AvitoClient:
@@ -138,10 +144,28 @@ class AvitoClient:
     ) -> AvitoClient:
         client = cls.__new__(cls)
         client._closed = False
-        client.settings = settings
-        client.auth_provider = auth_provider
-        client.transport = transport
+        client._settings = settings
+        client._auth_provider = auth_provider
+        client._transport = transport
         return client
+
+    @property
+    def settings(self) -> AvitoSettings:
+        """Возвращает read-only настройки клиента."""
+
+        return self._settings
+
+    @property
+    def auth_provider(self) -> AuthProvider:
+        """Возвращает read-only auth provider клиента."""
+
+        return self._auth_provider
+
+    @property
+    def transport(self) -> Transport:
+        """Возвращает read-only transport клиента."""
+
+        return self._transport
 
     def auth(self) -> AuthProvider:
         """Возвращает объект аутентификации и token-flow операций.
@@ -261,15 +285,16 @@ class AvitoClient:
         spendings_by_item_id: dict[int, SpendingRecord] = {}
         unavailable_sections: list[SummaryUnavailableSection] = []
         if item_ids:
+            stats_date_from, stats_date_to = _default_summary_date_range(date_from, date_to)
             item_stats = self.ad_stats(user_id=resolved_user_id).get_item_stats(
                 item_ids=item_ids,
-                date_from=date_from,
-                date_to=date_to,
+                date_from=stats_date_from,
+                date_to=stats_date_to,
             )
             calls_stats = self.ad_stats(user_id=resolved_user_id).get_calls_stats(
                 item_ids=item_ids,
-                date_from=date_from,
-                date_to=date_to,
+                date_from=stats_date_from,
+                date_to=stats_date_to,
             )
             stats_by_item_id = {
                 stats.item_id: stats for stats in item_stats.items if stats.item_id is not None
@@ -280,8 +305,10 @@ class AvitoClient:
             try:
                 spendings = self.ad_stats(user_id=resolved_user_id).get_account_spendings(
                     item_ids=item_ids,
-                    date_from=date_from,
-                    date_to=date_to,
+                    date_from=stats_date_from,
+                    date_to=stats_date_to,
+                    spending_types=["promotion", "presence", "commission", "rest"],
+                    grouping="day",
                 )
             except AvitoError as error:
                 unavailable_sections.append(_summary_unavailable_section("spendings", error))
@@ -445,7 +472,9 @@ class AvitoClient:
         user_id_reasons = (
             ["Настроен user_id или его можно получить через профиль."]
             if has_user_id
-            else ["Для части операций SDK получит user_id через профиль или потребует явный аргумент."]
+            else [
+                "Для части операций SDK получит user_id через профиль или потребует явный аргумент."
+            ]
         )
         return CapabilityDiscoveryResult(
             items=[
@@ -461,7 +490,9 @@ class AvitoClient:
                     factory_method="listing_health",
                     is_available=True,
                     reasons=user_id_reasons
-                    + ["400 возможен при неверном фильтре, 403 при недоступном аккаунте, 429 при лимите."],
+                    + [
+                        "400 возможен при неверном фильтре, 403 при недоступном аккаунте, 429 при лимите."
+                    ],
                     possible_error_codes=[400, 403, 429],
                 ),
                 CapabilityInfo(
@@ -524,35 +555,23 @@ class AvitoClient:
         self.close()
 
     def _build_auth_provider(self) -> AuthProvider:
-        timeout = build_httpx_timeout(self.settings.timeouts)
-        token_http_client = httpx.Client(
-            base_url=self.settings.base_url.rstrip("/"),
-            timeout=timeout,
-        )
-        alternate_http_client = httpx.Client(
-            base_url=self.settings.base_url.rstrip("/"),
-            timeout=timeout,
-        )
-        autoteka_http_client = httpx.Client(
-            base_url=self.settings.base_url.rstrip("/"),
-            timeout=timeout,
-        )
         return AuthProvider(
             self.settings.auth,
-            token_client=TokenClient(self.settings.auth, client=token_http_client),
+            token_client=TokenClient(self.settings.auth, sdk_settings=self.settings),
             alternate_token_client=AlternateTokenClient(
-                self.settings.auth, client=alternate_http_client
+                self.settings.auth,
+                sdk_settings=self.settings,
             ),
             autoteka_token_client=TokenClient(
                 self.settings.auth,
                 token_url=self.settings.auth.autoteka_token_url,
-                client=autoteka_http_client,
+                sdk_settings=self.settings,
             ),
         )
 
     def _ensure_open(self) -> None:
         if self._closed:
-            raise ConfigurationError("Клиент закрыт; создайте новый AvitoClient.")
+            raise ClientClosedError("Клиент закрыт; создайте новый AvitoClient.")
 
     def _require_transport(self) -> Transport:
         self._ensure_open()

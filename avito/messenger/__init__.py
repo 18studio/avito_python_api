@@ -7,31 +7,29 @@ from avito.messenger.domain import (
     ChatWebhook,
     SpecialOfferCampaign,
 )
-from avito.messenger.enums import (
-    MessageActionStatus,
-    MessageDirection,
-    MessageType,
-    SpecialOfferCampaignStatus,
-    SpecialOfferDispatchStatus,
-    SubscriptionStatus,
-    WebhookStatus,
-)
 from avito.messenger.models import (
     ChatInfo,
     ChatsResult,
     MessageActionResult,
+    MessageActionStatus,
+    MessageDirection,
     MessageInfo,
     MessagesResult,
+    MessageType,
     MultiCreateSpecialOfferResult,
     SpecialOfferAvailableResult,
+    SpecialOfferCampaignStatus,
+    SpecialOfferDispatchStatus,
     SpecialOfferStatsResult,
     SubscriptionsResult,
+    SubscriptionStatus,
     TariffInfo,
     UploadImageFile,
     UploadImagesRequest,
     UploadImagesResult,
     VoiceFilesResult,
     WebhookActionResult,
+    WebhookStatus,
 )
 
 __all__ = (

@@ -5,48 +5,129 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from avito.core import ValidationError
+from avito.core import ApiTimeouts, RetryOverride, ValidationError
 from avito.core.domain import DomainObject
 from avito.core.swagger import swagger_operation
-from avito.orders.client import (
-    DeliveryClient,
-    DeliveryTasksClient,
-    LabelsClient,
-    OrdersClient,
-    SandboxDeliveryClient,
-    StockManagementClient,
-)
-from avito.orders.enums import TrackingAvitoEventType, TrackingAvitoStatus
+from avito.core.validation import DateInput, serialize_iso_datetime
 from avito.orders.models import (
+    AddSortingCentersRequest,
+    AddTariffV2Request,
+    AddTerminalsRequest,
+    CancelParcelRequest,
     CancelSandboxParcelOptions,
+    CancelSandboxParcelRequest,
     ChangeParcelApplication,
     ChangeParcelOptions,
+    ChangeParcelRequest,
     CourierRangesResult,
     CustomAreaScheduleEntry,
+    CustomAreaScheduleRequest,
+    DeliveryAnnouncementRequest,
+    DeliveryAnnouncementTrackRequest,
+    DeliveryCancelAnnouncementRequest,
     DeliveryDirection,
     DeliveryEntityResult,
+    DeliveryParcelIdsRequest,
+    DeliveryParcelRequest,
+    DeliveryParcelResultRequest,
+    DeliverySandboxAnnouncementRequest,
     DeliverySortingCentersResult,
     DeliveryTariffZone,
     DeliveryTaskInfo,
     DeliveryTermsZone,
     DeliveryTrackingOptions,
+    DeliveryTrackingRequest,
+    GetChangeParcelInfoRequest,
+    GetRegisteredParcelIdRequest,
+    GetSandboxParcelInfoRequest,
     LabelPdfResult,
     LabelTaskResult,
+    OrderAcceptReturnRequest,
     OrderActionResult,
+    OrderApplyTransitionRequest,
+    OrderCncDetailsRequest,
+    OrderConfirmationCodeRequest,
+    OrderCourierRangeRequest,
     OrderDeliveryProperties,
+    OrderLabelsRequest,
+    OrderMarkingsRequest,
     OrdersResult,
+    OrderTrackingNumberRequest,
+    OrderTransition,
+    ProhibitOrderAcceptanceRequest,
     RealAddress,
     SandboxAnnouncementPackage,
     SandboxAnnouncementParticipant,
     SandboxArea,
+    SandboxAreasRequest,
     SandboxCancelAnnouncementOptions,
+    SandboxCancelAnnouncementRequest,
+    SandboxConfirmationCodeRequest,
     SandboxCreateAnnouncementOptions,
+    SandboxCreateAnnouncementRequest,
+    SandboxGetAnnouncementEventRequest,
+    SandboxParcelRequest,
+    SetOrderPropertiesRequest,
+    SetOrderRealAddressRequest,
     SortingCenterUpload,
+    StockInfoRequest,
     StockInfoResult,
     StockUpdateEntry,
+    StockUpdateRequest,
     StockUpdateResult,
     TaggedSortingCenter,
+    TaggedSortingCentersRequest,
     TerminalUpload,
+    TrackingAvitoEventType,
+    TrackingAvitoStatus,
+    UpdateTermsRequest,
+)
+from avito.orders.operations import (
+    ACCEPT_RETURN_ORDER,
+    APPLY_TRANSITION,
+    CHECK_CONFIRMATION_CODE,
+    CREATE_LABELS,
+    CREATE_LABELS_EXTENDED,
+    DELIVERY_CANCEL_ANNOUNCEMENT,
+    DELIVERY_CHANGE_PARCEL_RESULT,
+    DELIVERY_CREATE_ANNOUNCEMENT,
+    DELIVERY_CREATE_PARCEL,
+    DELIVERY_UPDATE_CHANGE_PARCELS,
+    DOWNLOAD_LABEL,
+    GET_COURIER_DELIVERY_RANGE,
+    GET_DELIVERY_TASK,
+    GET_STOCK_INFO,
+    LIST_ORDERS,
+    SANDBOX_ADD_AREAS,
+    SANDBOX_ADD_SORTING_CENTER,
+    SANDBOX_ADD_TAGS_TO_SORTING_CENTER,
+    SANDBOX_ADD_TARIFF,
+    SANDBOX_ADD_TERMINALS,
+    SANDBOX_CANCEL_PARCEL,
+    SANDBOX_CANCEL_SANDBOX_ANNOUNCEMENT,
+    SANDBOX_CANCEL_SANDBOX_PARCEL,
+    SANDBOX_CHANGE_SANDBOX_PARCEL,
+    SANDBOX_CHECK_CONFIRMATION_CODE,
+    SANDBOX_CREATE_ANNOUNCEMENT,
+    SANDBOX_CREATE_PARCEL,
+    SANDBOX_CREATE_SANDBOX_ANNOUNCEMENT,
+    SANDBOX_GET_ANNOUNCEMENT_EVENT,
+    SANDBOX_GET_CHANGE_PARCEL_INFO,
+    SANDBOX_GET_PARCEL_INFO,
+    SANDBOX_GET_REGISTERED_PARCEL_ID,
+    SANDBOX_LIST_SORTING_CENTER,
+    SANDBOX_PROHIBIT_ORDER_ACCEPTANCE,
+    SANDBOX_SET_ORDER_PROPERTIES,
+    SANDBOX_SET_ORDER_REAL_ADDRESS,
+    SANDBOX_TRACK_ANNOUNCEMENT,
+    SANDBOX_TRACKING,
+    SANDBOX_UPDATE_CUSTOM_AREA_SCHEDULE,
+    SANDBOX_UPDATE_TERMS,
+    SET_CNC_DETAILS,
+    SET_COURIER_DELIVERY_RANGE,
+    SET_TRACKING_NUMBER,
+    UPDATE_MARKINGS,
+    UPDATE_STOCKS,
 )
 
 
@@ -65,15 +146,26 @@ class Order(DomainObject):
         spec="Управлениезаказами.json",
         operation_id="getOrders",
     )
-    def list(self) -> OrdersResult:
-        """Выполняет публичную операцию `Order.list` и возвращает типизированную SDK-модель.
+    def list(
+        self, *, timeout: ApiTimeouts | None = None, retry: RetryOverride | None = None
+    ) -> OrdersResult:
+        """Возвращает список заказов.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `OrdersResult` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return OrdersClient(self.transport).list_orders()
+        return self._execute(LIST_ORDERS, timeout=timeout, retry=retry)
 
     @swagger_operation(
         "POST",
@@ -83,21 +175,40 @@ class Order(DomainObject):
         method_args={"order_id": "body.markings", "codes": "body.markings"},
     )
     def update_markings(
-        self, *, order_id: str, codes: Sequence[str], idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        codes: Sequence[str],
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> OrderActionResult:
-        """Выполняет публичную операцию `Order.update_markings` и возвращает типизированную SDK-модель.
+        """Обновляет коды маркировки заказа.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            codes: передает коды маркировки заказа.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `OrderActionResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return OrdersClient(self.transport).update_markings(
-            order_id=order_id,
-            codes=list(codes),
+        return self._execute(
+            UPDATE_MARKINGS,
+            request=OrderMarkingsRequest(order_id=order_id, codes=list(codes)),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -108,21 +219,43 @@ class Order(DomainObject):
         method_args={"order_id": "body.order_id", "postal_office_id": "body.terminal_number"},
     )
     def accept_return_order(
-        self, *, order_id: str, postal_office_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        postal_office_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> OrderActionResult:
-        """Выполняет публичную операцию `Order.accept_return_order` и возвращает типизированную SDK-модель.
+        """Подтверждает return order для заказов.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            postal_office_id: идентифицирует почтовое отделение для возврата.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `OrderActionResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return OrdersClient(self.transport).accept_return_order(
-            order_id=order_id,
-            postal_office_id=postal_office_id,
+        return self._execute(
+            ACCEPT_RETURN_ORDER,
+            request=OrderAcceptReturnRequest(
+                order_id=order_id,
+                postal_office_id=postal_office_id,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -133,21 +266,40 @@ class Order(DomainObject):
         method_args={"order_id": "body.order_id", "transition": "body.transition"},
     )
     def apply(
-        self, *, order_id: str, transition: str, idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        transition: OrderTransition | str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> OrderActionResult:
-        """Выполняет публичную операцию `Order.apply` и возвращает типизированную SDK-модель.
+        """Применяет действие к заказов.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            transition: задает переход статуса заказа.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `OrderActionResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return OrdersClient(self.transport).apply_transition(
-            order_id=order_id,
-            transition=transition,
+        return self._execute(
+            APPLY_TRANSITION,
+            request=OrderApplyTransitionRequest(order_id=order_id, transition=transition),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -158,21 +310,40 @@ class Order(DomainObject):
         method_args={"order_id": "body.parcel_id", "code": "body.confirm_code"},
     )
     def check_confirmation_code(
-        self, *, order_id: str, code: str, idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        code: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> OrderActionResult:
-        """Выполняет публичную операцию `Order.check_confirmation_code` и возвращает типизированную SDK-модель.
+        """Проверяет confirmation code для заказов.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            code: передает код подтверждения.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `OrderActionResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return OrdersClient(self.transport).check_confirmation_code(
-            order_id=order_id,
-            code=code,
+        return self._execute(
+            CHECK_CONFIRMATION_CODE,
+            request=OrderConfirmationCodeRequest(order_id=order_id, code=code),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -183,21 +354,40 @@ class Order(DomainObject):
         method_args={"order_id": "body.id", "pickup_point_id": "body.marketplace_id"},
     )
     def set_cnc_details(
-        self, *, order_id: str, pickup_point_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        pickup_point_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> OrderActionResult:
-        """Выполняет публичную операцию `Order.set_cnc_details` и возвращает типизированную SDK-модель.
+        """Устанавливает параметры click-and-collect для заказа.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            pickup_point_id: идентифицирует пункт выдачи click-and-collect.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `OrderActionResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return OrdersClient(self.transport).set_cnc_details(
-            order_id=order_id,
-            pickup_point_id=pickup_point_id,
+        return self._execute(
+            SET_CNC_DETAILS,
+            request=OrderCncDetailsRequest(order_id=order_id, pickup_point_id=pickup_point_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -206,15 +396,31 @@ class Order(DomainObject):
         spec="Управлениезаказами.json",
         operation_id="getCourierDeliveryRange",
     )
-    def get_courier_delivery_range(self) -> CourierRangesResult:
-        """Выполняет публичную операцию `Order.get_courier_delivery_range` и возвращает типизированную SDK-модель.
+    def get_courier_delivery_range(
+        self, *, timeout: ApiTimeouts | None = None, retry: RetryOverride | None = None
+    ) -> CourierRangesResult:
+        """Возвращает courier delivery range для заказов.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `CourierRangesResult` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return OrdersClient(self.transport).get_courier_delivery_range()
+        return self._execute(
+            GET_COURIER_DELIVERY_RANGE,
+            query={"orderId": "order-1"},
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "POST",
@@ -224,21 +430,40 @@ class Order(DomainObject):
         method_args={"order_id": "body.order_id", "interval_id": "body.interval_type"},
     )
     def set_courier_delivery_range(
-        self, *, order_id: str, interval_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        interval_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> OrderActionResult:
-        """Выполняет публичную операцию `Order.set_courier_delivery_range` и возвращает типизированную SDK-модель.
+        """Устанавливает интервал курьерской доставки заказа.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            interval_id: идентифицирует интервал курьерской доставки.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `OrderActionResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return OrdersClient(self.transport).set_courier_delivery_range(
-            order_id=order_id,
-            interval_id=interval_id,
+        return self._execute(
+            SET_COURIER_DELIVERY_RANGE,
+            request=OrderCourierRangeRequest(order_id=order_id, interval_id=interval_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -249,21 +474,43 @@ class Order(DomainObject):
         method_args={"order_id": "body.order_id", "tracking_number": "body.tracking_number"},
     )
     def update_tracking_number(
-        self, *, order_id: str, tracking_number: str, idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        tracking_number: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> OrderActionResult:
-        """Выполняет публичную операцию `Order.update_tracking_number` и возвращает типизированную SDK-модель.
+        """Обновляет трек-номер заказа.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            tracking_number: передает трек-номер отправления.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `OrderActionResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return OrdersClient(self.transport).set_tracking_number(
-            order_id=order_id,
-            tracking_number=tracking_number,
+        return self._execute(
+            SET_TRACKING_NUMBER,
+            request=OrderTrackingNumberRequest(
+                order_id=order_id,
+                tracking_number=tracking_number,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
 
@@ -291,22 +538,37 @@ class OrderLabel(DomainObject):
         order_ids: Sequence[str],
         extended: bool = False,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> LabelTaskResult:
-        """Выполняет публичную операцию `OrderLabel.create` и возвращает типизированную SDK-модель.
+        """Создает задачу генерации ярлыков заказов.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_ids: передает идентификаторы заказов.
+            extended: запрашивает расширенный вариант результата, если поддерживается API.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `LabelTaskResult` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        client = LabelsClient(self.transport)
         if extended:
             return self.create_extended(order_ids=order_ids, idempotency_key=idempotency_key)
-        return client.create_generate_labels(
-            order_ids=list(order_ids),
+        return self._execute(
+            CREATE_LABELS,
+            request=OrderLabelsRequest(order_ids=list(order_ids)),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -321,17 +583,34 @@ class OrderLabel(DomainObject):
         *,
         order_ids: Sequence[str],
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> LabelTaskResult:
         """Запускает генерацию расширенных этикеток и возвращает типизированную SDK-модель.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_ids: передает идентификаторы заказов для генерации этикеток.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `LabelTaskResult` с идентификатором задачи генерации расширенных этикеток.
+
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return LabelsClient(self.transport).create_generate_labels_extended(
-            order_ids=list(order_ids),
+        return self._execute(
+            CREATE_LABELS_EXTENDED,
+            request=OrderLabelsRequest(order_ids=list(order_ids)),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -340,16 +619,38 @@ class OrderLabel(DomainObject):
         spec="Управлениезаказами.json",
         operation_id="downloadLabel",
     )
-    def download(self, *, task_id: str | None = None) -> LabelPdfResult:
-        """Выполняет публичную операцию `OrderLabel.download` и возвращает типизированную SDK-модель.
+    def download(
+        self,
+        *,
+        task_id: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> LabelPdfResult:
+        """Скачивает PDF с ярлыками заказов.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            task_id: идентифицирует асинхронную задачу.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `LabelPdfResult` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         resolved_task_id = task_id or self._require_task_id()
-        return LabelsClient(self.transport).get_download_label(task_id=resolved_task_id)
+        binary = self._execute(
+            DOWNLOAD_LABEL,
+            path_params={"taskID": resolved_task_id},
+            timeout=timeout,
+            retry=retry,
+        )
+        return LabelPdfResult(binary=binary)
 
     def _require_task_id(self) -> str:
         if self.task_id is None:
@@ -374,20 +675,38 @@ class DeliveryOrder(DomainObject):
         method_args={"order_id": "body.announcement_id"},
     )
     def create_announcement(
-        self, *, order_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `DeliveryOrder.create_announcement` и возвращает типизированную SDK-модель.
+        """Создает объявление доставки для заказа.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return DeliveryClient(self.transport).create_announcement(
-            order_id=order_id,
+        return self._execute(
+            DELIVERY_CREATE_ANNOUNCEMENT,
+            request=DeliveryAnnouncementRequest(order_id=order_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -397,19 +716,39 @@ class DeliveryOrder(DomainObject):
         operation_id="CancelAnnouncement3PL",
         method_args={"order_id": "body.announcement_id"},
     )
-    def delete(self, *, order_id: str, idempotency_key: str | None = None) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `DeliveryOrder.delete` и возвращает типизированную SDK-модель.
+    def delete(
+        self,
+        *,
+        order_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> DeliveryEntityResult:
+        """Удаляет сущность доставки заказа.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return DeliveryClient(self.transport).cancel_announcement(
-            order_id=order_id,
+        return self._execute(
+            DELIVERY_CANCEL_ANNOUNCEMENT,
+            request=DeliveryCancelAnnouncementRequest(order_id=order_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -425,20 +764,35 @@ class DeliveryOrder(DomainObject):
         order_id: str,
         parcel_id: str,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `DeliveryOrder.create` и возвращает типизированную SDK-модель.
+        """Создает сущность доставки заказа.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            parcel_id: идентифицирует отправление.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return DeliveryClient(self.transport).create_parcel(
-            order_id=order_id,
-            parcel_id=parcel_id,
+        return self._execute(
+            DELIVERY_CREATE_PARCEL,
+            request=DeliveryParcelRequest(order_id=order_id, parcel_id=parcel_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -449,20 +803,38 @@ class DeliveryOrder(DomainObject):
         method_args={"parcel_ids": "body.applications"},
     )
     def update_change_parcels(
-        self, *, parcel_ids: Sequence[str], idempotency_key: str | None = None
+        self,
+        *,
+        parcel_ids: Sequence[str],
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `DeliveryOrder.update_change_parcels` и возвращает типизированную SDK-модель.
+        """Обновляет отправления для изменения доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            parcel_ids: передает идентификаторы отправлений.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return DeliveryClient(self.transport).update_change_parcels(
-            parcel_ids=list(parcel_ids),
+        return self._execute(
+            DELIVERY_UPDATE_CHANGE_PARCELS,
+            request=DeliveryParcelIdsRequest(parcel_ids=list(parcel_ids)),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -473,21 +845,40 @@ class DeliveryOrder(DomainObject):
         method_args={"parcel_id": "body.id", "result": "body.status"},
     )
     def create_change_parcel_result(
-        self, *, parcel_id: str, result: str, idempotency_key: str | None = None
+        self,
+        *,
+        parcel_id: str,
+        result: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `DeliveryOrder.create_change_parcel_result` и возвращает типизированную SDK-модель.
+        """Создает результат изменения отправления доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            parcel_id: идентифицирует отправление.
+            result: передает результат обработки изменения отправления.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return DeliveryClient(self.transport).change_parcel_result(
-            parcel_id=parcel_id,
-            result=result,
+        return self._execute(
+            DELIVERY_CHANGE_PARCEL_RESULT,
+            request=DeliveryParcelResultRequest(parcel_id=parcel_id, result=result),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
 
@@ -508,20 +899,38 @@ class SandboxDelivery(DomainObject):
         method_args={"order_id": "body.announcement_id"},
     )
     def create_announcement(
-        self, *, order_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.create_announcement` и возвращает типизированную SDK-модель.
+        """Создает announcement для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).create_announcement(
-            order_id=order_id,
+        return self._execute(
+            SANDBOX_CREATE_ANNOUNCEMENT,
+            request=DeliverySandboxAnnouncementRequest(order_id=order_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -532,20 +941,38 @@ class SandboxDelivery(DomainObject):
         method_args={"order_id": "body.announcement_id"},
     )
     def track_announcement(
-        self, *, order_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.track_announcement` и возвращает типизированную SDK-модель.
+        """Передает tracking-событие для announcement для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).track_announcement(
-            order_id=order_id,
+        return self._execute(
+            SANDBOX_TRACK_ANNOUNCEMENT,
+            request=DeliveryAnnouncementTrackRequest(order_id=order_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -556,20 +983,38 @@ class SandboxDelivery(DomainObject):
         method_args={"items": "body"},
     )
     def update_custom_area_schedule(
-        self, *, items: Sequence[CustomAreaScheduleEntry], idempotency_key: str | None = None
+        self,
+        *,
+        items: Sequence[CustomAreaScheduleEntry],
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.update_custom_area_schedule` и возвращает типизированную SDK-модель.
+        """Обновляет custom area schedule для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            items: передает элементы пакетного запроса.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).update_custom_area_schedule(
-            items=list(items),
+        return self._execute(
+            SANDBOX_UPDATE_CUSTOM_AREA_SCHEDULE,
+            request=CustomAreaScheduleRequest(items=list(items)),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -580,21 +1025,40 @@ class SandboxDelivery(DomainObject):
         method_args={"parcel_id": "body.parcel_id", "actor": "body.actor"},
     )
     def cancel_parcel(
-        self, *, parcel_id: str, actor: str, idempotency_key: str | None = None
+        self,
+        *,
+        parcel_id: str,
+        actor: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.cancel_parcel` и возвращает типизированную SDK-модель.
+        """Отменяет parcel для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            parcel_id: идентифицирует отправление.
+            actor: задает участника, от имени которого выполняется отмена.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).cancel_parcel(
-            parcel_id=parcel_id,
-            actor=actor,
+        return self._execute(
+            SANDBOX_CANCEL_PARCEL,
+            request=CancelParcelRequest(parcel_id=parcel_id, actor=actor),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -605,21 +1069,43 @@ class SandboxDelivery(DomainObject):
         method_args={"parcel_id": "body.parcel_id", "confirm_code": "body.confirm_code"},
     )
     def check_confirmation_code(
-        self, *, parcel_id: str, confirm_code: str, idempotency_key: str | None = None
+        self,
+        *,
+        parcel_id: str,
+        confirm_code: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.check_confirmation_code` и возвращает типизированную SDK-модель.
+        """Проверяет confirmation code для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            parcel_id: идентифицирует отправление.
+            confirm_code: передает код подтверждения sandbox-доставки.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).check_confirmation_code(
-            parcel_id=parcel_id,
-            confirm_code=confirm_code,
+        return self._execute(
+            SANDBOX_CHECK_CONFIRMATION_CODE,
+            request=SandboxConfirmationCodeRequest(
+                parcel_id=parcel_id,
+                confirm_code=confirm_code,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -635,20 +1121,35 @@ class SandboxDelivery(DomainObject):
         order_id: str,
         properties: OrderDeliveryProperties,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.set_order_properties` и возвращает типизированную SDK-модель.
+        """Устанавливает order properties для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            properties: передает свойства заказа доставки.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).set_order_properties(
-            order_id=order_id,
-            properties=properties,
+        return self._execute(
+            SANDBOX_SET_ORDER_PROPERTIES,
+            request=SetOrderPropertiesRequest(order_id=order_id, properties=properties),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -659,21 +1160,40 @@ class SandboxDelivery(DomainObject):
         method_args={"order_id": "body.order_id", "address": "body.address"},
     )
     def set_order_real_address(
-        self, *, order_id: str, address: RealAddress, idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        address: RealAddress,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.set_order_real_address` и возвращает типизированную SDK-модель.
+        """Устанавливает order real address для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            address: передает фактический адрес заказа.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).set_order_real_address(
-            order_id=order_id,
-            address=address,
+        return self._execute(
+            SANDBOX_SET_ORDER_REAL_ADDRESS,
+            request=SetOrderRealAddressRequest(order_id=order_id, address=address),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -697,31 +1217,55 @@ class SandboxDelivery(DomainObject):
         avito_status: TrackingAvitoStatus | str,
         avito_event_type: TrackingAvitoEventType | str,
         provider_event_code: str,
-        date: str,
+        date: DateInput,
         location: str,
         comment: str | None = None,
         options: DeliveryTrackingOptions | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.tracking` и возвращает типизированную SDK-модель.
+        """Выполняет действие `tracking` для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            avito_status: передает статус события Авито.
+            avito_event_type: передает тип события Авито.
+            provider_event_code: передает код события провайдера.
+            date: задает дату события.
+            location: передает местоположение события.
+            comment: передает комментарий к операции.
+            options: передает дополнительные параметры операции.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).tracking(
-            order_id=order_id,
-            avito_status=avito_status,
-            avito_event_type=avito_event_type,
-            provider_event_code=provider_event_code,
-            date=date,
-            location=location,
-            comment=comment,
-            options=options,
+        return self._execute(
+            SANDBOX_TRACKING,
+            request=DeliveryTrackingRequest(
+                order_id=order_id,
+                avito_status=avito_status,
+                avito_event_type=avito_event_type,
+                provider_event_code=provider_event_code,
+                date=serialize_iso_datetime("date", date),
+                location=location,
+                comment=comment,
+                options=options,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -732,20 +1276,38 @@ class SandboxDelivery(DomainObject):
         method_args={"order_id": "body.order_id"},
     )
     def prohibit_order_acceptance(
-        self, *, order_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.prohibit_order_acceptance` и возвращает типизированную SDK-модель.
+        """Запрещает прием order acceptance для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).prohibit_order_acceptance(
-            order_id=order_id,
+        return self._execute(
+            SANDBOX_PROHIBIT_ORDER_ACCEPTANCE,
+            request=ProhibitOrderAcceptanceRequest(order_id=order_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -754,15 +1316,31 @@ class SandboxDelivery(DomainObject):
         spec="Доставка.json",
         operation_id="GetSortingCenter",
     )
-    def list_sorting_center(self) -> DeliverySortingCentersResult:
-        """Выполняет публичную операцию `SandboxDelivery.list_sorting_center` и возвращает типизированную SDK-модель.
+    def list_sorting_center(
+        self, *, timeout: ApiTimeouts | None = None, retry: RetryOverride | None = None
+    ) -> DeliverySortingCentersResult:
+        """Возвращает список sorting center для sandbox-доставки.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `DeliverySortingCentersResult` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).list_sorting_center()
+        return self._execute(
+            SANDBOX_LIST_SORTING_CENTER,
+            query={"deliveryProviders": "pochta"},
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "POST",
@@ -772,20 +1350,38 @@ class SandboxDelivery(DomainObject):
         method_args={"items": "body"},
     )
     def add_sorting_center(
-        self, *, items: Sequence[SortingCenterUpload], idempotency_key: str | None = None
+        self,
+        *,
+        items: Sequence[SortingCenterUpload],
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.add_sorting_center` и возвращает типизированную SDK-модель.
+        """Добавляет sorting center для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            items: передает элементы пакетного запроса.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).add_sorting_center(
-            items=list(items),
+        return self._execute(
+            SANDBOX_ADD_SORTING_CENTER,
+            request=AddSortingCentersRequest(items=list(items)),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -801,20 +1397,36 @@ class SandboxDelivery(DomainObject):
         tariff_id: str,
         areas: Sequence[SandboxArea],
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.add_areas` и возвращает типизированную SDK-модель.
+        """Добавляет areas для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            tariff_id: идентифицирует тариф доставки.
+            areas: передает зоны доставки.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).add_areas(
-            tariff_id=tariff_id,
-            areas=list(areas),
+        return self._execute(
+            SANDBOX_ADD_AREAS,
+            path_params={"tariff_id": tariff_id},
+            request=SandboxAreasRequest(areas=list(areas)),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -830,20 +1442,36 @@ class SandboxDelivery(DomainObject):
         tariff_id: str,
         items: Sequence[TaggedSortingCenter],
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.add_tags_to_sorting_center` и возвращает типизированную SDK-модель.
+        """Добавляет tags to sorting center для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            tariff_id: идентифицирует тариф доставки.
+            items: передает элементы пакетного запроса.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).add_tags_to_sorting_center(
-            tariff_id=tariff_id,
-            items=list(items),
+        return self._execute(
+            SANDBOX_ADD_TAGS_TO_SORTING_CENTER,
+            path_params={"tariff_id": tariff_id},
+            request=TaggedSortingCentersRequest(items=list(items)),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -859,20 +1487,36 @@ class SandboxDelivery(DomainObject):
         tariff_id: str,
         items: Sequence[TerminalUpload],
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.add_terminals` и возвращает типизированную SDK-модель.
+        """Добавляет terminals для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            tariff_id: идентифицирует тариф доставки.
+            items: передает элементы пакетного запроса.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).add_terminals(
-            tariff_id=tariff_id,
-            items=list(items),
+        return self._execute(
+            SANDBOX_ADD_TERMINALS,
+            path_params={"tariff_id": tariff_id},
+            request=AddTerminalsRequest(items=list(items)),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -888,20 +1532,36 @@ class SandboxDelivery(DomainObject):
         tariff_id: str,
         items: Sequence[DeliveryTermsZone],
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.update_terms` и возвращает типизированную SDK-модель.
+        """Обновляет terms для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            tariff_id: идентифицирует тариф доставки.
+            items: передает элементы пакетного запроса.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).update_terms(
-            tariff_id=tariff_id,
-            items=list(items),
+        return self._execute(
+            SANDBOX_UPDATE_TERMS,
+            path_params={"tariff_id": tariff_id},
+            request=UpdateTermsRequest(items=list(items)),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -927,24 +1587,46 @@ class SandboxDelivery(DomainObject):
         terms_zones: Sequence[DeliveryTermsZone],
         tariff_type: str | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.add_tariff` и возвращает типизированную SDK-модель.
+        """Добавляет tariff для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            name: передает название сущности.
+            delivery_provider_tariff_id: идентифицирует тариф провайдера доставки.
+            directions: передает направления доставки.
+            tariff_zones: передает тарифные зоны.
+            terms_zones: передает зоны условий доставки.
+            tariff_type: задает тип тарифа.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).add_tariff(
-            name=name,
-            delivery_provider_tariff_id=delivery_provider_tariff_id,
-            directions=list(directions),
-            tariff_zones=list(tariff_zones),
-            terms_zones=list(terms_zones),
-            tariff_type=tariff_type,
+        return self._execute(
+            SANDBOX_ADD_TARIFF,
+            request=AddTariffV2Request(
+                name=name,
+                delivery_provider_tariff_id=delivery_provider_tariff_id,
+                directions=list(directions),
+                tariff_zones=list(tariff_zones),
+                terms_zones=list(terms_zones),
+                tariff_type=tariff_type,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -960,20 +1642,35 @@ class SandboxDelivery(DomainObject):
         order_id: str,
         parcel_id: str,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.create_parcel` и возвращает типизированную SDK-модель.
+        """Создает parcel для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            parcel_id: идентифицирует отправление.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).create_parcel(
-            order_id=order_id,
-            parcel_id=parcel_id,
+        return self._execute(
+            SANDBOX_CREATE_PARCEL,
+            request=SandboxParcelRequest(order_id=order_id, parcel_id=parcel_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -991,24 +1688,43 @@ class SandboxDelivery(DomainObject):
         self,
         *,
         announcement_id: str,
-        date: str,
+        date: DateInput,
         options: SandboxCancelAnnouncementOptions,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.cancel_sandbox_announcement` и возвращает типизированную SDK-модель.
+        """Отменяет sandbox announcement для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            announcement_id: идентифицирует sandbox-объявление доставки.
+            date: задает дату события.
+            options: передает дополнительные параметры операции.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).cancel_sandbox_announcement(
-            announcement_id=announcement_id,
-            date=date,
-            options=options,
+        return self._execute(
+            SANDBOX_CANCEL_SANDBOX_ANNOUNCEMENT,
+            request=SandboxCancelAnnouncementRequest(
+                announcement_id=announcement_id,
+                date=serialize_iso_datetime("date", date),
+                options=options,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -1024,20 +1740,35 @@ class SandboxDelivery(DomainObject):
         parcel_id: str,
         options: CancelSandboxParcelOptions | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.cancel_sandbox_parcel` и возвращает типизированную SDK-модель.
+        """Отменяет sandbox parcel для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            parcel_id: идентифицирует отправление.
+            options: передает дополнительные параметры операции.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).cancel_sandbox_parcel(
-            parcel_id=parcel_id,
-            options=options,
+        return self._execute(
+            SANDBOX_CANCEL_SANDBOX_PARCEL,
+            request=CancelSandboxParcelRequest(parcel_id=parcel_id, options=options),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -1055,22 +1786,42 @@ class SandboxDelivery(DomainObject):
         application: ChangeParcelApplication | None = None,
         options: ChangeParcelOptions | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.change_sandbox_parcel` и возвращает типизированную SDK-модель.
+        """Изменяет sandbox parcel для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            type: передает значение `type` в upstream API.
+            parcel_id: идентифицирует отправление.
+            application: передает значение `application` в upstream API.
+            options: передает дополнительные параметры операции.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).change_sandbox_parcel(
-            type=type,
-            parcel_id=parcel_id,
-            application=application,
-            options=options,
+        return self._execute(
+            SANDBOX_CHANGE_SANDBOX_PARCEL,
+            request=ChangeParcelRequest(
+                type=type,
+                parcel_id=parcel_id,
+                application=application,
+                options=options,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -1097,30 +1848,54 @@ class SandboxDelivery(DomainObject):
         sender: SandboxAnnouncementParticipant,
         receiver: SandboxAnnouncementParticipant,
         announcement_type: str,
-        date: str,
+        date: DateInput,
         packages: Sequence[SandboxAnnouncementPackage],
         options: SandboxCreateAnnouncementOptions,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.create_sandbox_announcement` и возвращает типизированную SDK-модель.
+        """Создает sandbox announcement для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            announcement_id: идентифицирует sandbox-объявление доставки.
+            barcode: передает штрихкод отправления.
+            sender: передает данные отправителя.
+            receiver: передает данные получателя.
+            announcement_type: задает тип sandbox-объявления доставки.
+            date: задает дату события.
+            packages: передает грузовые места отправления.
+            options: передает дополнительные параметры операции.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).create_sandbox_announcement(
-            announcement_id=announcement_id,
-            barcode=barcode,
-            sender=sender,
-            receiver=receiver,
-            announcement_type=announcement_type,
-            date=date,
-            packages=list(packages),
-            options=options,
+        return self._execute(
+            SANDBOX_CREATE_SANDBOX_ANNOUNCEMENT,
+            request=SandboxCreateAnnouncementRequest(
+                announcement_id=announcement_id,
+                barcode=barcode,
+                sender=sender,
+                receiver=receiver,
+                announcement_type=announcement_type,
+                date=serialize_iso_datetime("date", date),
+                packages=list(packages),
+                options=options,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -1131,20 +1906,38 @@ class SandboxDelivery(DomainObject):
         method_args={"announcement_id": "body.announcement_id"},
     )
     def get_sandbox_announcement_event(
-        self, *, announcement_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        announcement_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.get_sandbox_announcement_event` и возвращает типизированную SDK-модель.
+        """Возвращает sandbox announcement event для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            announcement_id: идентифицирует sandbox-объявление доставки.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).get_sandbox_announcement_event(
-            announcement_id=announcement_id,
+        return self._execute(
+            SANDBOX_GET_ANNOUNCEMENT_EVENT,
+            request=SandboxGetAnnouncementEventRequest(announcement_id=announcement_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -1155,20 +1948,38 @@ class SandboxDelivery(DomainObject):
         method_args={"application_id": "body.application_id"},
     )
     def get_sandbox_change_parcel_info(
-        self, *, application_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        application_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.get_sandbox_change_parcel_info` и возвращает типизированную SDK-модель.
+        """Возвращает sandbox change parcel info для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            application_id: идентифицирует заявку на изменение отправления.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).get_sandbox_change_parcel_info(
-            application_id=application_id,
+        return self._execute(
+            SANDBOX_GET_CHANGE_PARCEL_INFO,
+            request=GetChangeParcelInfoRequest(application_id=application_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -1179,20 +1990,38 @@ class SandboxDelivery(DomainObject):
         method_args={"parcel_id": "body.parcel_id"},
     )
     def get_sandbox_parcel_info(
-        self, *, parcel_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        parcel_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.get_sandbox_parcel_info` и возвращает типизированную SDK-модель.
+        """Возвращает sandbox parcel info для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            parcel_id: идентифицирует отправление.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).get_sandbox_parcel_info(
-            parcel_id=parcel_id,
+        return self._execute(
+            SANDBOX_GET_PARCEL_INFO,
+            request=GetSandboxParcelInfoRequest(parcel_id=parcel_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -1203,20 +2032,38 @@ class SandboxDelivery(DomainObject):
         method_args={"order_id": "body.order_id"},
     )
     def get_sandbox_registered_parcel_id(
-        self, *, order_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        order_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> DeliveryEntityResult:
-        """Выполняет публичную операцию `SandboxDelivery.get_sandbox_registered_parcel_id` и возвращает типизированную SDK-модель.
+        """Возвращает sandbox registered parcel id для sandbox-доставки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_id: идентифицирует заказ.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `DeliveryEntityResult` со статусом выполнения операции.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SandboxDeliveryClient(self.transport).get_sandbox_registered_parcel_id(
-            order_id=order_id,
+        return self._execute(
+            SANDBOX_GET_REGISTERED_PARCEL_ID,
+            request=GetRegisteredParcelIdRequest(order_id=order_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
 
@@ -1237,16 +2084,37 @@ class DeliveryTask(DomainObject):
         spec="Доставка.json",
         operation_id="GetTask",
     )
-    def get(self, *, task_id: str | None = None) -> DeliveryTaskInfo:
-        """Выполняет публичную операцию `DeliveryTask.get` и возвращает типизированную SDK-модель.
+    def get(
+        self,
+        *,
+        task_id: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> DeliveryTaskInfo:
+        """Возвращает задач доставки.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            task_id: идентифицирует асинхронную задачу.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `DeliveryTaskInfo` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         resolved_task_id = task_id or self._require_task_id()
-        return DeliveryTasksClient(self.transport).get_task(task_id=resolved_task_id)
+        return self._execute(
+            GET_DELIVERY_TASK,
+            path_params={"task_id": resolved_task_id},
+            timeout=timeout,
+            retry=retry,
+        )
 
     def _require_task_id(self) -> str:
         if self.task_id is None:
@@ -1269,15 +2137,40 @@ class Stock(DomainObject):
         spec="Управлениеостатками.json",
         method_args={"item_ids": "body.item_ids"},
     )
-    def get(self, *, item_ids: Sequence[int]) -> StockInfoResult:
-        """Выполняет публичную операцию `Stock.get` и возвращает типизированную SDK-модель.
+    def get(
+        self,
+        *,
+        item_ids: Sequence[int],
+        strong_consistency: bool | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> StockInfoResult:
+        """Возвращает остатков товаров.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            item_ids: передает идентификаторы объявлений или товаров.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `StockInfoResult` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return StockManagementClient(self.transport).get_info(item_ids=list(item_ids))
+        return self._execute(
+            GET_STOCK_INFO,
+            request=StockInfoRequest(
+                item_ids=list(item_ids),
+                strong_consistency=strong_consistency,
+            ),
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "PUT",
@@ -1290,19 +2183,34 @@ class Stock(DomainObject):
         *,
         stocks: Sequence[StockUpdateEntry],
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> StockUpdateResult:
-        """Выполняет публичную операцию `Stock.update` и возвращает типизированную SDK-модель.
+        """Обновляет остатки товаров.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            stocks: передает остатки товаров для обновления.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `StockUpdateResult` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return StockManagementClient(self.transport).update_stocks(
-            stocks=list(stocks),
+        return self._execute(
+            UPDATE_STOCKS,
+            request=StockUpdateRequest(stocks=list(stocks)),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
 

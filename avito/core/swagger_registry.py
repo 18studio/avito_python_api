@@ -5,16 +5,16 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
+
+from avito.core.swagger_names import swagger_field_aliases
 
 HTTP_METHODS = frozenset({"delete", "get", "head", "options", "patch", "post", "put", "trace"})
 DEFAULT_SWAGGER_API_DIR = Path("docs/avito/api")
 
 _PATH_PARAMETER_RE = re.compile(r"{([A-Za-z_][A-Za-z0-9_]*)}")
-_FIRST_CAP_RE = re.compile("(.)([A-Z][a-z]+)")
-_ALL_CAP_RE = re.compile("([a-z0-9])([A-Z])")
 
 JsonObject = dict[str, object]
 
@@ -49,6 +49,7 @@ class SwaggerRequestBody:
     content_types: tuple[str, ...]
     field_names: tuple[str, ...]
     schema_extracted: bool
+    schema: SwaggerSchema | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +58,7 @@ class SwaggerResponse:
 
     status_code: str
     content_types: tuple[str, ...]
+    schema: SwaggerSchema | None = None
 
     @property
     def is_success(self) -> bool:
@@ -67,6 +69,27 @@ class SwaggerResponse:
         return self.status_code == "default" or (
             self.status_code.isdigit() and int(self.status_code) >= 400
         )
+
+
+@dataclass(frozen=True, slots=True)
+class SwaggerSchema:
+    """Normalized JSON schema subset used by strict SDK contract tests."""
+
+    kind: str
+    properties: Mapping[str, SwaggerSchema] = field(default_factory=dict)
+    required: tuple[str, ...] = ()
+    items: SwaggerSchema | None = None
+    variants: tuple[SwaggerSchema, ...] = ()
+    nullable: bool = False
+    enum: tuple[object, ...] = ()
+
+    @property
+    def is_object(self) -> bool:
+        return self.kind == "object"
+
+    @property
+    def is_array(self) -> bool:
+        return self.kind == "array"
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,7 +164,7 @@ def load_swagger_registry(
 
     spec_paths = tuple(sorted(api_dir.glob("*.json")))
     if not spec_paths:
-        raise SwaggerRegistryError(f"В каталоге {api_dir} не найдены Swagger JSON files.")
+        raise SwaggerRegistryError(f"В каталоге {api_dir} не найдены JSON-файлы Swagger.")
 
     errors: list[SwaggerValidationError] = []
     specs = tuple(_load_spec(path, errors) for path in spec_paths)
@@ -194,7 +217,9 @@ def _load_spec(path: Path, errors: list[SwaggerValidationError]) -> SwaggerSpec:
         path_item = _require_mapping(raw_path_item, f"{path}: path item {raw_path}")
         path_parameters = _extract_parameters(
             spec=spec,
-            parameters=_optional_sequence(path_item.get("parameters"), f"{path}: {raw_path}.parameters"),
+            parameters=_optional_sequence(
+                path_item.get("parameters"), f"{path}: {raw_path}.parameters"
+            ),
             source=f"{path}: {raw_path}.parameters",
         )
         for raw_method, raw_operation in sorted(path_item.items()):
@@ -234,7 +259,7 @@ def _load_spec(path: Path, errors: list[SwaggerValidationError]) -> SwaggerSpec:
                         spec=spec,
                         raw_request_body=operation.get("requestBody"),
                     ),
-                    responses=_extract_responses(operation.get("responses")),
+                    responses=_extract_responses(operation.get("responses"), spec=spec),
                 )
             )
 
@@ -279,6 +304,7 @@ def _extract_request_body(
     field_names: set[str] = set()
     schema_extracted = True
     schema_count = 0
+    selected_schema: SwaggerSchema | None = None
     for content_type, raw_media_type in content.items():
         media_type = _require_mapping(
             raw_media_type,
@@ -289,6 +315,16 @@ def _extract_request_body(
             schema_extracted = False
             continue
         schema_count += 1
+        parsed_schema = _extract_schema(
+            spec=spec,
+            raw_schema=raw_schema,
+            source=f"requestBody.content.{content_type}.schema",
+            seen_refs=frozenset(),
+        )
+        if parsed_schema is None:
+            schema_extracted = False
+        elif selected_schema is None or str(content_type) == "application/json":
+            selected_schema = parsed_schema
         extracted = _extract_schema_field_names(
             spec=spec,
             raw_schema=raw_schema,
@@ -306,24 +342,54 @@ def _extract_request_body(
         content_types=tuple(sorted(str(content_type) for content_type in content)),
         field_names=tuple(sorted(field_names)),
         schema_extracted=schema_extracted,
+        schema=selected_schema,
     )
 
 
-def _extract_responses(raw_responses: object) -> tuple[SwaggerResponse, ...]:
+def _extract_responses(
+    raw_responses: object,
+    *,
+    spec: Mapping[str, object],
+) -> tuple[SwaggerResponse, ...]:
     responses = _require_mapping(raw_responses, "responses")
     extracted: list[SwaggerResponse] = []
     for raw_status_code, raw_response in sorted(responses.items()):
         if not isinstance(raw_status_code, str):
             raise SwaggerRegistryError("responses должен использовать строковые status codes.")
-        response = _require_mapping(raw_response, f"responses.{raw_status_code}")
+        response = _resolve_component_ref(
+            spec=spec,
+            raw_value=raw_response,
+            source=f"responses.{raw_status_code}",
+            component_name="responses",
+        )
         content = response.get("content")
         content_types: tuple[str, ...] = ()
+        selected_schema: SwaggerSchema | None = None
         if isinstance(content, Mapping):
             content_types = tuple(sorted(str(content_type) for content_type in content))
+            for content_type, raw_media_type in content.items():
+                media_type = _require_mapping(
+                    raw_media_type,
+                    f"responses.{raw_status_code}.content.{content_type}",
+                )
+                raw_schema = media_type.get("schema")
+                if raw_schema is None:
+                    continue
+                parsed_schema = _extract_schema(
+                    spec=spec,
+                    raw_schema=raw_schema,
+                    source=f"responses.{raw_status_code}.content.{content_type}.schema",
+                    seen_refs=frozenset(),
+                )
+                if parsed_schema is not None and (
+                    selected_schema is None or str(content_type) == "application/json"
+                ):
+                    selected_schema = parsed_schema
         extracted.append(
             SwaggerResponse(
                 status_code=raw_status_code,
                 content_types=content_types,
+                schema=selected_schema,
             )
         )
     return tuple(extracted)
@@ -414,7 +480,9 @@ def _validate_unique_operation_keys(
             )
 
 
-def _resolve_ref(spec: Mapping[str, object], raw_value: object, source: str) -> Mapping[str, object]:
+def _resolve_ref(
+    spec: Mapping[str, object], raw_value: object, source: str
+) -> Mapping[str, object]:
     return _resolve_component_ref(
         spec=spec,
         raw_value=raw_value,
@@ -496,6 +564,241 @@ def _extract_schema_field_names(
     return None
 
 
+def _extract_schema(
+    *,
+    spec: Mapping[str, object],
+    raw_schema: object,
+    source: str,
+    seen_refs: frozenset[str],
+) -> SwaggerSchema | None:
+    schema = _require_mapping(raw_schema, source)
+    raw_ref = schema.get("$ref")
+    if raw_ref is not None:
+        ref = _required_string(raw_ref, f"{source}.$ref")
+        if ref in seen_refs:
+            return SwaggerSchema(kind="object")
+        prefix = "#/components/schemas/"
+        if not ref.startswith(prefix):
+            return None
+        schema_name = ref.removeprefix(prefix)
+        components = _require_mapping(spec.get("components"), "components")
+        schemas = _require_mapping(components.get("schemas"), "components.schemas")
+        resolved = _require_mapping(schemas.get(schema_name), ref)
+        return _extract_schema(
+            spec=spec,
+            raw_schema=resolved,
+            source=ref,
+            seen_refs=seen_refs | frozenset({ref}),
+        )
+
+    composed_schema = _extract_composed_schema(
+        spec=spec,
+        schema=schema,
+        source=source,
+        seen_refs=seen_refs,
+    )
+    if composed_schema is not None:
+        return composed_schema
+
+    raw_type = schema.get("type")
+    nullable = schema.get("nullable") is True
+    raw_enum = schema.get("enum")
+    enum_values = tuple(raw_enum) if isinstance(raw_enum, list) else ()
+    if isinstance(raw_type, Mapping):
+        nested_type = raw_type.get("type")
+        nested_enum = raw_type.get("enum")
+        if isinstance(nested_enum, list) and not enum_values:
+            enum_values = tuple(nested_enum)
+        raw_type = nested_type if isinstance(nested_type, str | list) else None
+    if isinstance(raw_type, list):
+        non_null_types = tuple(item for item in raw_type if item != "null")
+        nullable = nullable or len(non_null_types) != len(raw_type)
+        raw_type = non_null_types[0] if len(non_null_types) == 1 else None
+    if raw_type is None and "properties" in schema:
+        raw_type = "object"
+    if raw_type is None and "items" in schema:
+        raw_type = "array"
+    if raw_type is None and enum_values:
+        raw_type = _infer_enum_type(enum_values)
+    if raw_type is None and "additionalProperties" in schema:
+        raw_type = "object"
+    if raw_type is None and ("minimum" in schema or "maximum" in schema):
+        example = schema.get("example")
+        raw_type = (
+            "integer" if isinstance(example, int) and not isinstance(example, bool) else "number"
+        )
+    if isinstance(raw_type, str) and raw_type not in {
+        "object",
+        "array",
+        "string",
+        "integer",
+        "number",
+        "boolean",
+        "null",
+    }:
+        raw_type = _infer_enum_type(enum_values)
+    if raw_type is None:
+        return None
+    if raw_type == "object":
+        properties: dict[str, SwaggerSchema] = {}
+        raw_properties = schema.get("properties")
+        if isinstance(raw_properties, Mapping):
+            for property_name, raw_property_schema in raw_properties.items():
+                property_schema = _extract_schema(
+                    spec=spec,
+                    raw_schema=raw_property_schema,
+                    source=f"{source}.properties.{property_name}",
+                    seen_refs=seen_refs,
+                )
+                if property_schema is None:
+                    return None
+                properties[str(property_name)] = property_schema
+        return SwaggerSchema(
+            kind="object",
+            properties=properties,
+            required=_known_required_field_names(schema.get("required"), properties, source),
+            nullable=nullable,
+            enum=enum_values,
+        )
+    if raw_type == "array":
+        raw_items = schema.get("items")
+        if raw_items is None:
+            item_kind = _infer_enum_type(enum_values)
+            if item_kind is None:
+                return None
+            return SwaggerSchema(
+                kind="array",
+                items=SwaggerSchema(kind=item_kind, enum=enum_values),
+                nullable=nullable,
+                enum=enum_values,
+            )
+        items = _extract_schema(
+            spec=spec,
+            raw_schema=raw_items,
+            source=f"{source}.items",
+            seen_refs=seen_refs,
+        )
+        if items is None:
+            return None
+        return SwaggerSchema(
+            kind="array",
+            items=items,
+            nullable=nullable,
+            enum=enum_values,
+        )
+    if raw_type in {"string", "integer", "number", "boolean", "null"}:
+        return SwaggerSchema(kind=str(raw_type), nullable=nullable, enum=enum_values)
+    return None
+
+
+def _extract_composed_schema(
+    *,
+    spec: Mapping[str, object],
+    schema: Mapping[str, object],
+    source: str,
+    seen_refs: frozenset[str],
+) -> SwaggerSchema | None:
+    raw_all_of = schema.get("allOf")
+    if raw_all_of is not None:
+        if not isinstance(raw_all_of, list):
+            return None
+        if len(raw_all_of) == 1:
+            single_schema = _extract_schema(
+                spec=spec,
+                raw_schema=raw_all_of[0],
+                source=f"{source}.allOf[0]",
+                seen_refs=seen_refs,
+            )
+            if single_schema is not None:
+                return SwaggerSchema(
+                    kind=single_schema.kind,
+                    properties=single_schema.properties,
+                    required=single_schema.required,
+                    items=single_schema.items,
+                    variants=single_schema.variants,
+                    nullable=single_schema.nullable or schema.get("nullable") is True,
+                    enum=single_schema.enum,
+                )
+        merged_properties: dict[str, SwaggerSchema] = {}
+        required: set[str] = set()
+        nullable = schema.get("nullable") is True
+        for index, raw_item in enumerate(raw_all_of):
+            item_schema = _extract_schema(
+                spec=spec,
+                raw_schema=raw_item,
+                source=f"{source}.allOf[{index}]",
+                seen_refs=seen_refs,
+            )
+            if item_schema is None and _is_description_only_schema(raw_item):
+                continue
+            if item_schema is None or not item_schema.is_object:
+                return None
+            merged_properties.update(item_schema.properties)
+            required.update(item_schema.required)
+            nullable = nullable or item_schema.nullable
+        required.update(_required_field_names(schema.get("required"), source))
+        return SwaggerSchema(
+            kind="object",
+            properties=merged_properties,
+            required=tuple(name for name in sorted(required) if name in merged_properties),
+            nullable=nullable,
+        )
+
+    for keyword in ("oneOf", "anyOf"):
+        raw_variants = schema.get(keyword)
+        if raw_variants is None:
+            continue
+        if not isinstance(raw_variants, list):
+            return None
+        variants: list[SwaggerSchema] = []
+        for index, raw_item in enumerate(raw_variants):
+            item_schema = _extract_schema(
+                spec=spec,
+                raw_schema=raw_item,
+                source=f"{source}.{keyword}[{index}]",
+                seen_refs=seen_refs,
+            )
+            if item_schema is None:
+                return None
+            variants.append(item_schema)
+        return SwaggerSchema(
+            kind="union",
+            variants=tuple(variants),
+            nullable=schema.get("nullable") is True,
+        )
+    return None
+
+
+def _required_field_names(value: object, source: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise SwaggerRegistryError(f"{source}.required должно быть списком.")
+    return tuple(sorted(str(item) for item in value))
+
+
+def _known_required_field_names(
+    value: object,
+    properties: Mapping[str, SwaggerSchema],
+    source: str,
+) -> tuple[str, ...]:
+    return tuple(name for name in _required_field_names(value, source) if name in properties)
+
+
+def _is_description_only_schema(value: object) -> bool:
+    return isinstance(value, Mapping) and set(value) <= {"description", "title"}
+
+
+def _infer_enum_type(values: tuple[object, ...]) -> str | None:
+    if all(isinstance(value, str) for value in values):
+        return "string"
+    if all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+        return "integer"
+    if all(isinstance(value, int | float) and not isinstance(value, bool) for value in values):
+        return "number"
+    return None
+
+
 def _extract_composed_schema_field_names(
     *,
     spec: Mapping[str, object],
@@ -524,14 +827,7 @@ def _extract_composed_schema_field_names(
 
 
 def _field_name_aliases(field_name: str) -> set[str]:
-    aliases = {field_name}
-    normalized_field_name = field_name.replace("IDs", "Ids")
-    snake_case = _ALL_CAP_RE.sub(
-        r"\1_\2",
-        _FIRST_CAP_RE.sub(r"\1_\2", normalized_field_name),
-    ).lower()
-    aliases.add(snake_case)
-    return aliases
+    return set(swagger_field_aliases(field_name))
 
 
 def _optional_sequence(value: object, source: str) -> tuple[object, ...]:
@@ -565,6 +861,8 @@ __all__ = (
     "SwaggerRegistry",
     "SwaggerRegistryError",
     "SwaggerRequestBody",
+    "SwaggerResponse",
+    "SwaggerSchema",
     "SwaggerSpec",
     "SwaggerValidationError",
     "load_swagger_registry",

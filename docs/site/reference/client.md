@@ -10,7 +10,7 @@
 - `AvitoClient(client_id=..., client_secret=...)` — короткий явный путь для OAuth credentials.
 - `AvitoClient(AvitoSettings(...))` — полный путь для расширенной конфигурации.
 - Клиент поддерживает context manager и закрывает внутренние HTTP-клиенты в `close()`.
-- После `close()` публичные операции поднимают `ConfigurationError`.
+- После `close()` публичные операции поднимают `ClientClosedError`.
 - `debug_info()` возвращает безопасный диагностический снимок без OAuth-секретов.
 
 ## Фасад

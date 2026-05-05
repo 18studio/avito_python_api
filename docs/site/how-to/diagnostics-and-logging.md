@@ -29,6 +29,9 @@ print(info.requires_auth)
 - `details` — структурированные подробности ошибки из тела ответа API;
 - `retry_after` — задержка повтора для `429`, если API вернул `Retry-After`;
 - `request_id` — идентификатор запроса из upstream-заголовков;
+- `attempt` — номер HTTP-попытки transport-слоя;
+- `method` — HTTP-метод запроса;
+- `endpoint` — путь endpoint без query payload и headers;
 - `metadata` — дополнительные поля с редактированными секретами.
 
 ```text
@@ -44,6 +47,9 @@ with AvitoClient.from_env() as avito:
         print(exc.error_code)
         print(exc.details)
         print(exc.request_id)
+        print(exc.attempt)
+        print(exc.method)
+        print(exc.endpoint)
         print(str(exc))
 ```
 
@@ -56,7 +62,7 @@ from avito.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
     RateLimitError,
-    NotFoundError,
+    UpstreamApiError,
     AvitoError,
 )
 
@@ -78,13 +84,21 @@ except AvitoError as exc:
 
 ## Безопасное логирование
 
-`debug_info()` — единственный публичный способ получить диагностику без секретов. Не логируйте `to_dict()` / `model_dump()` моделей, которые могут содержать чувствительные данные пользователя.
+`debug_info()` возвращает диагностический снимок без секретов. Не логируйте
+`to_dict()` / `model_dump()` моделей, которые могут содержать чувствительные
+данные пользователя.
+
+Transport пишет безопасные debug-события в logger `avito.transport` для каждой
+HTTP-попытки. В события входят `operation`, `endpoint`, `method`, `attempt`,
+`status`, `latency_ms` и `request_id`. Body, OAuth headers, idempotency keys и
+другие секреты не логируются.
 
 ```python
 from avito import AvitoClient
 
 import logging
 logger = logging.getLogger(__name__)
+logging.getLogger("avito.transport").setLevel(logging.DEBUG)
 
 with AvitoClient.from_env() as avito:
     info = avito.debug_info()
@@ -93,18 +107,18 @@ with AvitoClient.from_env() as avito:
 
 ## После close()
 
-После `close()` или выхода из контекстного менеджера любой SDK-вызов поднимает `ConfigurationError`. Проверяйте это в долгоживущих сервисах.
+После `close()` или выхода из контекстного менеджера любой SDK-вызов поднимает `ClientClosedError`. Проверяйте это в долгоживущих сервисах.
 
 ```python
 from avito import AvitoClient
-from avito.core.exceptions import ConfigurationError
+from avito.core.exceptions import ClientClosedError
 
 avito = AvitoClient.from_env()
 avito.close()
 
 try:
     avito.account().get_self()
-except ConfigurationError as exc:
+except ClientClosedError as exc:
     print(str(exc))
 ```
 

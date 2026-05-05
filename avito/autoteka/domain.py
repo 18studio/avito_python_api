@@ -4,17 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from avito.autoteka.client import (
-    CatalogClient,
-    LeadsClient,
-    MonitoringClient,
-    PreviewClient,
-    ReportClient,
-    ScoringClient,
-    SpecificationsClient,
-    TeaserClient,
-    ValuationClient,
-)
 from avito.autoteka.models import (
     AutotekaLeadsResult,
     AutotekaPackageInfo,
@@ -25,15 +14,62 @@ from avito.autoteka.models import (
     AutotekaSpecificationInfo,
     AutotekaTeaserInfo,
     AutotekaValuationInfo,
+    CatalogResolveRequest,
     CatalogResolveResult,
+    ExternalItemPreviewRequest,
+    ItemIdRequest,
+    LeadsRequest,
+    MonitoringBucketRequest,
     MonitoringBucketResult,
     MonitoringEventsQuery,
     MonitoringEventsResult,
+    PlateNumberRequest,
+    PreviewReportRequest,
+    RegNumberRequest,
+    TeaserCreateRequest,
     ValuationBySpecificationRequest,
+    VehicleIdRequest,
+    VinRequest,
 )
-from avito.core import ValidationError
+from avito.autoteka.operations import (
+    ADD_MONITORING_BUCKET,
+    CATALOG_RESOLVE,
+    CREATE_PREVIEW_BY_EXTERNAL_ITEM,
+    CREATE_PREVIEW_BY_ITEM_ID,
+    CREATE_PREVIEW_BY_REG_NUMBER,
+    CREATE_PREVIEW_BY_VIN,
+    CREATE_REPORT,
+    CREATE_REPORT_BY_VEHICLE_ID,
+    CREATE_SCORING_BY_VEHICLE_ID,
+    CREATE_SPECIFICATION_BY_PLATE_NUMBER,
+    CREATE_SPECIFICATION_BY_VEHICLE_ID,
+    CREATE_SYNC_REPORT_BY_REG_NUMBER,
+    CREATE_SYNC_REPORT_BY_VIN,
+    CREATE_TEASER,
+    DELETE_MONITORING_BUCKET,
+    GET_ACTIVE_PACKAGE,
+    GET_LEADS,
+    GET_MONITORING_REG_ACTIONS,
+    GET_PREVIEW,
+    GET_REPORT,
+    GET_SCORING_BY_ID,
+    GET_SPECIFICATION_BY_ID,
+    GET_TEASER,
+    GET_VALUATION_BY_SPECIFICATION,
+    LIST_REPORTS,
+    REMOVE_MONITORING_BUCKET,
+)
+from avito.core import ApiTimeouts, RetryOverride, ValidationError
 from avito.core.domain import DomainObject
 from avito.core.swagger import swagger_operation
+from avito.core.transport import Transport
+
+
+def _autoteka_headers(transport: Transport) -> dict[str, str]:
+    auth_provider = transport.auth_provider
+    if auth_provider is None:
+        return {}
+    return {"Authorization": f"Bearer {auth_provider.get_autoteka_access_token()}"}
 
 
 @dataclass(slots=True, frozen=True)
@@ -52,32 +88,83 @@ class AutotekaVehicle(DomainObject):
         "/autoteka/v1/catalogs/resolve",
         spec="Автотека.json",
         operation_id="catalogsResolve",
-        method_args={"brand_id": "body.fields_value_ids"},
+        method_args={"brand_id": "body.fieldsValueIds[].valueId"},
     )
-    def resolve_catalog(self, *, brand_id: int) -> CatalogResolveResult:
+    def resolve_catalog(
+        self,
+        *,
+        brand_id: int,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> CatalogResolveResult:
         """Актуализирует параметры автокаталога.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            brand_id: идентифицирует марку автомобиля в каталоге.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `CatalogResolveResult` с актуализированными параметрами каталога.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return CatalogClient(self.transport).resolve_catalog(brand_id=brand_id)
+        return self._execute(
+            CATALOG_RESOLVE,
+            request=CatalogResolveRequest(brand_id=brand_id),
+            headers=_autoteka_headers(self.transport),
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "POST",
         "/autoteka/v1/get-leads",
         spec="Автотека.json",
         operation_id="getLeads",
-        method_args={"limit": "body.limit"},
+        method_args={"subscription_id": "body.subscriptionId", "limit": "body.limit"},
     )
-    def get_leads(self, *, limit: int) -> AutotekaLeadsResult:
-        """Выполняет публичную операцию `AutotekaVehicle.get_leads` и возвращает типизированную SDK-модель.
+    def get_leads(
+        self,
+        *,
+        subscription_id: int,
+        limit: int,
+        last_id: int | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> AutotekaLeadsResult:
+        """Возвращает leads для автомобилей Автотеки.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            subscription_id: идентифицирует подписку Сигнала.
+            limit: ограничивает размер возвращаемой выборки.
+            last_id: задает последний прочитанный идентификатор для постраничной выдачи.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `AutotekaLeadsResult` с типизированными данными ответа API.
+
+        Поведение:
+            Параметры пагинации ограничивают объем данных без изменения модели ответа.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return LeadsClient(self.transport).get_leads(limit=limit)
+        return self._execute(
+            GET_LEADS,
+            request=LeadsRequest(subscription_id=subscription_id, limit=limit, last_id=last_id),
+            headers=_autoteka_headers(self.transport),
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "POST",
@@ -87,20 +174,39 @@ class AutotekaVehicle(DomainObject):
         method_args={"vin": "body.vin"},
     )
     def create_preview_by_vin(
-        self, *, vin: str, idempotency_key: str | None = None
+        self,
+        *,
+        vin: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaPreviewInfo:
-        """Выполняет публичную операцию `AutotekaVehicle.create_preview_by_vin` и возвращает типизированную SDK-модель.
+        """Создает preview автомобиля Автотеки по VIN.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            vin: передает VIN автомобиля.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `AutotekaPreviewInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return PreviewClient(self.transport).create_by_vin(
-            vin=vin,
+        return self._execute(
+            CREATE_PREVIEW_BY_VIN,
+            request=VinRequest(vin=vin),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -109,16 +215,36 @@ class AutotekaVehicle(DomainObject):
         spec="Автотека.json",
         operation_id="getPreview",
     )
-    def get_preview(self, *, preview_id: int | str | None = None) -> AutotekaPreviewInfo:
-        """Выполняет публичную операцию `AutotekaVehicle.get_preview` и возвращает типизированную SDK-модель.
+    def get_preview(
+        self,
+        *,
+        preview_id: int | str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> AutotekaPreviewInfo:
+        """Возвращает preview для автомобилей Автотеки.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            preview_id: идентифицирует preview Автотеки.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `AutotekaPreviewInfo` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return PreviewClient(self.transport).get_preview(
-            preview_id=preview_id or self._require_vehicle_id("preview_id")
+        return self._execute(
+            GET_PREVIEW,
+            path_params={"previewId": preview_id or self._require_vehicle_id("preview_id")},
+            headers=_autoteka_headers(self.transport),
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -126,7 +252,7 @@ class AutotekaVehicle(DomainObject):
         "/autoteka/v1/request-preview-by-external-item",
         spec="Автотека.json",
         operation_id="postPreviewByExternalItem",
-        method_args={"item_id": "body.item_id", "site": "body.site"},
+        method_args={"item_id": "body.itemId", "site": "body.site"},
     )
     def create_preview_by_external_item(
         self,
@@ -134,20 +260,36 @@ class AutotekaVehicle(DomainObject):
         item_id: str,
         site: str,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaPreviewInfo:
-        """Выполняет публичную операцию `AutotekaVehicle.create_preview_by_external_item` и возвращает типизированную SDK-модель.
+        """Создает preview автомобиля Автотеки по внешнему объявлению.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            item_id: идентифицирует объявление Авито.
+            site: задает площадку внешнего объявления.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `AutotekaPreviewInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return PreviewClient(self.transport).create_by_external_item(
-            item_id=item_id,
-            site=site,
+        return self._execute(
+            CREATE_PREVIEW_BY_EXTERNAL_ITEM,
+            request=ExternalItemPreviewRequest(item_id=item_id, site=site),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -158,20 +300,39 @@ class AutotekaVehicle(DomainObject):
         method_args={"item_id": "body.item_id"},
     )
     def create_preview_by_item_id(
-        self, *, item_id: int, idempotency_key: str | None = None
+        self,
+        *,
+        item_id: int,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaPreviewInfo:
-        """Выполняет публичную операцию `AutotekaVehicle.create_preview_by_item_id` и возвращает типизированную SDK-модель.
+        """Создает preview автомобиля Автотеки по объявлению Авито.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            item_id: идентифицирует объявление Авито.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `AutotekaPreviewInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return PreviewClient(self.transport).create_by_item_id(
-            item_id=item_id,
+        return self._execute(
+            CREATE_PREVIEW_BY_ITEM_ID,
+            request=ItemIdRequest(item_id=item_id),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -182,20 +343,39 @@ class AutotekaVehicle(DomainObject):
         method_args={"reg_number": "body.reg_number"},
     )
     def create_preview_by_reg_number(
-        self, *, reg_number: str, idempotency_key: str | None = None
+        self,
+        *,
+        reg_number: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaPreviewInfo:
-        """Выполняет публичную операцию `AutotekaVehicle.create_preview_by_reg_number` и возвращает типизированную SDK-модель.
+        """Создает preview автомобиля Автотеки по госномеру.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            reg_number: передает государственный номер автомобиля.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `AutotekaPreviewInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return PreviewClient(self.transport).create_by_reg_number(
-            reg_number=reg_number,
+        return self._execute(
+            CREATE_PREVIEW_BY_REG_NUMBER,
+            request=RegNumberRequest(reg_number=reg_number),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -206,20 +386,39 @@ class AutotekaVehicle(DomainObject):
         method_args={"plate_number": "body.plate_number"},
     )
     def create_specification_by_plate_number(
-        self, *, plate_number: str, idempotency_key: str | None = None
+        self,
+        *,
+        plate_number: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaSpecificationInfo:
-        """Выполняет публичную операцию `AutotekaVehicle.create_specification_by_plate_number` и возвращает типизированную SDK-модель.
+        """Создает спецификацию автомобиля Автотеки по номерному знаку.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            plate_number: передает номерной знак автомобиля.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `AutotekaSpecificationInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SpecificationsClient(self.transport).create_by_plate_number(
-            plate_number=plate_number,
+        return self._execute(
+            CREATE_SPECIFICATION_BY_PLATE_NUMBER,
+            request=PlateNumberRequest(plate_number=plate_number),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -230,20 +429,39 @@ class AutotekaVehicle(DomainObject):
         method_args={"vehicle_id": "body.vehicle_id"},
     )
     def create_specification_by_vehicle_id(
-        self, *, vehicle_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        vehicle_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaSpecificationInfo:
-        """Выполняет публичную операцию `AutotekaVehicle.create_specification_by_vehicle_id` и возвращает типизированную SDK-модель.
+        """Создает спецификацию автомобиля Автотеки по vehicle_id.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            vehicle_id: идентифицирует автомобиль в Автотеке.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `AutotekaSpecificationInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SpecificationsClient(self.transport).create_by_vehicle_id(
-            vehicle_id=vehicle_id,
+        return self._execute(
+            CREATE_SPECIFICATION_BY_VEHICLE_ID,
+            request=VehicleIdRequest(vehicle_id=vehicle_id),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -256,16 +474,34 @@ class AutotekaVehicle(DomainObject):
         self,
         *,
         specification_id: int | str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaSpecificationInfo:
-        """Выполняет публичную операцию `AutotekaVehicle.get_specification_by_id` и возвращает типизированную SDK-модель.
+        """Возвращает спецификацию автомобиля Автотеки по идентификатору.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            specification_id: идентифицирует спецификацию автомобиля.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `AutotekaSpecificationInfo` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SpecificationsClient(self.transport).get_by_id(
-            specification_id=specification_id or self._require_vehicle_id("specification_id")
+        return self._execute(
+            GET_SPECIFICATION_BY_ID,
+            path_params={
+                "specificationID": specification_id or self._require_vehicle_id("specification_id")
+            },
+            headers=_autoteka_headers(self.transport),
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -276,20 +512,39 @@ class AutotekaVehicle(DomainObject):
         method_args={"vehicle_id": "body.vehicle_id"},
     )
     def create_teaser(
-        self, *, vehicle_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        vehicle_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaTeaserInfo:
-        """Выполняет публичную операцию `AutotekaVehicle.create_teaser` и возвращает типизированную SDK-модель.
+        """Создает тизер автомобиля Автотеки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            vehicle_id: идентифицирует автомобиль в Автотеке.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `AutotekaTeaserInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return TeaserClient(self.transport).create(
-            vehicle_id=vehicle_id,
+        return self._execute(
+            CREATE_TEASER,
+            request=TeaserCreateRequest(vehicle_id=vehicle_id),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -298,16 +553,36 @@ class AutotekaVehicle(DomainObject):
         spec="Автотека.json",
         operation_id="getTeaser",
     )
-    def get_teaser(self, *, teaser_id: int | str | None = None) -> AutotekaTeaserInfo:
-        """Выполняет публичную операцию `AutotekaVehicle.get_teaser` и возвращает типизированную SDK-модель.
+    def get_teaser(
+        self,
+        *,
+        teaser_id: int | str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> AutotekaTeaserInfo:
+        """Возвращает teaser для автомобилей Автотеки.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            teaser_id: идентифицирует тизер Автотеки.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `AutotekaTeaserInfo` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return TeaserClient(self.transport).get(
-            teaser_id=teaser_id or self._require_vehicle_id("teaser_id")
+        return self._execute(
+            GET_TEASER,
+            path_params={"teaser_id": teaser_id or self._require_vehicle_id("teaser_id")},
+            headers=_autoteka_headers(self.transport),
+            timeout=timeout,
+            retry=retry,
         )
 
     def _require_vehicle_id(self, field_name: str) -> str:
@@ -333,15 +608,31 @@ class AutotekaReport(DomainObject):
         spec="Автотека.json",
         operation_id="getActivePackage",
     )
-    def get_active_package(self) -> AutotekaPackageInfo:
-        """Выполняет публичную операцию `AutotekaReport.get_active_package` и возвращает типизированную SDK-модель.
+    def get_active_package(
+        self, *, timeout: ApiTimeouts | None = None, retry: RetryOverride | None = None
+    ) -> AutotekaPackageInfo:
+        """Возвращает active package для отчетов Автотеки.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `AutotekaPackageInfo` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return ReportClient(self.transport).get_active_package()
+        return self._execute(
+            GET_ACTIVE_PACKAGE,
+            headers=_autoteka_headers(self.transport),
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "POST",
@@ -351,20 +642,39 @@ class AutotekaReport(DomainObject):
         method_args={"preview_id": "body.preview_id"},
     )
     def create_report(
-        self, *, preview_id: int, idempotency_key: str | None = None
+        self,
+        *,
+        preview_id: int,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaReportInfo:
-        """Выполняет публичную операцию `AutotekaReport.create_report` и возвращает типизированную SDK-модель.
+        """Создает отчет Автотеки по preview.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            preview_id: идентифицирует preview Автотеки.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `AutotekaReportInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return ReportClient(self.transport).create_report(
-            preview_id=preview_id,
+        return self._execute(
+            CREATE_REPORT,
+            request=PreviewReportRequest(preview_id=preview_id),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -375,20 +685,39 @@ class AutotekaReport(DomainObject):
         method_args={"vehicle_id": "body.vehicle_id"},
     )
     def create_report_by_vehicle_id(
-        self, *, vehicle_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        vehicle_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaReportInfo:
-        """Выполняет публичную операцию `AutotekaReport.create_report_by_vehicle_id` и возвращает типизированную SDK-модель.
+        """Создает отчет Автотеки по vehicle_id.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            vehicle_id: идентифицирует автомобиль в Автотеке.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `AutotekaReportInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return ReportClient(self.transport).create_report_by_vehicle_id(
-            vehicle_id=vehicle_id,
+        return self._execute(
+            CREATE_REPORT_BY_VEHICLE_ID,
+            request=VehicleIdRequest(vehicle_id=vehicle_id),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -397,15 +726,31 @@ class AutotekaReport(DomainObject):
         spec="Автотека.json",
         operation_id="getReportList",
     )
-    def list_reports(self) -> AutotekaReportsResult:
-        """Получает список отчетов Автотеки.
+    def list_reports(
+        self, *, timeout: ApiTimeouts | None = None, retry: RetryOverride | None = None
+    ) -> AutotekaReportsResult:
+        """Возвращает список reports для отчетов Автотеки.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `AutotekaReportsResult` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return ReportClient(self.transport).list_reports()
+        return self._execute(
+            LIST_REPORTS,
+            headers=_autoteka_headers(self.transport),
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "GET",
@@ -413,16 +758,36 @@ class AutotekaReport(DomainObject):
         spec="Автотека.json",
         operation_id="getReport",
     )
-    def get_report(self, *, report_id: int | str | None = None) -> AutotekaReportInfo:
-        """Выполняет публичную операцию `AutotekaReport.get_report` и возвращает типизированную SDK-модель.
+    def get_report(
+        self,
+        *,
+        report_id: int | str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> AutotekaReportInfo:
+        """Возвращает report для отчетов Автотеки.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            report_id: идентифицирует отчет Автотеки.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `AutotekaReportInfo` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return ReportClient(self.transport).get_report(
-            report_id=report_id or self._require_report_id()
+        return self._execute(
+            GET_REPORT,
+            path_params={"report_id": report_id or self._require_report_id()},
+            headers=_autoteka_headers(self.transport),
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -433,20 +798,39 @@ class AutotekaReport(DomainObject):
         method_args={"reg_number": "body.reg_number"},
     )
     def create_sync_report_by_reg_number(
-        self, *, reg_number: str, idempotency_key: str | None = None
+        self,
+        *,
+        reg_number: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaReportInfo:
-        """Выполняет публичную операцию `AutotekaReport.create_sync_report_by_reg_number` и возвращает типизированную SDK-модель.
+        """Создает синхронный отчет Автотеки по госномеру.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            reg_number: передает государственный номер автомобиля.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `AutotekaReportInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return ReportClient(self.transport).create_sync_report_by_reg_number(
-            reg_number=reg_number,
+        return self._execute(
+            CREATE_SYNC_REPORT_BY_REG_NUMBER,
+            request=RegNumberRequest(reg_number=reg_number),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -457,20 +841,39 @@ class AutotekaReport(DomainObject):
         method_args={"vin": "body.vin"},
     )
     def create_sync_report_by_vin(
-        self, *, vin: str, idempotency_key: str | None = None
+        self,
+        *,
+        vin: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaReportInfo:
-        """Выполняет публичную операцию `AutotekaReport.create_sync_report_by_vin` и возвращает типизированную SDK-модель.
+        """Создает синхронный отчет Автотеки по VIN.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            vin: передает VIN автомобиля.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `AutotekaReportInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return ReportClient(self.transport).create_sync_report_by_vin(
-            vin=vin,
+        return self._execute(
+            CREATE_SYNC_REPORT_BY_VIN,
+            request=VinRequest(vin=vin),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     def _require_report_id(self) -> str:
@@ -496,20 +899,39 @@ class AutotekaMonitoring(DomainObject):
         method_args={"vehicles": "body.data"},
     )
     def create_monitoring_bucket_add(
-        self, *, vehicles: list[str], idempotency_key: str | None = None
+        self,
+        *,
+        vehicles: list[str],
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> MonitoringBucketResult:
-        """Выполняет публичную операцию `AutotekaMonitoring.create_monitoring_bucket_add` и возвращает типизированную SDK-модель.
+        """Создает monitoring bucket add для мониторинга Автотеки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            vehicles: передает автомобили для добавления в мониторинг.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `MonitoringBucketResult` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MonitoringClient(self.transport).add_bucket(
-            vehicles=vehicles,
+        return self._execute(
+            ADD_MONITORING_BUCKET,
+            request=MonitoringBucketRequest(vehicles=vehicles),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -518,15 +940,38 @@ class AutotekaMonitoring(DomainObject):
         spec="Автотека.json",
         operation_id="monitoringBucketDelete",
     )
-    def delete_bucket(self, *, idempotency_key: str | None = None) -> MonitoringBucketResult:
+    def delete_bucket(
+        self,
+        *,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> MonitoringBucketResult:
         """Очищает bucket мониторинга.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MonitoringBucketResult` со статусом операции над bucket мониторинга.
+
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MonitoringClient(self.transport).delete_bucket(idempotency_key=idempotency_key)
+        return self._execute(
+            DELETE_MONITORING_BUCKET,
+            headers=_autoteka_headers(self.transport),
+            idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "POST",
@@ -536,18 +981,39 @@ class AutotekaMonitoring(DomainObject):
         method_args={"vehicles": "body.data"},
     )
     def remove_bucket(
-        self, *, vehicles: list[str], idempotency_key: str | None = None
+        self,
+        *,
+        vehicles: list[str],
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> MonitoringBucketResult:
         """Удаляет автомобили из bucket мониторинга.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            vehicles: передает идентификаторы автомобилей для удаления из bucket.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MonitoringBucketResult` со статусом операции над bucket мониторинга.
+
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MonitoringClient(self.transport).remove_bucket(
-            vehicles=vehicles,
+        return self._execute(
+            REMOVE_MONITORING_BUCKET,
+            request=MonitoringBucketRequest(vehicles=vehicles),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -559,16 +1025,35 @@ class AutotekaMonitoring(DomainObject):
     def get_monitoring_reg_actions(
         self,
         *,
-        query: MonitoringEventsQuery | None = None,
+        limit: int | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> MonitoringEventsResult:
-        """Выполняет публичную операцию `AutotekaMonitoring.get_monitoring_reg_actions` и возвращает типизированную SDK-модель.
+        """Возвращает monitoring reg actions для мониторинга Автотеки.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            limit: ограничивает размер возвращаемой выборки.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MonitoringEventsResult` с типизированными данными ответа API.
+
+        Поведение:
+            Параметры пагинации ограничивают объем данных без изменения модели ответа.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MonitoringClient(self.transport).get_reg_actions(query=query)
+        return self._execute(
+            GET_MONITORING_REG_ACTIONS,
+            query=MonitoringEventsQuery(limit=limit),
+            headers=_autoteka_headers(self.transport),
+            timeout=timeout,
+            retry=retry,
+        )
 
 
 @dataclass(slots=True, frozen=True)
@@ -590,20 +1075,39 @@ class AutotekaScoring(DomainObject):
         method_args={"vehicle_id": "body.vehicle_id"},
     )
     def create_scoring_by_vehicle_id(
-        self, *, vehicle_id: str, idempotency_key: str | None = None
+        self,
+        *,
+        vehicle_id: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaScoringInfo:
-        """Выполняет публичную операцию `AutotekaScoring.create_scoring_by_vehicle_id` и возвращает типизированную SDK-модель.
+        """Создает расчет скоринга Автотеки по vehicle_id.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            vehicle_id: идентифицирует автомобиль в Автотеке.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Возвращает:
+            `AutotekaScoringInfo` с типизированными данными ответа API.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return ScoringClient(self.transport).create_by_vehicle_id(
-            vehicle_id=vehicle_id,
+        return self._execute(
+            CREATE_SCORING_BY_VEHICLE_ID,
+            request=VehicleIdRequest(vehicle_id=vehicle_id),
+            headers=_autoteka_headers(self.transport),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -612,16 +1116,36 @@ class AutotekaScoring(DomainObject):
         spec="Автотека.json",
         operation_id="scoringGetById",
     )
-    def get_scoring_by_id(self, *, scoring_id: int | str | None = None) -> AutotekaScoringInfo:
-        """Выполняет публичную операцию `AutotekaScoring.get_scoring_by_id` и возвращает типизированную SDK-модель.
+    def get_scoring_by_id(
+        self,
+        *,
+        scoring_id: int | str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> AutotekaScoringInfo:
+        """Возвращает расчет скоринга Автотеки по идентификатору.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            scoring_id: идентифицирует расчет скоринга.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `AutotekaScoringInfo` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return ScoringClient(self.transport).get_by_id(
-            scoring_id=scoring_id or self._require_scoring_id()
+        return self._execute(
+            GET_SCORING_BY_ID,
+            path_params={"scoring_id": scoring_id or self._require_scoring_id()},
+            headers=_autoteka_headers(self.transport),
+            timeout=timeout,
+            retry=retry,
         )
 
     def _require_scoring_id(self) -> str:
@@ -644,20 +1168,46 @@ class AutotekaValuation(DomainObject):
         "/autoteka/v1/valuation/by-specification",
         spec="Автотека.json",
         operation_id="valuationBySpecification",
-        method_args={"specification_id": "body.specification", "mileage": "body.mileage"},
+        method_args={
+            "specification_id": "body.specification.brand.valueId",
+            "mileage": "body.mileage",
+        },
     )
     def get_valuation_by_specification(
-        self, *, specification_id: int, mileage: int
+        self,
+        *,
+        specification_id: int,
+        mileage: int,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> AutotekaValuationInfo:
-        """Выполняет публичную операцию `AutotekaValuation.get_valuation_by_specification` и возвращает типизированную SDK-модель.
+        """Возвращает оценку автомобиля Автотеки по спецификации.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            specification_id: идентифицирует спецификацию автомобиля.
+            mileage: передает пробег автомобиля.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `AutotekaValuationInfo` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return ValuationClient(self.transport).get_by_specification(
-            ValuationBySpecificationRequest(specification_id=specification_id, mileage=mileage)
+        return self._execute(
+            GET_VALUATION_BY_SPECIFICATION,
+            request=ValuationBySpecificationRequest(
+                specification_id=specification_id,
+                mileage=mileage,
+            ),
+            headers=_autoteka_headers(self.transport),
+            timeout=timeout,
+            retry=retry,
         )
 
 

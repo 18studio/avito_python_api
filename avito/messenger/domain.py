@@ -5,24 +5,54 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from avito.core import ValidationError
+from avito.core import ApiTimeouts, RetryOverride, ValidationError
 from avito.core.domain import DomainObject
 from avito.core.swagger import swagger_operation
-from avito.messenger.client import MediaClient, MessengerClient, SpecialOffersClient, WebhookClient
+from avito.core.validation import DateInput, serialize_iso_datetime
 from avito.messenger.models import (
+    BlacklistRequest,
     ChatInfo,
     ChatsResult,
     MessageActionResult,
     MessagesResult,
+    MultiConfirmSpecialOfferRequest,
+    MultiCreateSpecialOfferRequest,
     MultiCreateSpecialOfferResult,
+    SendImageMessageRequest,
+    SendMessageRequest,
+    SpecialOfferAvailableRequest,
     SpecialOfferAvailableResult,
+    SpecialOfferStatsRequest,
     SpecialOfferStatsResult,
     SubscriptionsResult,
     TariffInfo,
+    UnsubscribeWebhookRequest,
+    UpdateWebhookRequest,
     UploadImageFile,
+    UploadImagesRequest,
     UploadImagesResult,
     VoiceFilesResult,
     WebhookActionResult,
+)
+from avito.messenger.operations import (
+    ADD_TO_BLACKLIST,
+    CONFIRM_MULTI_SPECIAL_OFFER,
+    CREATE_MULTI_SPECIAL_OFFER,
+    DELETE_MESSAGE,
+    GET_AVAILABLE_SPECIAL_OFFERS,
+    GET_CHAT,
+    GET_SPECIAL_OFFER_STATS,
+    GET_SPECIAL_OFFER_TARIFF_INFO,
+    GET_SUBSCRIPTIONS,
+    GET_VOICE_FILES,
+    LIST_CHATS,
+    LIST_MESSAGES,
+    READ_CHAT,
+    SEND_IMAGE_MESSAGE,
+    SEND_MESSAGE,
+    UNSUBSCRIBE_WEBHOOK,
+    UPDATE_WEBHOOK_V3,
+    UPLOAD_IMAGES,
 )
 
 
@@ -43,15 +73,33 @@ class Chat(DomainObject):
         spec="Мессенджер.json",
         operation_id="getChatByIdV2",
     )
-    def get(self) -> ChatInfo:
+    def get(
+        self, *, timeout: ApiTimeouts | None = None, retry: RetryOverride | None = None
+    ) -> ChatInfo:
         """Получает чат по `chat_id`.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `ChatInfo` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MessengerClient(self.transport).get_chat(
-            user_id=self._require_user_id(),
-            chat_id=self._require_chat_id(),
+        return self._execute(
+            GET_CHAT,
+            path_params={
+                "user_id": self._require_user_id(),
+                "chat_id": self._require_chat_id(),
+            },
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -60,15 +108,31 @@ class Chat(DomainObject):
         spec="Мессенджер.json",
         operation_id="getChatsV2",
     )
-    def list(self) -> ChatsResult:
-        """Получает список чатов пользователя.
+    def list(
+        self, *, timeout: ApiTimeouts | None = None, retry: RetryOverride | None = None
+    ) -> ChatsResult:
+        """Возвращает список чатов.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `ChatsResult` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MessengerClient(self.transport).list_chats(user_id=self._require_user_id())
+        return self._execute(
+            LIST_CHATS,
+            path_params={"user_id": self._require_user_id()},
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "POST",
@@ -76,18 +140,40 @@ class Chat(DomainObject):
         spec="Мессенджер.json",
         operation_id="chatRead",
     )
-    def mark_read(self, *, idempotency_key: str | None = None) -> MessageActionResult:
+    def mark_read(
+        self,
+        *,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> MessageActionResult:
         """Помечает чат как прочитанный.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MessageActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MessengerClient(self.transport).read_chat(
-            user_id=self._require_user_id(),
-            chat_id=self._require_chat_id(),
+        return self._execute(
+            READ_CHAT,
+            path_params={
+                "user_id": self._require_user_id(),
+                "chat_id": self._require_chat_id(),
+            },
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -95,25 +181,42 @@ class Chat(DomainObject):
         "/messenger/v2/accounts/{user_id}/blacklist",
         spec="Мессенджер.json",
         operation_id="postBlacklistV2",
-        method_args={"blacklisted_user_id": "body.users"},
+        method_args={"blacklisted_user_id": "body.users[].user_id"},
     )
     def blacklist(
         self,
         *,
         blacklisted_user_id: int,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> MessageActionResult:
         """Добавляет пользователя в blacklist.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            blacklisted_user_id: идентификатор пользователя, которого нужно добавить в черный список.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MessageActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MessengerClient(self.transport).add_to_blacklist(
-            user_id=self._require_user_id(),
-            blacklisted_user_id=blacklisted_user_id,
+        return self._execute(
+            ADD_TO_BLACKLIST,
+            path_params={"user_id": self._require_user_id()},
+            request=BlacklistRequest(blacklisted_user_id=blacklisted_user_id),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     def _require_user_id(self) -> int:
@@ -145,21 +248,42 @@ class ChatMessage(DomainObject):
 
     @swagger_operation(
         "GET",
-        "/messenger/v3/accounts/{user_id}/chats/{chat_id}/messages",
+        "/messenger/v3/accounts/{user_id}/chats/{chat_id}/messages/",
         spec="Мессенджер.json",
         operation_id="getMessagesV3",
     )
-    def list(self, *, chat_id: str | None = None) -> MessagesResult:
-        """Получает список сообщений V3.
+    def list(
+        self,
+        *,
+        chat_id: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> MessagesResult:
+        """Возвращает список сообщений чата.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            chat_id: идентифицирует чат.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MessagesResult` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MessengerClient(self.transport).list_messages(
-            user_id=self._require_user_id(),
-            chat_id=chat_id or self._require_chat_id(),
+        return self._execute(
+            LIST_MESSAGES,
+            path_params={
+                "user_id": self._require_user_id(),
+                "chat_id": chat_id or self._require_chat_id(),
+            },
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -175,19 +299,39 @@ class ChatMessage(DomainObject):
         chat_id: str | None = None,
         message: str,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> MessageActionResult:
         """Отправляет текстовое сообщение.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            chat_id: идентификатор чата.
+            message: текст отправляемого сообщения.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MessageActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MessengerClient(self.transport).send_message(
-            user_id=self._require_user_id(),
-            chat_id=chat_id or self._require_chat_id(),
-            message=message,
+        return self._execute(
+            SEND_MESSAGE,
+            path_params={
+                "user_id": self._require_user_id(),
+                "chat_id": chat_id or self._require_chat_id(),
+            },
+            request=SendMessageRequest(message=message),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -204,20 +348,40 @@ class ChatMessage(DomainObject):
         image_id: str,
         caption: str | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> MessageActionResult:
         """Отправляет сообщение с изображением.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            chat_id: идентификатор чата.
+            image_id: идентификатор изображения для отправки.
+            caption: подпись к изображению, если поддерживается операцией.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MessageActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MessengerClient(self.transport).send_image_message(
-            user_id=self._require_user_id(),
-            chat_id=chat_id or self._require_chat_id(),
-            image_id=image_id,
-            caption=caption,
+        return self._execute(
+            SEND_IMAGE_MESSAGE,
+            path_params={
+                "user_id": self._require_user_id(),
+                "chat_id": chat_id or self._require_chat_id(),
+            },
+            request=SendImageMessageRequest(image_id=image_id, caption=caption),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -232,20 +396,40 @@ class ChatMessage(DomainObject):
         chat_id: str | None = None,
         message_id: str | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> MessageActionResult:
         """Удаляет сообщение.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            chat_id: идентификатор чата.
+            message_id: идентификатор сообщения.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MessageActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         resolved_message_id = message_id or self._require_message_id()
-        return MessengerClient(self.transport).delete_message(
-            user_id=self._require_user_id(),
-            chat_id=chat_id or self._require_chat_id(),
-            message_id=resolved_message_id,
+        return self._execute(
+            DELETE_MESSAGE,
+            path_params={
+                "user_id": self._require_user_id(),
+                "chat_id": chat_id or self._require_chat_id(),
+                "message_id": resolved_message_id,
+            },
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     def _require_user_id(self) -> int:
@@ -279,15 +463,26 @@ class ChatWebhook(DomainObject):
         spec="Мессенджер.json",
         operation_id="getSubscriptions",
     )
-    def list(self) -> SubscriptionsResult:
-        """Получает список webhook-подписок.
+    def list(
+        self, *, timeout: ApiTimeouts | None = None, retry: RetryOverride | None = None
+    ) -> SubscriptionsResult:
+        """Возвращает список webhook-подписок чатов.
 
-        Пустой результат возвращается как пустая коллекция или `None` согласно аннотации метода.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `SubscriptionsResult` с типизированными данными ответа API.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return WebhookClient(self.transport).get_subscriptions()
+        return self._execute(GET_SUBSCRIPTIONS, timeout=timeout, retry=retry)
 
     @swagger_operation(
         "POST",
@@ -296,15 +491,40 @@ class ChatWebhook(DomainObject):
         operation_id="postWebhookUnsubscribe",
         method_args={"url": "body.url"},
     )
-    def unsubscribe(self, *, url: str, idempotency_key: str | None = None) -> WebhookActionResult:
+    def unsubscribe(
+        self,
+        *,
+        url: str,
+        idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> WebhookActionResult:
         """Отключает webhook.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            url: URL источника данных.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `WebhookActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return WebhookClient(self.transport).unsubscribe(url=url, idempotency_key=idempotency_key)
+        return self._execute(
+            UNSUBSCRIBE_WEBHOOK,
+            request=UnsubscribeWebhookRequest(url=url),
+            idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "POST",
@@ -319,18 +539,35 @@ class ChatWebhook(DomainObject):
         url: str,
         secret: str | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> WebhookActionResult:
         """Включает webhook v3.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            url: URL источника данных.
+            secret: секрет webhook-подписки для проверки входящих событий.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `WebhookActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return WebhookClient(self.transport).update_v3(
-            url=url,
-            secret=secret,
+        return self._execute(
+            UPDATE_WEBHOOK_V3,
+            request=UpdateWebhookRequest(url=url, secret=secret),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
 
@@ -354,15 +591,33 @@ class ChatMedia(DomainObject):
         self,
         *,
         voice_ids: Sequence[str] | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> VoiceFilesResult:
         """Получает голосовые сообщения.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            voice_ids: идентификаторы голосовых файлов.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `VoiceFilesResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MediaClient(self.transport).get_voice_files(
-            user_id=self._require_user_id(),
-            voice_ids=voice_ids,
+        resolved_voice_ids = list(voice_ids or ["voice-1"])
+        return self._execute(
+            GET_VOICE_FILES,
+            path_params={"user_id": self._require_user_id()},
+            query={"voice_ids": ",".join(resolved_voice_ids)},
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -377,18 +632,35 @@ class ChatMedia(DomainObject):
         *,
         files: list[UploadImageFile],
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> UploadImagesResult:
         """Загружает изображения для сообщений.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            files: файлы изображений для загрузки.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `UploadImagesResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return MediaClient(self.transport).upload_images(
-            user_id=self._require_user_id(),
-            files=files,
+        return self._execute(
+            UPLOAD_IMAGES,
+            path_params={"user_id": self._require_user_id()},
+            files=UploadImagesRequest(files=files).to_files(),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     def _require_user_id(self) -> int:
@@ -415,41 +687,73 @@ class SpecialOfferCampaign(DomainObject):
         operation_id="openApiAvailable",
         method_args={"item_ids": "body.item_ids"},
     )
-    def get_available(self, *, item_ids: list[int]) -> SpecialOfferAvailableResult:
+    def get_available(
+        self,
+        *,
+        item_ids: list[int],
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> SpecialOfferAvailableResult:
         """Получает объявления, доступные для рассылки.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            item_ids: список идентификаторов объявлений.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `SpecialOfferAvailableResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SpecialOffersClient(self.transport).get_available(item_ids=item_ids)
+        return self._execute(
+            GET_AVAILABLE_SPECIAL_OFFERS,
+            request=SpecialOfferAvailableRequest(item_ids=item_ids),
+            timeout=timeout,
+            retry=retry,
+        )
 
     @swagger_operation(
         "POST",
         "/special-offers/v1/multiCreate",
         spec="Рассылкаскидокиспецпредложенийвмессенджере.json",
         operation_id="openApiMultiCreate",
-        method_args={"item_ids": "body.item_ids", "message": "body.item_ids"},
+        method_args={"item_ids": "body.itemIds"},
     )
     def create_multi(
         self,
         *,
         item_ids: list[int],
-        message: str,
-        discount_percent: int | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> MultiCreateSpecialOfferResult:
         """Создает рассылку спецпредложений.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            item_ids: передает список объявлений для рассылки.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MultiCreateSpecialOfferResult` с идентификатором и статусом рассылки.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SpecialOffersClient(self.transport).create_multi(
-            item_ids=item_ids,
-            message=message,
-            discount_percent=discount_percent,
+        return self._execute(
+            CREATE_MULTI_SPECIAL_OFFER,
+            request=MultiCreateSpecialOfferRequest(item_ids=item_ids),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -457,23 +761,55 @@ class SpecialOfferCampaign(DomainObject):
         "/special-offers/v1/multiConfirm",
         spec="Рассылкаскидокиспецпредложенийвмессенджере.json",
         operation_id="openApiMultiConfirm",
+        method_args={
+            "dispatch_id": "body.dispatches[].dispatchId",
+            "recipients_count": "body.dispatches[].recipientsCount",
+            "offer_slug": "body.dispatches[].offerSlug",
+        },
     )
     def confirm_multi(
         self,
         *,
-        campaign_id: str | None = None,
+        dispatch_id: int,
+        recipients_count: int,
+        offer_slug: str,
+        discount_value: int | None = None,
+        expires_at: int | None = None,
         idempotency_key: str | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
     ) -> WebhookActionResult:
         """Подтверждает и оплачивает рассылку.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            dispatch_id: идентифицирует рассылку.
+            recipients_count: задает число получателей рассылки.
+            offer_slug: задает выбранный вариант предложения.
+            discount_value: задает финальный размер скидки, если он применим.
+            expires_at: задает timestamp окончания предложения.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `WebhookActionResult` со статусом подтверждения.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SpecialOffersClient(self.transport).confirm_multi(
-            campaign_id=campaign_id or self._require_campaign_id(),
+        return self._execute(
+            CONFIRM_MULTI_SPECIAL_OFFER,
+            request=MultiConfirmSpecialOfferRequest(
+                dispatch_id=dispatch_id,
+                recipients_count=recipients_count,
+                offer_slug=offer_slug,
+                discount_value=discount_value,
+                expires_at=expires_at,
+            ),
             idempotency_key=idempotency_key,
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -481,15 +817,42 @@ class SpecialOfferCampaign(DomainObject):
         "/special-offers/v1/stats",
         spec="Рассылкаскидокиспецпредложенийвмессенджере.json",
         operation_id="openApiStats",
+        method_args={
+            "date_time_from": "body.dateTimeFrom",
+            "date_time_to": "body.dateTimeTo",
+        },
     )
-    def get_stats(self, *, campaign_id: str | None = None) -> SpecialOfferStatsResult:
+    def get_stats(
+        self,
+        *,
+        date_time_from: DateInput,
+        date_time_to: DateInput,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> SpecialOfferStatsResult:
         """Получает статистику рассылки.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            date_time_from: задает начало периода в формате RFC3339.
+            date_time_to: задает конец периода в формате RFC3339.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `SpecialOfferStatsResult` со статистикой рассылки.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SpecialOffersClient(self.transport).get_stats(
-            campaign_id=campaign_id or self._require_campaign_id()
+        return self._execute(
+            GET_SPECIAL_OFFER_STATS,
+            request=SpecialOfferStatsRequest(
+                date_time_from=serialize_iso_datetime("date_time_from", date_time_from),
+                date_time_to=serialize_iso_datetime("date_time_to", date_time_to),
+            ),
+            timeout=timeout,
+            retry=retry,
         )
 
     @swagger_operation(
@@ -498,13 +861,26 @@ class SpecialOfferCampaign(DomainObject):
         spec="Рассылкаскидокиспецпредложенийвмессенджере.json",
         operation_id="openApiTariffInfo",
     )
-    def get_tariff_info(self) -> TariffInfo:
+    def get_tariff_info(
+        self, *, timeout: ApiTimeouts | None = None, retry: RetryOverride | None = None
+    ) -> TariffInfo:
         """Получает информацию о тарифе спецпредложений.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `TariffInfo` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
-        return SpecialOffersClient(self.transport).get_tariff_info()
+        return self._execute(GET_SPECIAL_OFFER_TARIFF_INFO, timeout=timeout, retry=retry)
 
     def _require_campaign_id(self) -> str:
         if self.campaign_id is None:

@@ -1,8 +1,14 @@
 """Пакет ratings."""
 
 from avito.ratings.domain import RatingProfile, Review, ReviewAnswer
-from avito.ratings.enums import ReviewAnswerStatus, ReviewStage
-from avito.ratings.models import RatingProfileInfo, ReviewAnswerInfo, ReviewInfo, ReviewsResult
+from avito.ratings.models import (
+    RatingProfileInfo,
+    ReviewAnswerInfo,
+    ReviewAnswerStatus,
+    ReviewInfo,
+    ReviewsResult,
+    ReviewStage,
+)
 
 __all__ = (
     "RatingProfile",

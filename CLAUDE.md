@@ -26,15 +26,17 @@ poetry run pytest tests/test_facade.py::test_name
 | Layer | Location | Responsibility |
 |---|---|---|
 | `AvitoClient` | `avito/client.py` | Public facade, factory methods |
-| `SectionClient` | `avito/<domain>/client.py` | HTTP calls for one API section |
+| `DomainObject` | `avito/<domain>/domain.py` | Explicit public methods, validation, docstrings, Swagger bindings |
+| `OperationSpec` | `avito/<domain>/operations.py` or `operations/` | Internal HTTP method/path/context/retry/request/response metadata |
+| `OperationExecutor` | `avito/core/operations.py` | Executes operation specs through transport |
 | `Transport` | `avito/core/transport.py` | httpx, retries, error mapping, token injection |
 | `AuthProvider` | `avito/auth/provider.py` | Token cache, refresh, 401 handling |
-| `Mapper` | `avito/<domain>/mappers.py` | JSON → typed dataclass |
+| Models | `avito/<domain>/models.py` or `models/` | dataclasses, enums, `from_payload()`, `to_payload()`, `to_params()` |
 | Config | `avito/config.py`, `avito/auth/settings.py` | `AvitoSettings`, `AuthSettings` |
 
-**Domain packages** follow a uniform structure: `__init__.py`, `domain.py` (DomainObject subclass), `client.py` (SectionClient), `models.py` (frozen dataclasses), `mappers.py`, optional `enums.py`.
+**Target domain packages** follow the v2 architecture in `docs/site/explanations/domain-architecture-v2.md`: `__init__.py`, `domain.py` (DomainObject subclasses), `operations.py` or `operations/` (OperationSpec definitions), and `models.py` or `models/` (frozen dataclasses, colocated enums, payload parsing/serialization). Do not add new `client.py`, `mappers.py`, or standalone `enums.py` without an explicit architecture reason. Existing legacy modules may remain during migration; compatibility mappers should delegate to `Model.from_payload()`.
 
-**Public models** are `@dataclass(slots=True, frozen=True)`, inherit `SerializableModel` (provides `to_dict()` / `model_dump()`), and never expose transport fields.
+**Public models** are `@dataclass(slots=True, frozen=True)`, inherit `ApiModel` or another approved `SerializableModel` subclass (provides `to_dict()` / `model_dump()`), implement `from_payload()` for API JSON, and never expose transport fields. Request/query dataclasses use `to_payload()` / `to_params()` and stay out of public method signatures unless explicitly documented as public input models.
 
 **Exceptions** live in `avito/core/exceptions.py`. `AvitoError` is the base. HTTP codes map to specific types: 401→`AuthenticationError`, 403→`AuthorizationError`, 429→`RateLimitError`, etc. These two are siblings, not parent/child.
 
@@ -65,7 +67,7 @@ Multiple Swagger bindings on one public SDK method are forbidden. If one public 
 When adding or changing a public method that corresponds to Avito API:
 
 - consult `docs/avito/api/*.json` first;
-- add or update the public domain method, section client call, mapper and typed public models;
+- add or update the public domain method, operation spec, typed models, request/query dataclasses, and `from_payload()` / `to_payload()` / `to_params()` mapping;
 - add `@swagger_operation(...)` on the public domain method;
 - do not put schemas, statuses, content types, request models, response models, error models, path params, or query params into the decorator;
 - add or update class-level Swagger metadata when introducing a domain class;
@@ -96,6 +98,7 @@ The most critical prohibitions that must never be violated:
 - Using `resource_id` instead of concrete names (`item_id`, `order_id`).
 - Annotating `list[T]` where `PaginatedList[T]` is returned at runtime.
 - Adding or changing an Avito API public method without a `@swagger_operation(...)` binding.
+- Adding or changing an Avito API public method without a matching `OperationSpec` or documented legacy adapter.
 - Adding or changing an Avito API public method without a reference-ready docstring.
 - Duplicating Swagger contract data inside binding decorators.
 - Making `AuthenticationError` a subclass of `AuthorizationError` (or vice versa).
@@ -103,11 +106,15 @@ The most critical prohibitions that must never be violated:
 - Injecting methods via `setattr`/`globals()` at runtime.
 - Duplicating behavior through two different public methods without deprecation.
 - Leaking internal-layer request-DTOs into public signatures.
+- Adding new `client.py`, `mappers.py`, or standalone `enums.py` in a new/refactored domain without an explicit architecture note.
 - Adding dead code: unused imports, type aliases, TypeVars.
 
 ## Key conventions (from STYLEGUIDE.md)
 
 - All public methods return typed SDK models, never raw `dict`.
+- New/refactored domains use v2 layout: `domain.py`, `operations.py`/`operations/`, `models.py`/`models/`.
+- API response parsing belongs in `Model.from_payload()`; request/query serialization belongs in dataclasses via `to_payload()` / `to_params()`.
+- Enums live next to the models that use them; legacy `enums.py` modules are compatibility re-exports only.
 - Field names are concrete: `item_id`, `user_id` — never `resource_id`.
 - Public method arguments are primitives or domain models — internal request-DTOs must not leak out.
 - Write-operations that accept `dry_run: bool = False` must build the same payload in both modes; with `dry_run=True` transport must not be called.

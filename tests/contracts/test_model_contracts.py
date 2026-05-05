@@ -136,8 +136,10 @@ def test_examples_and_binary_models_produce_expected_payloads() -> None:
     )
     assert budget_request.to_payload()["campaignType"] == "AS"
     assert campaigns_request.to_payload()["filter"]["byUpdateTime"]["from"].startswith("2026-04-01")
-    assert CatalogResolveRequest(brand_id=1).to_payload() == {"brandId": 1}
-    assert MonitoringBucketRequest(vehicles=["VIN-1"]).to_payload() == {"vehicles": ["VIN-1"]}
+    assert CatalogResolveRequest(brand_id=1).to_payload() == {
+        "fieldsValueIds": [{"id": 110000, "valueId": 1}]
+    }
+    assert MonitoringBucketRequest(vehicles=["VIN-1"]).to_payload() == {"data": ["VIN-1"]}
 
     response = BinaryResponse(
         content=b"\x00\x01payload",
@@ -258,13 +260,24 @@ def test_model_read_flows_return_stable_sdk_models() -> None:
 
     profile = Account(transport, user_id=7).get_self()
     listing = Ad(transport, item_id=101, user_id=7).get()
-    stats = AdStats(transport, item_id=101, user_id=7).get_item_stats()
-    calls = AdStats(transport, item_id=101, user_id=7).get_calls_stats()
-    spendings = AdStats(transport, item_id=101, user_id=7).get_account_spendings()
+    stats = AdStats(transport, item_id=101, user_id=7).get_item_stats(
+        date_from="2026-04-01",
+        date_to="2026-04-02",
+    )
+    calls = AdStats(transport, item_id=101, user_id=7).get_calls_stats(
+        date_from="2026-04-01",
+        date_to="2026-04-02",
+    )
+    spendings = AdStats(transport, item_id=101, user_id=7).get_account_spendings(
+        date_from="2026-04-01",
+        date_to="2026-04-02",
+        spending_types=["promotion"],
+        grouping="day",
+    )
     services = PromotionOrder(transport, order_id="ord-1").list_services(item_ids=[101])
     orders = PromotionOrder(transport, order_id="ord-1").list_orders(item_ids=[101])
     forecasts = BbipPromotion(transport, item_id=101).get_forecasts(
-        items=[BbipItem(item_id=101, duration=7, price=1000, old_price=1200).to_dict()]
+        items=[BbipItem(item_id=101, duration=7, price=1000, old_price=1200)]
     )
 
     assert isinstance(profile, AccountProfile)

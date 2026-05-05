@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import os
+import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
-from avito._env import resolve_env_aliases
+from avito._env import read_dotenv, resolve_env_aliases
 from avito.core.exceptions import ConfigurationError
 
 
@@ -16,7 +19,7 @@ class AuthSettings:
 
     ENV_ALIASES: ClassVar[dict[str, tuple[str, ...]]] = {
         "client_id": ("AVITO_CLIENT_ID",),
-        "client_secret": ("AVITO_CLIENT_SECRET", "AVITO_SECRET"),
+        "client_secret": ("AVITO_CLIENT_SECRET",),
         "scope": ("AVITO_SCOPE",),
         "refresh_token": ("AVITO_REFRESH_TOKEN",),
         "token_url": ("AVITO_TOKEN_URL",),
@@ -25,6 +28,9 @@ class AuthSettings:
         "autoteka_client_id": ("AVITO_AUTOTEKA_CLIENT_ID",),
         "autoteka_client_secret": ("AVITO_AUTOTEKA_CLIENT_SECRET",),
         "autoteka_scope": ("AVITO_AUTOTEKA_SCOPE",),
+    }
+    DEPRECATED_ENV_ALIASES: ClassVar[dict[str, tuple[str, ...]]] = {
+        "client_secret": ("AVITO_SECRET",),
     }
 
     client_id: str | None = None
@@ -42,14 +48,42 @@ class AuthSettings:
     def from_env(cls, *, env_file: str | Path | None = ".env") -> AuthSettings:
         """Загружает auth-настройки из процесса и optional `.env` файла."""
 
-        resolved_values = resolve_env_aliases(cls.ENV_ALIASES, env_file=env_file)
+        aliases = cls._env_aliases_with_deprecated()
+        resolved_values = resolve_env_aliases(aliases, env_file=env_file)
+        if cls._uses_deprecated_client_secret_alias(env_file=env_file):
+            warnings.warn(
+                "`AVITO_SECRET` устарел; используйте `AVITO_CLIENT_SECRET`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         return cls(**resolved_values).validate_required()
 
     @classmethod
     def supported_env_vars(cls) -> dict[str, tuple[str, ...]]:
-        """Возвращает документированный набор env-переменных и alias-имен."""
+        """Возвращает документированный набор env-переменных."""
 
         return dict(cls.ENV_ALIASES)
+
+    @classmethod
+    def _env_aliases_with_deprecated(cls) -> dict[str, tuple[str, ...]]:
+        aliases = dict(cls.ENV_ALIASES)
+        for field_name, deprecated_aliases in cls.DEPRECATED_ENV_ALIASES.items():
+            aliases[field_name] = aliases.get(field_name, ()) + deprecated_aliases
+        return aliases
+
+    @classmethod
+    def _uses_deprecated_client_secret_alias(
+        cls, *, env_file: str | Path | None
+    ) -> bool:
+        canonical_aliases = cls.ENV_ALIASES["client_secret"]
+        deprecated_aliases = cls.DEPRECATED_ENV_ALIASES["client_secret"]
+        file_values = read_dotenv(env_file)
+        for source in (os.environ, file_values):
+            if _has_env_value(source, canonical_aliases):
+                return False
+            if _has_env_value(source, deprecated_aliases):
+                return True
+        return False
 
     def validate_required(self) -> AuthSettings:
         """Проверяет обязательные поля OAuth-конфигурации."""
@@ -66,6 +100,10 @@ class AuthSettings:
                 + "."
             )
         return self
+
+
+def _has_env_value(source: Mapping[str, str], aliases: tuple[str, ...]) -> bool:
+    return any(source.get(alias) not in {None, ""} for alias in aliases)
 
 
 __all__ = ("AuthSettings",)

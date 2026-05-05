@@ -1,7 +1,6 @@
 """Пакет cpa."""
 
 from avito.cpa.domain import CallTrackingCall, CpaArchive, CpaCall, CpaChat, CpaLead
-from avito.cpa.enums import CpaCallStatusId
 from avito.cpa.models import (
     CallTrackingCallInfo,
     CallTrackingCallResponse,
@@ -17,6 +16,7 @@ from avito.cpa.models import (
     CpaCallInfo,
     CpaCallsByTimeRequest,
     CpaCallsResult,
+    CpaCallStatusId,
     CpaChatInfo,
     CpaChatsByTimeRequest,
     CpaChatsResult,
