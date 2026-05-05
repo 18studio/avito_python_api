@@ -41,6 +41,34 @@ APPROVED_PUBLIC_WRAPPERS = frozenset(
 TEXT_FILE_SUFFIXES = frozenset({".py", ".md", ".txt"})
 PRODUCTION_CHECK_DIRS = ("avito",)
 SOURCE_CHECK_DIRS = ("avito", "tests", "docs")
+DATE_LIKE_PARAMETER_MARKERS = frozenset(
+    {
+        "created_at_from",
+        "date",
+        "date_end",
+        "date_from",
+        "date_start",
+        "date_time_from",
+        "date_time_to",
+        "date_to",
+        "finish_time",
+        "start_time",
+        "updated_at_from",
+        "updated_from",
+        "updated_to",
+    }
+)
+DATE_VALIDATION_CALLS = frozenset(
+    {
+        "serialize_iso_date",
+        "serialize_iso_datetime",
+        "validate_iso_date",
+        "validate_iso_datetime",
+    }
+)
+DATE_SAFE_ANNOTATION_NAMES = frozenset({"DateInput", "date", "datetime"})
+FORBIDDEN_OFFICIAL_ENV_ALIASES = frozenset({"SECRET", "TOKEN", "AVITO_SECRET", "AVITO_TOKEN"})
+REQUIRED_AVITO_ERROR_FIELDS = frozenset({"attempt", "method", "endpoint", "request_id"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +200,8 @@ def lint_architecture(
     errors.extend(_lint_legacy_imports(normalized_root, allowlist))
     errors.extend(_lint_legacy_usage(normalized_root, allowlist))
     errors.extend(_lint_runtime_patching(normalized_root))
+    errors.extend(_lint_official_env_aliases(normalized_root))
+    errors.extend(_lint_public_exception_fields(normalized_root))
     errors.extend(_lint_public_domain_methods(normalized_root, allowlist))
     errors.extend(_lint_operation_models(normalized_root, allowlist))
     return tuple(sorted(errors, key=lambda error: (error.path, error.line, error.code)))
@@ -291,6 +321,65 @@ def _lint_runtime_patching(root: Path) -> tuple[ArchitectureLintError, ...]:
     return tuple(errors)
 
 
+def _lint_official_env_aliases(root: Path) -> tuple[ArchitectureLintError, ...]:
+    errors: list[ArchitectureLintError] = []
+    for path in _iter_python_files(root, PRODUCTION_CHECK_DIRS):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for class_node in (node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)):
+            for assignment in class_node.body:
+                if not _is_class_alias_assignment(assignment, "ENV_ALIASES"):
+                    continue
+                for alias_node in _string_constants(assignment.value):
+                    alias = alias_node.value
+                    if alias not in FORBIDDEN_OFFICIAL_ENV_ALIASES:
+                        continue
+                    errors.append(
+                        ArchitectureLintError(
+                            code="ARCH_FORBIDDEN_ENV_ALIAS",
+                            message=(
+                                f"Официальный env alias `{alias}` слишком общий; "
+                                "используйте доменное имя вроде `AVITO_CLIENT_SECRET`."
+                            ),
+                            path=_relative_path(path, root),
+                            line=alias_node.lineno,
+                        )
+                    )
+    return tuple(errors)
+
+
+def _lint_public_exception_fields(root: Path) -> tuple[ArchitectureLintError, ...]:
+    path = root / "avito" / "core" / "exceptions.py"
+    if not path.exists():
+        return ()
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for class_node in (node for node in tree.body if isinstance(node, ast.ClassDef)):
+        if class_node.name != "AvitoError":
+            continue
+        fields = {
+            statement.target.id
+            for statement in class_node.body
+            if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name)
+        }
+        errors: list[ArchitectureLintError] = []
+        for field_name in sorted(REQUIRED_AVITO_ERROR_FIELDS - fields):
+            errors.append(
+                ArchitectureLintError(
+                    code="ARCH_AVITO_ERROR_FIELD_MISSING",
+                    message=f"`AvitoError` должен явно объявлять поле `{field_name}`.",
+                    path=_relative_path(path, root),
+                    line=class_node.lineno,
+                )
+            )
+        return tuple(errors)
+    return (
+        ArchitectureLintError(
+            code="ARCH_AVITO_ERROR_MISSING",
+            message="Не найден базовый public exception `AvitoError`.",
+            path=_relative_path(path, root),
+        ),
+    )
+
+
 def _lint_public_domain_methods(
     root: Path,
     allowlisted_domains: frozenset[str],
@@ -308,6 +397,30 @@ def _lint_public_domain_methods(
                 if (domain, class_node.name, method_node.name) in APPROVED_PUBLIC_WRAPPERS:
                     continue
                 method_label = f"{class_node.name}.{method_node.name}"
+                for parameter in _optional_positional_parameters(method_node):
+                    errors.append(
+                        ArchitectureLintError(
+                            code="ARCH_PUBLIC_OPTIONAL_POSITIONAL",
+                            message=(
+                                f"Public API method `{method_label}` содержит optional "
+                                f"positional parameter `{parameter.arg}`; сделайте его keyword-only."
+                            ),
+                            path=_relative_path(path, root),
+                            line=parameter.lineno,
+                        )
+                    )
+                for parameter in _date_like_string_parameters(method_node):
+                    errors.append(
+                        ArchitectureLintError(
+                            code="ARCH_PUBLIC_DATE_STRING_UNVALIDATED",
+                            message=(
+                                f"Public API method `{method_label}` принимает date-like string "
+                                f"parameter `{parameter.arg}` без явного validation/serialization helper."
+                            ),
+                            path=_relative_path(path, root),
+                            line=parameter.lineno,
+                        )
+                    )
                 if not _has_swagger_operation(method_node):
                     errors.append(
                         ArchitectureLintError(
@@ -336,6 +449,49 @@ def _lint_public_domain_methods(
                         )
                     )
     return tuple(errors)
+
+
+def _optional_positional_parameters(method_node: ast.FunctionDef) -> tuple[ast.arg, ...]:
+    positional_args = tuple(method_node.args.posonlyargs + method_node.args.args)
+    positional_args = tuple(arg for arg in positional_args if arg.arg != "self")
+    default_count = len(method_node.args.defaults)
+    if default_count == 0:
+        return ()
+    return positional_args[-default_count:]
+
+
+def _date_like_string_parameters(method_node: ast.FunctionDef) -> tuple[ast.arg, ...]:
+    if _method_uses_date_validation_helper(method_node):
+        return ()
+    parameters = tuple(
+        arg
+        for arg in (
+            method_node.args.posonlyargs + method_node.args.args + method_node.args.kwonlyargs
+        )
+        if arg.arg != "self"
+    )
+    return tuple(parameter for parameter in parameters if _is_unvalidated_date_string(parameter))
+
+
+def _method_uses_date_validation_helper(method_node: ast.FunctionDef) -> bool:
+    for node in ast.walk(method_node):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node.func)
+        if name in DATE_VALIDATION_CALLS or name.rsplit(".", maxsplit=1)[-1] in DATE_VALIDATION_CALLS:
+            return True
+    return False
+
+
+def _is_unvalidated_date_string(parameter: ast.arg) -> bool:
+    if parameter.arg not in DATE_LIKE_PARAMETER_MARKERS:
+        return False
+    if parameter.annotation is None:
+        return False
+    annotation_names = _annotation_names(parameter.annotation)
+    if "str" not in annotation_names:
+        return False
+    return not bool(annotation_names & DATE_SAFE_ANNOTATION_NAMES)
 
 
 def _lint_operation_models(
@@ -499,6 +655,24 @@ def _decorator_name(node: ast.AST) -> str:
     if isinstance(node, ast.Call):
         return _call_name(node.func)
     return _call_name(node)
+
+
+def _is_class_alias_assignment(node: ast.AST, name: str) -> bool:
+    if isinstance(node, ast.Assign):
+        return any(isinstance(target, ast.Name) and target.id == name for target in node.targets)
+    if isinstance(node, ast.AnnAssign):
+        return isinstance(node.target, ast.Name) and node.target.id == name
+    return False
+
+
+def _string_constants(node: ast.AST | None) -> Iterable[ast.Constant]:
+    if node is None:
+        return ()
+    return (
+        child
+        for child in ast.walk(node)
+        if isinstance(child, ast.Constant) and isinstance(child.value, str)
+    )
 
 
 def _call_name(node: ast.AST) -> str:

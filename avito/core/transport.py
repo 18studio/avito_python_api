@@ -512,6 +512,12 @@ class Transport:
         normalized_method = method.upper()
         if normalized_method in {"POST", "PATCH"} and idempotency_key is None:
             return False
+        if (
+            normalized_method == "DELETE"
+            and idempotency_key is None
+            and not context.allow_retry
+        ):
+            return False
         return self._retry_policy.is_retryable_method(
             normalized_method,
             explicit_retry=context.allow_retry,

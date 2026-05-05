@@ -30,6 +30,12 @@ Read/list/probe операции обычно допускают retry. Write-о
 только при явной идемпотентности, например через `idempotency_key`, или когда
 конкретный `OperationSpec` помечает операцию как безопасную.
 
+`POST` и `PATCH` без `idempotency_key` не повторяются даже при retryable
+transport-политике. `DELETE` тоже не повторяется без `idempotency_key`, если
+операция явно не помечена как безопасная для retry через `OperationSpec`.
+Это правило имеет приоритет над `RetryPolicy.retryable_methods`, поэтому
+глобальная политика не может случайно включить повтор небезопасного удаления.
+
 `429` учитывает `Retry-After`, если upstream его вернул. Если `Retry-After` отсутствует, transport использует обычный exponential backoff с jitter. Для `5xx` используется retry-политика transport-слоя. Ошибки маппинга не повторяются: если JSON уже получен, но не соответствует контракту модели, это `ResponseMappingError`, а не сетевой сбой.
 
 Чтобы снижать вероятность `429` до ответа upstream, можно включить локальный token bucket через `AVITO_RATE_LIMIT_ENABLED=true`. Лимитер применяется в transport-слое перед отправкой запроса и дополнительно учитывает `X-RateLimit-Remaining: 0`, когда API возвращает этот заголовок.

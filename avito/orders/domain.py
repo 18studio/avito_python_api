@@ -588,9 +588,21 @@ class OrderLabel(DomainObject):
     ) -> LabelTaskResult:
         """Запускает генерацию расширенных этикеток и возвращает типизированную SDK-модель.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            order_ids: передает идентификаторы заказов для генерации этикеток.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `LabelTaskResult` с идентификатором задачи генерации расширенных этикеток.
+
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(

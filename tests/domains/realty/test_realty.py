@@ -65,6 +65,32 @@ def test_realty_bookings_require_expected_params_and_map_fields() -> None:
     assert analytics.get_report_for_classified().report_link == "https://example.com/realty-report/20"
 
 
+def test_realty_write_operation_forwards_idempotency_key() -> None:
+    seen_keys: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_keys.append(request.headers.get("Idempotency-Key"))
+        assert request.url.path == "/realty/v1/accounts/10/items/20/prices"
+        assert json.loads(request.content.decode()) == {
+            "prices": [{"date_from": "2026-05-01", "night_price": 5000}]
+        }
+        return httpx.Response(200, json={"result": "success"})
+
+    pricing = RealtyPricing(
+        make_transport(httpx.MockTransport(handler)),
+        item_id="20",
+        user_id="10",
+    )
+
+    result = pricing.update_realty_prices(
+        periods=[RealtyPricePeriod(date_from="2026-05-01", price=5000)],
+        idempotency_key="idem-realty-prices",
+    )
+
+    assert result.status == "success"
+    assert seen_keys == ["idem-realty-prices"]
+
+
 def test_realty_rejects_invalid_dates_before_transport() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError("transport must not be called")

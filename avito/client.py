@@ -20,7 +20,7 @@ from avito.autoteka import (
 )
 from avito.config import AvitoSettings
 from avito.core import Transport, TransportDebugInfo
-from avito.core.exceptions import AvitoError, ConfigurationError
+from avito.core.exceptions import AvitoError, ClientClosedError
 from avito.cpa import CallTrackingCall, CpaArchive, CpaCall, CpaChat, CpaLead
 from avito.jobs import Application, JobDictionary, JobWebhook, Resume, Vacancy
 from avito.messenger import Chat, ChatMedia, ChatMessage, ChatWebhook, SpecialOfferCampaign
@@ -571,7 +571,7 @@ class AvitoClient:
 
     def _ensure_open(self) -> None:
         if self._closed:
-            raise ConfigurationError("Клиент закрыт; создайте новый AvitoClient.")
+            raise ClientClosedError("Клиент закрыт; создайте новый AvitoClient.")
 
     def _require_transport(self) -> Transport:
         self._ensure_open()

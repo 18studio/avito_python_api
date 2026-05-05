@@ -362,6 +362,100 @@ def test_transport_does_not_retry_post_without_idempotency_key_even_with_allow_r
     assert calls["count"] == 1
 
 
+@pytest.mark.parametrize("failure", ("timeout", "server_error"))
+def test_transport_does_not_retry_delete_without_idempotency_key(failure: str) -> None:
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        if failure == "timeout":
+            raise httpx.ConnectError("offline", request=request)
+        return httpx.Response(500, json={"message": "server error"})
+
+    transport = Transport(
+        make_settings(),
+        client=httpx.Client(
+            transport=httpx.MockTransport(handler), base_url="https://api.avito.ru"
+        ),
+        sleep=lambda _: None,
+    )
+
+    if failure == "timeout":
+        with pytest.raises(Exception, match="offline"):
+            transport.request_json(
+                "DELETE",
+                "/items/1",
+                context=RequestContext("delete_item"),
+            )
+    else:
+        with pytest.raises(UpstreamApiError):
+            transport.request_json(
+                "DELETE",
+                "/items/1",
+                context=RequestContext("delete_item"),
+            )
+
+    assert calls["count"] == 1
+
+
+def test_transport_retries_delete_with_same_idempotency_key_for_whole_retry_chain() -> None:
+    calls = {"count": 0}
+    seen_keys: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        seen_keys.append(request.headers.get("Idempotency-Key"))
+        if calls["count"] == 1:
+            raise httpx.ConnectError("offline", request=request)
+        return httpx.Response(200, json={"ok": True})
+
+    transport = Transport(
+        make_settings(),
+        client=httpx.Client(
+            transport=httpx.MockTransport(handler), base_url="https://api.avito.ru"
+        ),
+        sleep=lambda _: None,
+    )
+
+    payload = transport.request_json(
+        "DELETE",
+        "/items/1",
+        context=RequestContext("delete_item"),
+        idempotency_key="idem-123",
+    )
+
+    assert payload == {"ok": True}
+    assert calls["count"] == 2
+    assert seen_keys == ["idem-123", "idem-123"]
+
+
+def test_transport_retries_delete_with_explicit_retry_override() -> None:
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return httpx.Response(500, json={"message": "server error"})
+        return httpx.Response(200, json={"ok": True})
+
+    transport = Transport(
+        make_settings(),
+        client=httpx.Client(
+            transport=httpx.MockTransport(handler), base_url="https://api.avito.ru"
+        ),
+        sleep=lambda _: None,
+    )
+
+    payload = transport.request_json(
+        "DELETE",
+        "/items/1",
+        context=RequestContext("delete_item", allow_retry=True),
+    )
+
+    assert payload == {"ok": True}
+    assert calls["count"] == 2
+
+
 def test_transport_exposes_request_context_on_transport_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

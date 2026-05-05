@@ -107,18 +107,18 @@ with AvitoClient.from_env() as avito:
 
 ## После close()
 
-После `close()` или выхода из контекстного менеджера любой SDK-вызов поднимает `ConfigurationError`. Проверяйте это в долгоживущих сервисах.
+После `close()` или выхода из контекстного менеджера любой SDK-вызов поднимает `ClientClosedError`. Проверяйте это в долгоживущих сервисах.
 
 ```python
 from avito import AvitoClient
-from avito.core.exceptions import ConfigurationError
+from avito.core.exceptions import ClientClosedError
 
 avito = AvitoClient.from_env()
 avito.close()
 
 try:
     avito.account().get_self()
-except ConfigurationError as exc:
+except ClientClosedError as exc:
     print(str(exc))
 ```
 

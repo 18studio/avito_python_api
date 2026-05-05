@@ -118,6 +118,10 @@ class ConfigurationError(AvitoError):
     """SDK сконфигурирован некорректно — ошибка обнаружена до выполнения HTTP-запроса."""
 
 
+class ClientClosedError(AvitoError):
+    """Вызов выполнен после закрытия `AvitoClient`."""
+
+
 class RateLimitError(AvitoError):
     """Превышен лимит запросов API (HTTP 429)."""
 
@@ -142,6 +146,7 @@ __all__ = (
     "AuthenticationError",
     "AuthorizationError",
     "AvitoError",
+    "ClientClosedError",
     "ConfigurationError",
     "ConflictError",
     "RateLimitError",

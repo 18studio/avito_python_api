@@ -8,7 +8,7 @@ and this project adheres to Semantic Versioning.
 ## [Unreleased]
 
 ### Added
-- Нет изменений.
+- Добавлен `ClientClosedError` для вызовов после `AvitoClient.close()`.
 
 ### Deprecated
 - Env alias `AVITO_SECRET` для `AVITO_CLIENT_SECRET` устарел и теперь эмитирует `DeprecationWarning`; используйте `AVITO_CLIENT_SECRET`.
@@ -38,6 +38,7 @@ and this project adheres to Semantic Versioning.
 - **BREAKING:** Jobs vacancy write methods now require Swagger billing fields, classic v1 vacancy create requires the documented required fields, `JobWebhook.update(...)` requires `secret`, and vacancy statuses send UUID string ids.
 - **BREAKING:** Messenger request bodies now match Swagger for blacklist, text messages and image messages; malformed Swagger required fields absent from schema properties are ignored by the normalized schema tree.
 - **BREAKING:** Special-offers request bodies now match Swagger: `create_multi(...)` sends only `itemIds`, `confirm_multi(...)` sends `dispatches`/`expiresAt`, and `get_stats(...)` requires `date_time_from`/`date_time_to`.
+- Вызовы после `AvitoClient.close()` теперь поднимают `ClientClosedError` вместо `ConfigurationError`.
 
 ### Removed
 - **BREAKING:** удалены классы исключений `NotFoundError`, `ClientError`, `ServerError` из `avito.core.exceptions`. HTTP 404 и 5xx теперь маппятся на `UpstreamApiError`. Пользователям, ловившим эти типы, перейти на `UpstreamApiError` или `AvitoError` и проверять `status_code`.

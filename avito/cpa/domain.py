@@ -71,6 +71,7 @@ class CpaLead(DomainObject):
         *,
         action_id: int,
         reason: str,
+        idempotency_key: str | None = None,
         timeout: ApiTimeouts | None = None,
         retry: RetryOverride | None = None,
     ) -> CpaActionResult:
@@ -79,6 +80,7 @@ class CpaLead(DomainObject):
         Аргументы:
             action_id: идентифицирует CPA-действие.
             reason: передает причину жалобы или обращения.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
             timeout: переопределяет таймауты HTTP-запроса для этого вызова.
             retry: переопределяет retry-политику операции: default, enabled или disabled.
 
@@ -86,6 +88,7 @@ class CpaLead(DomainObject):
             `CpaActionResult` со статусом выполнения операции.
 
         Поведение:
+            Без `idempotency_key` write-вызов не повторяется при сетевых ошибках.
             `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
 
         Исключения:
@@ -96,6 +99,7 @@ class CpaLead(DomainObject):
             CREATE_CPA_LEAD_COMPLAINT,
             request=CpaLeadComplaintRequest(action_id=action_id, reason=reason),
             headers=CPA_HEADERS,
+            idempotency_key=idempotency_key,
             timeout=timeout,
             retry=retry,
         )
@@ -267,9 +271,22 @@ class CpaChat(DomainObject):
     ) -> CpaChatsResult:
         """Выполняет legacy-операцию списка CPA-чатов v1 и возвращает типизированную SDK-модель.
 
-        Метод оставлен для явного покрытия отдельной Swagger operation.
+        Аргументы:
+            created_at_from: фильтрует CPA-чаты по нижней границе даты создания.
+            limit: задает максимальное число записей в ответе.
+            offset: задает смещение выборки.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `CpaChatsResult` со списком CPA-чатов legacy API.
+
+        Поведение:
+            Метод оставлен для явного покрытия отдельной Swagger operation.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         warn_deprecated_once(
@@ -418,6 +435,7 @@ class CpaCall(DomainObject):
         *,
         call_id: int,
         reason: str,
+        idempotency_key: str | None = None,
         timeout: ApiTimeouts | None = None,
         retry: RetryOverride | None = None,
     ) -> CpaActionResult:
@@ -426,6 +444,7 @@ class CpaCall(DomainObject):
         Аргументы:
             call_id: идентифицирует звонок.
             reason: передает причину жалобы или обращения.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
             timeout: переопределяет таймауты HTTP-запроса для этого вызова.
             retry: переопределяет retry-политику операции: default, enabled или disabled.
 
@@ -433,6 +452,7 @@ class CpaCall(DomainObject):
             `CpaActionResult` со статусом выполнения операции.
 
         Поведение:
+            Без `idempotency_key` write-вызов не повторяется при сетевых ошибках.
             `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
 
         Исключения:
@@ -443,6 +463,7 @@ class CpaCall(DomainObject):
             CREATE_CPA_CALL_COMPLAINT,
             request=CpaCallComplaintRequest(call_id=call_id, reason=reason),
             headers=CPA_HEADERS,
+            idempotency_key=idempotency_key,
             timeout=timeout,
             retry=retry,
         )
@@ -482,9 +503,21 @@ class CpaArchive(DomainObject):
     ) -> CpaAudioRecord:
         """Получает архивную запись звонка.
 
-                Deprecated: используйте `call_tracking_call().download`; удаление в версии 1.3.0.
+        Deprecated: используйте `call_tracking_call().download`; удаление в версии 1.3.0.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            call_id: идентифицирует архивную запись звонка.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `CpaAudioRecord` с бинарной записью звонка.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return CpaAudioRecord(
@@ -516,9 +549,20 @@ class CpaArchive(DomainObject):
     ) -> CpaBalanceInfo:
         """Получает архивный баланс CPA.
 
-                Deprecated: используйте `cpa_lead().get_balance_info`; удаление в версии 1.3.0.
+        Deprecated: используйте `cpa_lead().get_balance_info`; удаление в версии 1.3.0.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `CpaBalanceInfo` с архивной информацией о балансе CPA.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -553,9 +597,21 @@ class CpaArchive(DomainObject):
     ) -> CpaCallInfo:
         """Получает архивные данные звонка.
 
-                Deprecated: используйте `call_tracking_call().get`; удаление в версии 1.3.0.
+        Deprecated: используйте `call_tracking_call().get`; удаление в версии 1.3.0.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            call_id: идентифицирует звонок.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `CpaCallInfo` с архивными данными звонка.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(

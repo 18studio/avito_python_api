@@ -695,7 +695,19 @@ class Application(DomainObject):
     ) -> ApplicationsResult:
         """Возвращает отклики по идентификаторам и возвращает типизированную SDK-модель.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            ids: передает идентификаторы откликов.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `ApplicationsResult` со списком найденных откликов.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -721,7 +733,20 @@ class Application(DomainObject):
     ) -> ApplicationIdsResult:
         """Возвращает идентификаторы откликов по фильтру и возвращает типизированную SDK-модель.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            updated_at_from: фильтрует отклики по нижней границе даты обновления.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `ApplicationIdsResult` со списком идентификаторов откликов.
+
+        Поведение:
+            `updated_at_from` сериализуется в ISO datetime перед выполнением запроса.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(

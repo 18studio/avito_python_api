@@ -88,6 +88,31 @@ def test_cpa_calls_archive_and_balance_flows() -> None:
     assert archived_audio.binary.content == audio_bytes
 
 
+def test_cpa_complaint_idempotency_key_is_stable_across_retry() -> None:
+    calls = {"count": 0}
+    seen_keys: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        seen_keys.append(request.headers.get("Idempotency-Key"))
+        if calls["count"] == 1:
+            raise httpx.ConnectError("offline", request=request)
+        assert request.url.path == "/cpa/v1/createComplaint"
+        return httpx.Response(200, json={"success": True})
+
+    cpa_call = CpaCall(make_transport(httpx.MockTransport(handler)))
+
+    result = cpa_call.create_complaint(
+        call_id=2001,
+        reason="spam",
+        idempotency_key="idem-cpa-complaint",
+    )
+
+    assert result.success is True
+    assert calls["count"] == 2
+    assert seen_keys == ["idem-cpa-complaint", "idem-cpa-complaint"]
+
+
 def test_cpa_call_unknown_status_id_maps_to_unknown_and_warns_once(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

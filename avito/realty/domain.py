@@ -55,6 +55,7 @@ class RealtyListing(DomainObject):
         *,
         intervals: list[RealtyInterval],
         item_id: int | None = None,
+        idempotency_key: str | None = None,
         timeout: ApiTimeouts | None = None,
         retry: RetryOverride | None = None,
     ) -> RealtyActionResult:
@@ -63,6 +64,7 @@ class RealtyListing(DomainObject):
         Аргументы:
             intervals: передает интервалы доступности объявления.
             item_id: идентифицирует объявление Авито.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
             timeout: переопределяет таймауты HTTP-запроса для этого вызова.
             retry: переопределяет retry-политику операции: default, enabled или disabled.
 
@@ -70,6 +72,7 @@ class RealtyListing(DomainObject):
             `RealtyActionResult` со статусом выполнения операции.
 
         Поведение:
+            Без `idempotency_key` write-вызов не повторяется при сетевых ошибках.
             `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
 
         Исключения:
@@ -82,6 +85,7 @@ class RealtyListing(DomainObject):
                 item_id=item_id or int(self._require_item_id()),
                 intervals=intervals,
             ),
+            idempotency_key=idempotency_key,
             timeout=timeout,
             retry=retry,
         )
@@ -98,6 +102,7 @@ class RealtyListing(DomainObject):
         *,
         min_stay_days: int,
         item_id: int | str | None = None,
+        idempotency_key: str | None = None,
         timeout: ApiTimeouts | None = None,
         retry: RetryOverride | None = None,
     ) -> RealtyActionResult:
@@ -106,6 +111,7 @@ class RealtyListing(DomainObject):
         Аргументы:
             min_stay_days: задает минимальное число дней проживания.
             item_id: идентифицирует объявление Авито.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
             timeout: переопределяет таймауты HTTP-запроса для этого вызова.
             retry: переопределяет retry-политику операции: default, enabled или disabled.
 
@@ -113,6 +119,7 @@ class RealtyListing(DomainObject):
             `RealtyActionResult` со статусом выполнения операции.
 
         Поведение:
+            Без `idempotency_key` write-вызов не повторяется при сетевых ошибках.
             `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
 
         Исключения:
@@ -123,6 +130,7 @@ class RealtyListing(DomainObject):
             UPDATE_BASE_PARAMS,
             path_params={"item_id": item_id or self._require_item_id()},
             request=RealtyBaseParamsUpdateRequest(min_stay_days=min_stay_days),
+            idempotency_key=idempotency_key,
             timeout=timeout,
             retry=retry,
         )
@@ -157,6 +165,7 @@ class RealtyBooking(DomainObject):
         blocked_dates: list[DateInput],
         user_id: int | str | None = None,
         item_id: int | str | None = None,
+        idempotency_key: str | None = None,
         timeout: ApiTimeouts | None = None,
         retry: RetryOverride | None = None,
     ) -> RealtyActionResult:
@@ -166,6 +175,7 @@ class RealtyBooking(DomainObject):
             blocked_dates: передает заблокированные даты бронирования.
             user_id: идентифицирует пользователя или аккаунт Авито.
             item_id: идентифицирует объявление Авито.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
             timeout: переопределяет таймауты HTTP-запроса для этого вызова.
             retry: переопределяет retry-политику операции: default, enabled или disabled.
 
@@ -173,6 +183,7 @@ class RealtyBooking(DomainObject):
             `RealtyActionResult` со статусом выполнения операции.
 
         Поведение:
+            Без `idempotency_key` write-вызов не повторяется при сетевых ошибках.
             `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
 
         Исключения:
@@ -191,6 +202,7 @@ class RealtyBooking(DomainObject):
                     for index, blocked_date in enumerate(blocked_dates)
                 ]
             ),
+            idempotency_key=idempotency_key,
             timeout=timeout,
             retry=retry,
         )
@@ -284,6 +296,7 @@ class RealtyPricing(DomainObject):
         periods: list[RealtyPricePeriod],
         user_id: int | str | None = None,
         item_id: int | str | None = None,
+        idempotency_key: str | None = None,
         timeout: ApiTimeouts | None = None,
         retry: RetryOverride | None = None,
     ) -> RealtyActionResult:
@@ -293,6 +306,7 @@ class RealtyPricing(DomainObject):
             periods: передает периоды цен.
             user_id: идентифицирует пользователя или аккаунт Авито.
             item_id: идентифицирует объявление Авито.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
             timeout: переопределяет таймауты HTTP-запроса для этого вызова.
             retry: переопределяет retry-политику операции: default, enabled или disabled.
 
@@ -300,6 +314,7 @@ class RealtyPricing(DomainObject):
             `RealtyActionResult` со статусом выполнения операции.
 
         Поведение:
+            Без `idempotency_key` write-вызов не повторяется при сетевых ошибках.
             `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
 
         Исключения:
@@ -313,6 +328,7 @@ class RealtyPricing(DomainObject):
                 "item_id": item_id or self._require_item_id(),
             },
             request=RealtyPricesUpdateRequest(periods=periods),
+            idempotency_key=idempotency_key,
             timeout=timeout,
             retry=retry,
         )
@@ -392,6 +408,7 @@ class RealtyAnalyticsReport(DomainObject):
         self,
         *,
         item_id: int | str | None = None,
+        idempotency_key: str | None = None,
         timeout: ApiTimeouts | None = None,
         retry: RetryOverride | None = None,
     ) -> RealtyAnalyticsInfo:
@@ -399,6 +416,7 @@ class RealtyAnalyticsReport(DomainObject):
 
         Аргументы:
             item_id: идентифицирует объявление Авито.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
             timeout: переопределяет таймауты HTTP-запроса для этого вызова.
             retry: переопределяет retry-политику операции: default, enabled или disabled.
 
@@ -406,6 +424,7 @@ class RealtyAnalyticsReport(DomainObject):
             `RealtyAnalyticsInfo` с типизированными данными ответа API.
 
         Поведение:
+            Без `idempotency_key` write-вызов не повторяется при сетевых ошибках.
             `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
 
         Исключения:
@@ -415,6 +434,7 @@ class RealtyAnalyticsReport(DomainObject):
         return self._execute(
             GET_REPORT_FOR_CLASSIFIED,
             path_params={"itemId": item_id or self._require_item_id()},
+            idempotency_key=idempotency_key,
             timeout=timeout,
             retry=retry,
         )

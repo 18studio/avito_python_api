@@ -99,7 +99,19 @@ class AutotekaVehicle(DomainObject):
     ) -> CatalogResolveResult:
         """Актуализирует параметры автокаталога.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            brand_id: идентифицирует марку автомобиля в каталоге.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `CatalogResolveResult` с актуализированными параметрами каталога.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -937,9 +949,20 @@ class AutotekaMonitoring(DomainObject):
     ) -> MonitoringBucketResult:
         """Очищает bucket мониторинга.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MonitoringBucketResult` со статусом операции над bucket мониторинга.
+
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -967,9 +990,21 @@ class AutotekaMonitoring(DomainObject):
     ) -> MonitoringBucketResult:
         """Удаляет автомобили из bucket мониторинга.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            vehicles: передает идентификаторы автомобилей для удаления из bucket.
+            idempotency_key: задает ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MonitoringBucketResult` со статусом операции над bucket мониторинга.
+
+        Поведение:
+            `idempotency_key` следует передавать для write-операций, которые могут безопасно повторяться.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(

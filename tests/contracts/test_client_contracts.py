@@ -15,7 +15,7 @@ from avito.autoteka import (
     AutotekaVehicle,
 )
 from avito.core import Transport
-from avito.core.exceptions import ConfigurationError
+from avito.core.exceptions import ClientClosedError
 from avito.core.types import ApiTimeouts
 from avito.cpa import CallTrackingCall, CpaArchive, CpaCall, CpaChat, CpaLead
 from avito.jobs import Application, JobDictionary, JobWebhook, Resume, Vacancy
@@ -398,5 +398,5 @@ def test_closed_client_rejects_new_domain_factories() -> None:
 
     client.close()
 
-    with pytest.raises(ConfigurationError, match="Клиент закрыт"):
+    with pytest.raises(ClientClosedError, match="Клиент закрыт"):
         client.account()
