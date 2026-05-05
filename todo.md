@@ -252,6 +252,129 @@ make docs-strict
 make check
 ```
 
+### 11. Align DELETE With Non-Idempotent Retry Policy
+
+STYLEGUIDE §415: «Non-idempotent HTTP methods (POST, PATCH, DELETE without an explicit safe marker) are not retried by default». Сейчас в `avito/core/transport.py:513–514` блокировка ретраев без `idempotency_key` действует только на `POST`/`PATCH`; `DELETE` обрабатывается общей политикой `RetryPolicy.retryable_methods`.
+
+Шаги:
+
+- Расширить условие в `Transport._is_retryable_attempt()` (или эквивалентный метод) до `{"POST", "PATCH", "DELETE"}`: ретрай только при наличии `idempotency_key` или явного per-operation opt-in.
+- Убедиться, что `RetryPolicy.retryable_methods` по умолчанию не содержит `DELETE`, либо что `Transport` имеет приоритет.
+- Добавить тесты:
+  - `DELETE` без ключа на 5xx/timeout не ретраится;
+  - `DELETE` с `idempotency_key` ретраится по общим правилам;
+  - `DELETE` с явным per-operation override ретраится.
+- Обновить `docs/site/explanations/transport-and-retries.md`.
+
+Файлы:
+
+- `avito/core/transport.py`
+- `avito/core/retries.py`
+- `tests/core/test_transport.py`
+- `docs/site/explanations/transport-and-retries.md`
+
+Verification:
+
+```bash
+poetry run pytest tests/core/test_transport.py
+```
+
+### 12. Сквозной аудит `idempotency_key` за пределами `promotion`
+
+Аудит подтвердил полное покрытие в `avito/promotion/domain.py`. Нужно явно проверить остальные домены с write-операциями: `orders`, `ratings`, `messenger`, `cpa`, `jobs`, `realty`, `autoload`. STYLEGUIDE §424–426: при наличии у upstream поддержки идемпотентности — параметр обязан быть в публичной сигнатуре.
+
+Шаги:
+
+- Сверить со Swagger-спецификациями в `docs/avito/api/`, какие POST/PATCH/DELETE upstream поддерживают идемпотентность (заголовок/параметр).
+- Для каждого такого метода добавить `idempotency_key: str | None = None` keyword-only.
+- Прокинуть значение через `OperationExecutor` в `Transport`; ключ передаётся одним и тем же значением через все retry-попытки одного логического вызова.
+- В docstring каждого write-метода явно зафиксировать: «без `idempotency_key` метод не ретраится на сетевых ошибках».
+- Добавить контрактный тест на `Idempotency-Key` header (один и тот же на все попытки).
+
+Файлы:
+
+- `avito/orders/domain.py`, `avito/ratings/domain.py`, `avito/messenger/domain.py`, `avito/cpa/domain.py`, `avito/jobs/domain.py`, `avito/realty/domain.py`, `avito/autoload/domain.py`
+- соответствующие `tests/domains/<domain>/`
+
+Verification:
+
+```bash
+poetry run pytest tests/domains/ tests/core/test_transport.py
+```
+
+### 13. Выделить `ClientClosedError`
+
+STYLEGUIDE §183: вызов на закрытом клиенте обязан бросать доменную ошибку. Сейчас `avito/client.py:573–574` бросает `ConfigurationError("Клиент закрыт; ...")`. Технически это доменная ошибка, но семантически lifecycle ≠ конфигурация: пользователь, ловящий `ConfigurationError`, неожиданно получит ошибки закрытого клиента.
+
+Шаги:
+
+- Добавить `ClientClosedError(AvitoError)` в `avito/core/exceptions.py`.
+- Заменить raise в `_ensure_open()` на `ClientClosedError`.
+- Сообщение оставить на русском.
+- Обновить `docs/site/reference/exceptions.md` и `CHANGELOG.md` (раздел `Changed`/`Added`).
+- Добавить тест: вызов любого публичного метода после `close()` бросает `ClientClosedError` и не уходит в `httpx`.
+- Обратная совместимость: т.к. `ConfigurationError` и `ClientClosedError` оба наследники `AvitoError`, ловящие `AvitoError` пользователи не сломаются. Ловящие `ConfigurationError` — да, но это ожидаемое поведение по STYLEGUIDE; задепрекейтить переходный период не требуется (сообщение оставалось в Russian, контракт не публиковался).
+
+Файлы:
+
+- `avito/core/exceptions.py`
+- `avito/client.py`
+- `tests/core/test_client_lifecycle.py` (создать или дополнить существующий)
+- `docs/site/reference/exceptions.md`
+- `CHANGELOG.md`
+
+Verification:
+
+```bash
+poetry run pytest tests/core/ tests/contracts/
+```
+
+### 14. CHANGELOG-гейт
+
+STYLEGUIDE §710 и §923: запись в `CHANGELOG.md` обязательна для каждого публичного изменения. Сейчас файл присутствует, но автоматического чека нет ни в `Makefile`, ни в `.github/workflows/`.
+
+Шаги:
+
+- Добавить скрипт `scripts/check_changelog.py`: при diff в `avito/**` относительно базовой ветки требовать модификации `CHANGELOG.md` в том же diff.
+- Подключить в `make check` (опционально — только если запущено в CI: проверять переменную окружения).
+- Альтернатива: GitHub Actions job, который сравнивает изменённые пути через `git diff --name-only origin/main...HEAD`.
+- Документировать политику в `CONTRIBUTING.md` (создать при отсутствии).
+
+Файлы:
+
+- `scripts/check_changelog.py` (новый)
+- `Makefile`
+- `.github/workflows/ci.yml` (если используется)
+- `CONTRIBUTING.md`
+
+Verification:
+
+```bash
+poetry run python scripts/check_changelog.py
+```
+
+### 15. Сквозной аудит документации per-operation overrides
+
+STYLEGUIDE §388, §687: список поддерживаемых per-operation override'ов — часть публичного контракта и должен быть задокументирован в docstring **каждого** публичного метода. Реализация (`timeout`, `retry` в `OperationExecutor.execute()`) уже есть, но docstring-покрытие неравномерное между доменами.
+
+Шаги (примыкает к разделу 7, но более узкий и автоматизируемый):
+
+- Расширить статический линтер из раздела 9 проверкой: для каждого публичного метода с `@swagger_operation` в docstring должны присутствовать секции/маркеры `timeout` и `retry`.
+- Прогнать линтер, исправить пропуски в `accounts`, `ads`, `promotion`, `messenger`, `tariffs`, `orders`, `cpa`, `jobs`, `realty`, `ratings`, `autoload`.
+- Добавить общий шаблон в `docs/site/explanations/` со ссылкой из docstring (рекомендация, не норма).
+
+Файлы:
+
+- `scripts/lint_architecture.py` (или `scripts/lint_docstrings.py`)
+- все `avito/*/domain.py`
+
+Verification:
+
+```bash
+poetry run python scripts/lint_architecture.py
+make docs-strict
+```
+
 ## Recommended Execution Order
 
 1. Exception contract and transport logging.
@@ -259,13 +382,18 @@ make check
 3. `AVITO_SECRET` alias policy.
 4. Date/time validation.
 5. Closed value-set enums.
-6. Public docstrings.
-7. Pytest/static-lint alignment.
-8. Static lint expansion.
-9. Final gate.
+6. DELETE retry policy alignment (раздел 11).
+7. Idempotency_key audit (раздел 12).
+8. `ClientClosedError` (раздел 13).
+9. Public docstrings + per-operation overrides docstring audit (разделы 7 и 15 совместно).
+10. Pytest/static-lint alignment.
+11. Static lint expansion.
+12. CHANGELOG-гейт (раздел 14).
+13. Final gate.
 
 ## Changelog
 
 - 2026-05-03: Created plan from STYLEGUIDE compliance audit.
 - 2026-05-03: Recorded current clean baseline: architecture lint, mypy, ruff, swagger-lint, and full pytest all pass.
 - 2026-05-03: Noted that `STYLEGUIDE.md` now explicitly requires Swagger-spec compliance tests and permits contract-focused introspection for Swagger coverage.
+- 2026-05-03: Added sections 11–15 after deep audit. Confirmed already-implemented: per-operation overrides (`avito/core/operations.py:137`), `idempotency_key` в `promotion`, `User-Agent` + `user_agent_suffix` (`avito/config.py:35`, `avito/core/transport.py:430–442`), `Retry-After` honor (`avito/core/transport.py:486–494`, `696–709`), explicit `to_dict()`/`model_dump()` (`avito/core/serialization.py:35–50`), once-per-process unknown-enum warnings (`avito/core/enums.py:9, 22–28`), Diátaxis-структура (tutorials/how-to/reference/explanations с `idempotency.md`, `pagination.md`, `per-operation-overrides.md`, `transport-and-retries.md`), `avito.testing` namespace (`FakeTransport`, `FakeResponse`, `SwaggerFakeTransport`), отсутствие `**kwargs` на публичных методах, отсутствие `logging.basicConfig`, отсутствие dead code в `avito/core/{swagger,operations,deprecation}.py`, корректные `PaginatedList[T]` аннотации.
