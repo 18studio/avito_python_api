@@ -53,7 +53,13 @@
       "Bash(grep -E \"\\\\.json$|\\\\.lock$|todo\\\\.md|action_plan\\\\.md|usability_scorecard\\\\.md\")",
       "Bash(echo \"---EXISTS:$?\")",
       "Bash(git mv *)",
-      "Bash(make swagger-lint *)"
+      "Bash(make swagger-lint *)",
+      "Bash(git -C /Users/n.baryshnikov/Projects/avito_python_api branch -a)",
+      "Bash(git -C /Users/n.baryshnikov/Projects/avito_python_api log --oneline async..HEAD)",
+      "Bash(grep -v \":0$\")",
+      "Bash(grep -E \"\\\\\\\\.py$\")",
+      "Bash(git -C /Users/n.baryshnikov/Projects/avito_python_api log --oneline async..main)",
+      "Bash(git -C /Users/n.baryshnikov/Projects/avito_python_api log --oneline main..async)"
     ]
   }
 }
