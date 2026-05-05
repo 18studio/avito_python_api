@@ -131,9 +131,10 @@ Non-strict mode валидирует specs и уже найденные bindings
 каждый API-domain binding исполнялся через ровно один `OperationSpec`, method/path
 этого `OperationSpec` совпадали со Swagger operation, а API-domain
 `OperationSpec` без публичного binding отсутствовали. `make swagger-lint`
-сначала скачивает свежие Swagger/OpenAPI files через `make swagger-update`,
-затем запускает strict validation. `make swagger-coverage` дополнительно
-запускает полный Swagger contract suite и входит в `make check`.
+запускает strict validation по уже существующим локальным спецификациям из
+`docs/avito/api/`. Свежие Swagger/OpenAPI files скачиваются только вручную
+через `make swagger-update`. `make swagger-coverage` дополнительно запускает
+полный Swagger contract suite и входит в `make check`.
 
 JSON report используется как стабильный machine-readable API для generated reference и coverage:
 

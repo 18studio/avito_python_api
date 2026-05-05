@@ -35,7 +35,7 @@ lint:
 swagger-update:
 	poetry run python scripts/download_avito_api_specs.py --clean
 
-swagger-lint: swagger-update
+swagger-lint:
 	poetry run python scripts/lint_swagger_bindings.py --strict
 
 architecture-lint:
