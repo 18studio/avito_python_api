@@ -78,7 +78,18 @@ class Chat(DomainObject):
     ) -> ChatInfo:
         """Получает чат по `chat_id`.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `ChatInfo` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -138,9 +149,20 @@ class Chat(DomainObject):
     ) -> MessageActionResult:
         """Помечает чат как прочитанный.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MessageActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -171,9 +193,21 @@ class Chat(DomainObject):
     ) -> MessageActionResult:
         """Добавляет пользователя в blacklist.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            blacklisted_user_id: идентификатор пользователя, которого нужно добавить в черный список.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MessageActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -270,9 +304,22 @@ class ChatMessage(DomainObject):
     ) -> MessageActionResult:
         """Отправляет текстовое сообщение.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            chat_id: идентификатор чата.
+            message: текст отправляемого сообщения.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MessageActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -306,9 +353,23 @@ class ChatMessage(DomainObject):
     ) -> MessageActionResult:
         """Отправляет сообщение с изображением.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            chat_id: идентификатор чата.
+            image_id: идентификатор изображения для отправки.
+            caption: подпись к изображению, если поддерживается операцией.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MessageActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -340,9 +401,22 @@ class ChatMessage(DomainObject):
     ) -> MessageActionResult:
         """Удаляет сообщение.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            chat_id: идентификатор чата.
+            message_id: идентификатор сообщения.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `MessageActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         resolved_message_id = message_id or self._require_message_id()
@@ -427,9 +501,21 @@ class ChatWebhook(DomainObject):
     ) -> WebhookActionResult:
         """Отключает webhook.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            url: URL источника данных.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `WebhookActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -458,9 +544,22 @@ class ChatWebhook(DomainObject):
     ) -> WebhookActionResult:
         """Включает webhook v3.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            url: URL источника данных.
+            secret: секрет webhook-подписки для проверки входящих событий.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `WebhookActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -497,7 +596,19 @@ class ChatMedia(DomainObject):
     ) -> VoiceFilesResult:
         """Получает голосовые сообщения.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            voice_ids: идентификаторы голосовых файлов.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `VoiceFilesResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         resolved_voice_ids = list(voice_ids or ["voice-1"])
@@ -526,9 +637,21 @@ class ChatMedia(DomainObject):
     ) -> UploadImagesResult:
         """Загружает изображения для сообщений.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            files: файлы изображений для загрузки.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `UploadImagesResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -573,7 +696,19 @@ class SpecialOfferCampaign(DomainObject):
     ) -> SpecialOfferAvailableResult:
         """Получает объявления, доступные для рассылки.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            item_ids: список идентификаторов объявлений.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `SpecialOfferAvailableResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -731,7 +866,18 @@ class SpecialOfferCampaign(DomainObject):
     ) -> TariffInfo:
         """Получает информацию о тарифе спецпредложений.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `TariffInfo` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(GET_SPECIAL_OFFER_TARIFF_INFO, timeout=timeout, retry=retry)

@@ -66,7 +66,18 @@ class Account(DomainObject):
     ) -> AccountProfile:
         """Получает профиль авторизованного пользователя.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `AccountProfile` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(GET_SELF, timeout=timeout, retry=retry)
@@ -191,7 +202,18 @@ class AccountHierarchy(DomainObject):
     ) -> AhUserStatus:
         """Получает статус пользователя в ИА.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `AhUserStatus` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(GET_AH_USER_STATUS, timeout=timeout, retry=retry)
@@ -269,9 +291,23 @@ class AccountHierarchy(DomainObject):
     ) -> AccountActionResult:
         """Прикрепляет объявления к сотруднику.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            employee_id: идентификатор сотрудника, к которому прикрепляются объявления.
+            item_ids: список идентификаторов объявлений.
+            source_employee_id: идентификатор сотрудника-источника, если объявления переносятся между сотрудниками.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `AccountActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(

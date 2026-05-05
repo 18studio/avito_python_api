@@ -32,7 +32,18 @@ class Tariff(DomainObject):
     ) -> TariffInfo:
         """Получает информацию о тарифе аккаунта.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `TariffInfo` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(GET_TARIFF_INFO, timeout=timeout, retry=retry)

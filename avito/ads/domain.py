@@ -160,7 +160,18 @@ class Ad(DomainObject):
     ) -> Listing:
         """Получает объявление по `item_id`.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `Listing` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         item_id, user_id = self._require_ids()
@@ -280,9 +291,21 @@ class Ad(DomainObject):
     ) -> UpdatePriceResult:
         """Обновляет цену текущего объявления.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            price: новое значение цены.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `UpdatePriceResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         item_id = self._require_item_id()
@@ -382,7 +405,21 @@ class AdStats(DomainObject):
     ) -> CallsStatsResult:
         """Получает статистику звонков.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            date_from: начальная дата или дата-время периода.
+            date_to: конечная дата или дата-время периода.
+            item_ids: список идентификаторов объявлений.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `CallsStatsResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         user_id = self._require_user_id()
@@ -421,7 +458,22 @@ class AdStats(DomainObject):
     ) -> ItemStatsResult:
         """Получает статистику по списку объявлений.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            date_from: начальная дата или дата-время периода.
+            date_to: конечная дата или дата-время периода.
+            item_ids: список идентификаторов объявлений.
+            fields: список запрошенных полей.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `ItemStatsResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         user_id = self._require_user_id()
@@ -468,7 +520,25 @@ class AdStats(DomainObject):
     ) -> ItemAnalyticsResult:
         """Получает аналитику по профилю.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            date_from: начальная дата или дата-время периода.
+            date_to: конечная дата или дата-время периода.
+            metrics: список метрик статистики, которые нужно вернуть.
+            grouping: группировка статистики или расходов.
+            limit: максимальное количество элементов в ответе.
+            offset: смещение выборки.
+            item_ids: список идентификаторов объявлений.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `ItemAnalyticsResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         user_id = self._require_user_id()
@@ -512,7 +582,23 @@ class AdStats(DomainObject):
     ) -> AccountSpendings:
         """Получает статистику расходов профиля.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            date_from: начальная дата или дата-время периода.
+            date_to: конечная дата или дата-время периода.
+            spending_types: типы расходов, включаемые в отчет.
+            grouping: группировка статистики или расходов.
+            item_ids: список идентификаторов объявлений.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `AccountSpendings` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         user_id = self._require_user_id()
@@ -563,7 +649,20 @@ class AdPromotion(DomainObject):
     ) -> VasPricesResult:
         """Получает цены продвижения и доступные услуги.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            item_ids: список идентификаторов объявлений.
+            location_id: идентификатор локации для расчета доступности или цены услуги.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `VasPricesResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         user_id = self._require_user_id()
@@ -593,11 +692,23 @@ class AdPromotion(DomainObject):
     ) -> PromotionActionResult:
         """Применяет дополнительные услуги к объявлению.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            vas_id: идентификатор VAS-услуги.
+            dry_run: если `True`, метод собирает payload и возвращает результат без вызова транспорта.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        При `dry_run=True` payload строится без вызова транспорта.
+        Возвращает:
+            `PromotionActionResult` с типизированными данными ответа.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            При `dry_run=True` payload строится без вызова транспорта.
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         item_id, user_id = self._require_ids()
@@ -643,11 +754,23 @@ class AdPromotion(DomainObject):
     ) -> PromotionActionResult:
         """Применяет пакет дополнительных услуг.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            package_code: код пакета продвижения.
+            dry_run: если `True`, метод собирает payload и возвращает результат без вызова транспорта.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        При `dry_run=True` payload строится без вызова транспорта.
+        Возвращает:
+            `PromotionActionResult` с типизированными данными ответа.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            При `dry_run=True` payload строится без вызова транспорта.
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         item_id, user_id = self._require_ids()
@@ -693,9 +816,23 @@ class AdPromotion(DomainObject):
     ) -> PromotionActionResult:
         """Применяет услуги продвижения через прямой v2 endpoint.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            slugs: slug-идентификаторы узлов дерева категорий.
+            dry_run: если `True`, метод собирает payload и возвращает результат без вызова транспорта.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        При `dry_run=True` payload строится без вызова транспорта.
+        Возвращает:
+            `PromotionActionResult` с типизированными данными ответа.
+
+        Поведение:
+            При `dry_run=True` payload строится без вызова транспорта.
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         item_id = self._require_item_id()
@@ -756,7 +893,18 @@ class AutoloadProfile(DomainObject):
     ) -> AutoloadProfileSettings:
         """Получает профиль автозагрузки.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `AutoloadProfileSettings` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(GET_AUTOLOAD_PROFILE, timeout=timeout, retry=retry)
@@ -789,9 +937,27 @@ class AutoloadProfile(DomainObject):
     ) -> AdsActionResult:
         """Сохраняет профиль автозагрузки.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            is_enabled: включает или отключает профиль автозагрузки.
+            feed_url: URL фида автозагрузки.
+            report_email: email для отправки отчетов автозагрузки.
+            schedule_rate: ставка расписания продвижения.
+            schedule_weekdays: дни недели для расписания; если не передано, используется полный недельный набор.
+            schedule_time_slots: временные интервалы расписания; если не передано, используется первый слот.
+            feed_name: имя фида автозагрузки.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `AdsActionResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -827,9 +993,21 @@ class AutoloadProfile(DomainObject):
     ) -> UploadResult:
         """Загружает файл по ссылке.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Аргументы:
+            url: URL источника данных.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `UploadResult` с типизированными данными ответа.
+
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -851,7 +1029,18 @@ class AutoloadProfile(DomainObject):
     ) -> AutoloadTreeResult:
         """Получает дерево категорий.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `AutoloadTreeResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(GET_AUTOLOAD_TREE, timeout=timeout, retry=retry)
@@ -872,7 +1061,19 @@ class AutoloadProfile(DomainObject):
     ) -> AutoloadFieldsResult:
         """Получает поля категории.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            node_slug: slug узла дерева категорий.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `AutoloadFieldsResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -904,7 +1105,18 @@ class AutoloadReport(DomainObject):
     ) -> AutoloadReportDetails:
         """Получает конкретный отчет v3.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `AutoloadReportDetails` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         report_id = self._require_report_id()
@@ -981,7 +1193,18 @@ class AutoloadReport(DomainObject):
     ) -> AutoloadReportDetails:
         """Получает последний завершенный отчет.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `AutoloadReportDetails` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(GET_AUTOLOAD_LAST_COMPLETED_REPORT, timeout=timeout, retry=retry)
@@ -1030,7 +1253,18 @@ class AutoloadReport(DomainObject):
     ) -> AutoloadFeesResult:
         """Получает списания по объявлениям отчета.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `AutoloadFeesResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         report_id = self._require_report_id()
@@ -1057,7 +1291,19 @@ class AutoloadReport(DomainObject):
     ) -> IdMappingResult:
         """Получает ad ids по avito ids.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            avito_ids: список идентификаторов объявлений на Avito.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `IdMappingResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -1083,7 +1329,19 @@ class AutoloadReport(DomainObject):
     ) -> IdMappingResult:
         """Получает avito ids по ad ids.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            ad_ids: список внешних идентификаторов объявлений.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `IdMappingResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -1109,7 +1367,19 @@ class AutoloadReport(DomainObject):
     ) -> AutoloadReportItemsResult:
         """Получает информацию по объявлениям автозагрузки.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Аргументы:
+            item_ids: список идентификаторов объявлений.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
+
+        Возвращает:
+            `AutoloadReportItemsResult` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -1154,9 +1424,18 @@ class AutoloadArchive(DomainObject):
     ) -> AutoloadProfileSettings:
         """Получает архивный профиль автозагрузки.
 
-                Deprecated: используйте `autoload_profile().get`; удаление в версии 1.3.0.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `AutoloadProfileSettings` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(GET_ARCHIVE_PROFILE, timeout=timeout, retry=retry)
@@ -1196,11 +1475,26 @@ class AutoloadArchive(DomainObject):
     ) -> AdsActionResult:
         """Сохраняет архивный профиль автозагрузки.
 
-                Deprecated: используйте `autoload_profile().save`; удаление в версии 1.3.0.
+        Аргументы:
+            is_enabled: включает или отключает профиль автозагрузки.
+            upload_url: URL фида автозагрузки.
+            report_email: email для отправки отчетов автозагрузки.
+            schedule_rate: ставка расписания продвижения.
+            schedule_weekdays: дни недели для расписания; если не передано, используется полный недельный набор.
+            schedule_time_slots: временные интервалы расписания; если не передано, используется первый слот.
+            idempotency_key: ключ идемпотентности для безопасного повтора write-операции.
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Параметр `idempotency_key` задает ключ идемпотентности для безопасного повтора write-операции.
+        Возвращает:
+            `AdsActionResult` с типизированными данными ответа.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Поведение:
+            `idempotency_key` передается в `Idempotency-Key` и должен быть стабильным для одного логического write-вызова.
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(
@@ -1237,9 +1531,18 @@ class AutoloadArchive(DomainObject):
     ) -> LegacyAutoloadReport:
         """Получает архивную статистику по последней выгрузке.
 
-                Deprecated: используйте `autoload_report().get_last_completed`; удаление в версии 1.3.0.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `LegacyAutoloadReport` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         return self._execute(GET_ARCHIVE_LAST_COMPLETED_REPORT, timeout=timeout, retry=retry)
@@ -1263,9 +1566,18 @@ class AutoloadArchive(DomainObject):
     ) -> LegacyAutoloadReport:
         """Получает архивную статистику по конкретной выгрузке.
 
-                Deprecated: используйте `autoload_report().get`; удаление в версии 1.3.0.
+        Аргументы:
+            timeout: переопределяет таймауты HTTP-запроса для этого вызова.
+            retry: переопределяет retry-политику операции: default, enabled или disabled.
 
-        Raises: AvitoError с полями operation, status, request_id, attempt, method и endpoint.
+        Возвращает:
+            `LegacyAutoloadReport` с типизированными данными ответа.
+
+        Поведение:
+            `timeout` и `retry` действуют только на этот вызов и не меняют настройки клиента.
+
+        Исключения:
+            AvitoError: ошибка SDK с контекстом operation, status, request_id, attempt, method и endpoint.
         """
 
         report_id = self._require_report_id()
