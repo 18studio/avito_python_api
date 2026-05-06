@@ -3,9 +3,9 @@
 [![CI](https://github.com/p141592/avito_python_api/actions/workflows/ci.yml/badge.svg)](https://github.com/p141592/avito_python_api/actions/workflows/ci.yml)
 [![Coverage Status](https://coveralls.io/repos/github/p141592/avito_python_api/badge.svg?branch=main)](https://coveralls.io/github/p141592/avito_python_api?branch=main)
 [![PyPI Downloads](https://img.shields.io/pypi/dm/avito-py.svg)](https://pypi.org/project/avito-py/)
-[![Docs](https://img.shields.io/badge/docs-latest-blue)](https://p141592.github.io/avito_python_api/)
+[![Docs](https://img.shields.io/badge/docs-latest-blue)](https://18studio.github.io/avito_python_api/)
 
-Отчёт покрытия Avito API: [покрытие API](https://p141592.github.io/avito_python_api/reference/api-report/).
+Отчёт покрытия Avito API: [покрытие API](https://18studio.github.io/avito_python_api/reference/api-report/).
 
 ## Быстрый старт
 
@@ -99,7 +99,7 @@ with AvitoClient(settings) as avito:
 | `AVITO_AUTOTEKA_CLIENT_SECRET` | нет | Client Secret для Автотека API |
 | `AVITO_AUTOTEKA_SCOPE` | нет | OAuth scope для Автотека API |
 
-Полный список переменных, включая URL-overrides, таймауты и retry-политику, — в [справочнике по конфигурации](https://p141592.github.io/avito_python_api/reference/config/).
+Полный список переменных, включая URL-overrides, таймауты и retry-политику, — в [справочнике по конфигурации](https://18studio.github.io/avito_python_api/reference/config/).
 
 Правила resolution:
 
