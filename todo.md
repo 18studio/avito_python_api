@@ -59,8 +59,17 @@ IO-agnostic вычисления (без httpx-вызова и sleep): `_decide_
 `_safe_payload`, `_extract_message`, `_extract_error_code`, `_extract_error_details`,
 `_extract_request_id`, `_normalize_path`, `_normalize_params`, `_normalize_files`,
 `_merge_headers`, `_build_user_agent`, `_extract_filename`, `build_httpx_timeout`,
-`_safe_endpoint`. `Transport` и `AsyncTransport` остаются тонкими обёртками с двумя различиями:
-формой sleep и формой client.request.
+`_safe_endpoint`, `_log_http_exchange`, `_log_retry`, `_elapsed_ms`. `Transport` и
+`AsyncTransport` остаются тонкими обёртками с двумя различиями: формой sleep и формой
+client.request.
+
+**Важное уточнение по `_merge_headers`.** Текущая реализация
+(`avito/core/transport.py:410-428`) внутри себя делает синхронный вызов
+`self._auth_provider.get_access_token()` — то есть couples token retrieval с merge.
+Чтобы helper стал IO-agnostic, рефакторим его контракт: shared `_merge_headers`
+принимает уже резолвнутый `bearer_token: str | None`, а резолв (включая `await` в
+async-варианте) выполняют сами `Transport`/`AsyncTransport` отдельно. Это первый шаг
+Phase 1 (без поведенческих изменений sync), и он blocking для всего остального M1.
 
 Аналогично: `avito/auth/_cache.py` содержит in-memory state (поля `_access_token`,
 `_refresh_token`, `_autoteka_access_token`) и чистые helpers (`_is_token_fresh`,
@@ -70,18 +79,28 @@ IO-agnostic вычисления (без httpx-вызова и sleep): `_decide_
 ### Порядок зависимостей в M1
 
 ```
-  Phase 1   _transport_shared.py  ◀── рефактор Transport (без поведенческих изменений)
-            _cache.py             ◀── рефактор AuthProvider (без поведенческих изменений)
+  Phase 0   pre-flight (см. раздел "Pre-flight для PR M1")
+            ↓
+  Phase 1a  рефактор Transport._merge_headers → принимает резолвнутый bearer_token
+            (sync без поведенческих изменений; baseline тестов pass/fail идентичен)
+            ↓
+  Phase 1b  _transport_shared.py  ◀── остальной IO-agnostic экстракт из Transport
+            _cache.py             ◀── TokenCache + map_token_response, AuthProvider
+                                      хранит TokenCache + property-shim'ы для
+                                      _access_token/_refresh_token/_autoteka_access_token
+                                      (ради существующих тестов)
             ↓
   Phase 2   AsyncTransport, AsyncOperationTransport, AsyncOperationExecutor
-            AsyncAuthProvider, AsyncTokenClient, AsyncAlternateTokenClient
-            AsyncPaginatedList
+            AsyncAuthProvider (с asyncio.Lock на refresh + отдельным autoteka lock)
+            AsyncTokenClient, AsyncAlternateTokenClient
+            AsyncPaginatedList, AsyncPaginator
             ↓
   Phase 3   variant="async" в swagger декораторе/discovery/linter
             AsyncAvitoClient (без factory-методов; только lifecycle)
-            tests/async_fake_transport.py
+            avito/testing/async_fake_transport.py + tests/async_fake_transport.py
+                                                    (re-export с DeprecationWarning)
             ↓
-  Phase 4   тесты + docs
+  Phase 4   тесты + docs (включая baseline-diff prove sync без изменений)
 ```
 
 ## Ключевые файлы и точки соединения
@@ -95,7 +114,8 @@ IO-agnostic вычисления (без httpx-вызова и sleep): `_decide_
 | `avito/core/swagger.py` | + поле `variant: Literal["sync","async"] = "sync"` в `SwaggerOperationBinding`. + параметр `variant` в `swagger_operation(...)`. Ошибка `ConfigurationError` при двойном декоре одной функции — без изменений. |
 | `avito/core/swagger_discovery.py` | `_iter_domain_modules` дополнительно ищет `<domain>.async_domain` (рядом с `<domain>.domain`). `DiscoveredSwaggerBinding` получает `variant`. `canonical_map` — ключ `(operation_key, variant)`. |
 | `avito/core/swagger_linter.py` | `_validate_duplicate_bindings` группирует по `(operation_key, variant)`. `_validate_complete_bindings` запускается per-variant; для `variant="async"` ожидаемое множество ограничено доменами, у которых уже найден `Async*` класс (class-gated coverage). `_validate_no_unbound_operation_specs` остаётся по `OperationSpec` (sync OperationSpec реюзается обоими режимами — счётчик использований единый). |
-| `avito/auth/provider.py` | Извлекаем shared cache state в `_cache.py`. Сам `AuthProvider` остаётся sync. |
+| `avito/auth/provider.py` | Извлекаем shared cache state в `_cache.py`. Сам `AuthProvider` остаётся sync. Сохраняем `_access_token`/`_refresh_token`/`_autoteka_access_token` как `@property` shim'ы поверх `TokenCache` (с сеттерами), потому что `tests/core/test_authentication.py:122-127` мутирует поле напрямую через `replace()`. |
+| `avito/core/transport.py` (отдельно) | Phase 1a: `_merge_headers` рефакторится первым — принимает уже резолвнутый bearer-token, резолв вызывается отдельной строкой выше. Все остальные shared helpers — Phase 1b. |
 | `avito/__init__.py` | + экспорт `AsyncAvitoClient`. |
 | `avito/core/__init__.py` | + экспорт `AsyncTransport`, `AsyncOperationExecutor`, `AsyncOperationTransport`, `AsyncPaginatedList`. |
 | `avito/core/domain.py` | + `AsyncDomainObject` с async `_execute` и async `_resolve_user_id`. Sync `DomainObject` — без изменений. |
@@ -110,15 +130,18 @@ IO-agnostic вычисления (без httpx-вызова и sleep): `_decide_
 
 ```
 avito/core/_transport_shared.py          # IO-agnostic helpers, retry/error mapping/headers
+                                         #   (_merge_headers принимает bearer_token: str | None)
 avito/core/async_transport.py            # AsyncTransport (httpx.AsyncClient)
 avito/core/async_pagination.py           # AsyncPaginatedList, AsyncPaginator, AsyncPageFetcher
-avito/auth/_cache.py                     # TokenCache + _map_token_response
-avito/auth/async_provider.py             # AsyncAuthProvider (asyncio.Lock на refresh)
+avito/auth/_cache.py                     # TokenCache + map_token_response
+avito/auth/async_provider.py             # AsyncAuthProvider (отдельные asyncio.Lock для
+                                         #   основного и autoteka токенов)
 avito/auth/async_token_client.py         # AsyncTokenClient, AsyncAlternateTokenClient
                                          #   (со @swagger_operation(..., variant="async"))
 avito/async_client.py                    # AsyncAvitoClient (lifecycle + factory-методы пустые в M1)
 avito/testing/async_fake_transport.py    # AsyncFakeTransport (httpx.MockTransport+AsyncClient)
-tests/async_fake_transport.py            # тонкий re-export с DeprecationWarning (как у sync)
+tests/async_fake_transport.py            # тонкий re-export с DeprecationWarning (как у sync;
+                                         #   шаблон скопирован 1:1 с tests/fake_transport.py)
 tests/core/test_async_transport.py
 tests/core/test_async_pagination.py
 tests/core/test_async_executor.py
@@ -165,11 +188,19 @@ class AsyncTransport:
 Реализует `AsyncOperationTransport` (Protocol, async-зеркало `OperationTransport` из
 `avito/core/operations.py`).
 
+`AsyncTransport.request()` внутри:
+
+1. вызывает `bearer_token = await self._auth_provider.get_access_token()` (если требуется);
+2. передаёт `bearer_token` в shared `_merge_headers(...)` — строго pure-функция;
+3. петля retry-decisions делегирует в shared `_decide_*_retry`;
+4. при 401 — `self._auth_provider.invalidate_token()` (sync-операция clear cache),
+   повторный `await self._auth_provider.get_access_token()`, один retry.
+
 ### `avito/core/operations.py` (расширение)
 
 ```python
 class AsyncOperationTransport(Protocol):
-    async def request(...) -> httpx.Response: ...
+    async def request(...) -> httpx.Response: ...           # async def, не Awaitable[T]
     async def request_json(...) -> object: ...
 
 class AsyncOperationExecutor:
@@ -183,6 +214,10 @@ class AsyncOperationExecutor:
 
 `render_path`, `_serialize_query`, `_serialize_request`, `_merge_content_type`,
 `_extract_filename` — общие, переиспользуются обоими executor'ами без копирования.
+
+Замечание по типизации Protocol: для async-методов в `Protocol` используем `async def`, а
+не `Awaitable[T]` в return-аннотации синхронной сигнатуры. Это даёт mypy strict корректный
+runtime-protocol matching и избавляет от двойной оборачивания.
 
 ### `avito/core/domain.py` (расширение)
 
@@ -222,12 +257,31 @@ class AsyncPaginatedList[ItemT]:
 
 type AsyncPageFetcher[ItemT] = Callable[[int | None, str | None],
                                         Awaitable[JsonPage[ItemT]]]
+
+
+class AsyncPaginator[ItemT]:
+    def __init__(self, fetch_page: AsyncPageFetcher[ItemT]) -> None: ...
+    def iter_pages(self, *, start_page: int = 1) -> AsyncIterator[JsonPage[ItemT]]: ...
+    async def collect(self, *, start_page: int = 1) -> list[ItemT]: ...
+    def as_list(
+        self,
+        *,
+        start_page: int = 1,
+        first_page: JsonPage[ItemT] | None = None,
+    ) -> AsyncPaginatedList[ItemT]: ...
 ```
 
 `AsyncPaginatedList` **не** наследует `list[T]` — async-итерация и list-индексация
 несовместимы. Документируем это явно в docstring и в `pagination` how-to. Семантика
 страничного перехода идентична sync `PaginatedList._consume_page` (включая `next_cursor`,
 `page+per_page`, `has_next_page`).
+
+`AsyncPaginator` обязателен: sync-домены используют его в 5 местах
+(`avito/ads/domain.py:266,1183`, `avito/accounts/domain.py:170,383`), включая один кейс,
+где возвращается `Paginator` напрямую (без `as_list()`) — async-двойник такого метода
+вернёт `AsyncPaginator`. У него тот же контракт, что и у sync `Paginator`, но
+`iter_pages()` — `AsyncIterator`, `collect()` — корутина. Внутри `as_list()` создаёт
+`AsyncPaginatedList`, передавая `first_page` как и sync-аналог.
 
 ### `avito/auth/_cache.py`
 
@@ -247,6 +301,23 @@ def map_token_response(payload: object, *, now: datetime | None = None) -> Token
 
 `AuthProvider` и `AsyncAuthProvider` хранят `TokenCache` и используют общий `map_token_response`.
 
+**Compat-shim для существующих тестов.** `tests/core/test_authentication.py:122-127`
+напрямую читает и присваивает `provider._access_token` через `dataclasses.replace(...)`.
+Чтобы не трогать тесты в M1 PR (риск scope-creep), `AuthProvider` сохраняет три
+атрибут-shim'а через `@property`/setter:
+
+```python
+@property
+def _access_token(self) -> AccessToken | None: return self._cache.access_token
+@_access_token.setter
+def _access_token(self, value: AccessToken | None) -> None:
+    self._cache.access_token = value
+# аналогично _refresh_token, _autoteka_access_token
+```
+
+Shim-ы помечены `# legacy private accessor — see PR M1` и удаляются позже отдельным PR
+с миграцией тестов.
+
 ### `avito/auth/async_provider.py`
 
 ```python
@@ -259,13 +330,24 @@ class AsyncAuthProvider:
     token_fetcher: AsyncTokenFetcher | None = None
     _cache: TokenCache = field(default_factory=TokenCache, init=False, repr=False)
     _refresh_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
+    _autoteka_refresh_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
-    async def get_access_token(self) -> str: ...    # double-checked + asyncio.Lock
+    async def get_access_token(self) -> str: ...    # double-checked + _refresh_lock
     async def refresh_access_token(self) -> TokenResponse: ...
-    def invalidate_token(self) -> None: ...         # неблокирующая операция
+    def invalidate_token(self) -> None: ...         # sync clear cache, без await
     async def aclose(self) -> None: ...
-    async def get_autoteka_access_token(self) -> str: ...
+    async def get_autoteka_access_token(self) -> str: ...   # double-checked + _autoteka_refresh_lock
 ```
+
+**Lock lifecycle.** В Python 3.10+ `asyncio.Lock()`, созданный вне event loop,
+лениво биндится к loop'у при первом `await`. Чтобы не получить cross-loop UB:
+`AsyncAuthProvider` создаётся внутри `AsyncAvitoClient.__aenter__` (или `_from_transport`),
+и не переиспользуется между разными event loop'ами. Документируем это в docstring
+`AsyncAvitoClient` и в risk-секции.
+
+Отдельный `_autoteka_refresh_lock` нужен потому, что concurrent first-touch
+`get_autoteka_access_token()` вызывал бы дублирующиеся OAuth-запросы Автотеки. Sync-провайдер
+этой защиты не имеет (GIL не помогает между потоками), но в async это уже явная гонка.
 
 ### `avito/auth/async_token_client.py`
 
@@ -298,9 +380,15 @@ class AsyncTokenClient:
 `AsyncAlternateTokenClient` — зеркало sync-аналога с `variant="async"` на двух методах
 (`getAccessTokenAuthorizationCode`, `refreshAccessTokenAuthorizationCode`).
 
-`avito/core/swagger_discovery.py._NON_DOMAIN_BINDING_MODULES` дополняем
-`"avito.auth.async_provider"` (или `async_token_client`, в зависимости от того, где живут
-классы) — иначе async-bindings auth-домена не попадут в discovery.
+Внутри `AsyncTokenClient._request_token` создаётся **отдельный `AsyncTransport`** с
+`auth_provider=None` (зеркало sync `TokenClient._build_transport()`, см.
+`avito/auth/provider.py:345-350`). Использование основного `AsyncTransport` через
+`AsyncAuthProvider` запрещено — это закольцует OAuth-запрос через сам же auth-провайдер.
+
+`avito/core/swagger_discovery.py._NON_DOMAIN_BINDING_MODULES` дополняем строго
+`"avito.auth.async_token_client"` (а не `async_provider`) — потому что классы со swagger
+binding-ами (`AsyncTokenClient`, `AsyncAlternateTokenClient`) живут именно там. Иначе
+async-bindings auth-домена не попадут в discovery.
 
 ### `avito/async_client.py`
 
@@ -337,7 +425,11 @@ class AsyncAvitoClient:
 `business_summary`, `listing_health`, `chat_summary`, `order_summary`, `review_summary`,
 `promotion_summary`, `capabilities`** на `AsyncAvitoClient` — отдельный (последний)
 этап M-final, потому что они комбинируют 5+ доменов и не нужны до того, как все домены
-портированы.
+портированы. Реализация **не** должна буквально повторять sync последовательно: каждый
+такой метод запускает независимые подзапросы через `asyncio.gather(...)` — это и есть
+основной user-value async-режима для агрегационных операций. Ошибки per-секция
+обрабатываются `return_exceptions=True` + конверсия `AvitoError → SummaryUnavailableSection`,
+аналогично sync-вспомогательной `_safe_summary` (`avito/client.py:91-98`).
 
 ### `avito/testing/async_fake_transport.py`
 
@@ -376,27 +468,52 @@ class AsyncFakeTransport:
    - `_validate_complete_bindings(operations, bindings)` → `_validate_complete_bindings(operations, bindings, variant)`. Запускается дважды:
      - для `variant="sync"`: ожидаемое множество = все `operations` (как сейчас).
      - для `variant="async"`: ожидаемое множество = только операции из доменов, у которых найден хотя бы один `Async*` discovery binding (class-gated). Помимо `_API_DOMAINS`, для `domain == "auth"` берём операции из `Авторизация.json` и `Автотека.json`, если найден `AsyncTokenClient` / `AsyncAlternateTokenClient`.
-   - `_validate_operation_spec_coverage` — без изменений (sync OperationSpec — единый источник истины для обоих режимов; реюз спеки между sync и async-методами не запрещён).
+   - `_validate_operation_spec_coverage` — без изменений (sync OperationSpec — единый источник истины для обоих режимов; реюз спеки между sync и async-методами не запрещён). `used_specs` — `set[id(spec)]`, поэтому одна и та же `OperationSpec` от sync и async binding'ов не дублируется и не теряется.
+   - `_operation_specs_for_sdk_method` (`avito/core/swagger_linter.py:578`) — резолвит spec через `unwrapped_method.__globals__`. Async-методы должны импортировать spec явно (`from avito.<domain>.operations import LIST_SPEC`), иначе резолв вернёт `()` и spec будет считаться unbound. Pre-flight тест проверяет, что это работает; если нет — расширяем функцию в Phase 1b.
    - `_validate_json_body_model_coverage` — без изменений (контрактные схемы общие).
 
 4. `tests/contracts/test_async_parity.py` — новый тест, проверяет для каждого Async-класса:
    - имя `Async<X>` ↔ существует sync `<X>` в том же пакете;
    - множество публичных async-методов (`async def` без префикса `_`) совпадает с sync-методами;
+   - перебор методов фильтруется по `func.__qualname__.startswith(cls.__name__ + ".")`,
+     чтобы не учитывать унаследованные от `AsyncDomainObject` (`_execute`, `_resolve_user_id`)
+     или `object` методы;
    - для каждой пары `(sync_method, async_method)`:
      - `inspect.signature(sync).parameters` (без `self`) == `inspect.signature(async).parameters`;
-     - аннотация возврата либо совпадает, либо `PaginatedList[T]` ↔ `AsyncPaginatedList[T]`;
+     - аннотация возврата либо совпадает, либо `PaginatedList[T]` ↔ `AsyncPaginatedList[T]`,
+       либо `Paginator[T]` ↔ `AsyncPaginator[T]`;
      - оба декорированы `@swagger_operation` на ту же `(spec, method, path, operation_id)`, отличаясь только `variant`.
 
 ## Этапы
+
+### Pre-flight для PR M1
+
+До открытия PR M1 (всё это делается локально и валидируется до коммита):
+
+- [ ] `grep -rn "\._access_token\|\._refresh_token\|\._autoteka_access_token" tests/` —
+      зафиксировать все private probes; убедиться, что compat-shim в `AuthProvider`
+      покроет каждый. Найденный сейчас кейс: `tests/core/test_authentication.py:122-127`.
+- [ ] `grep -rn "\bPaginator\b" avito/` — зафиксировать все домены-потребители
+      (`avito/ads/domain.py:266,1183`, `avito/accounts/domain.py:170,383`); они
+      определяют, нужен ли `AsyncPaginator.iter_pages()` и/или `as_list()` уже в M1
+      или доставляется в первом домене с пагинацией (M4 `accounts`).
+- [ ] Прогон `pytest -q` на чистом `main` — сохранить файл baseline-теста pass/fail
+      статусов (`pytest --tb=no -q > /tmp/baseline_main.txt`). Используется в DoD M1.
+- [ ] Проверить, что `_operation_specs_for_sdk_method` (`avito/core/swagger_linter.py:578`)
+      работает с `async_domain.py`: тест-стаб с `async def m(self): return self._execute(SOME_SPEC)`
+      и `from ...operations import SOME_SPEC` — функция должна найти `SOME_SPEC` через
+      `unwrapped_method.__globals__`. Если не работает — расширить функцию (Phase 1b),
+      иначе оставить без изменений.
 
 ### M1 — Фундамент (1 PR)
 
 DoD:
 - [ ] `make check` зелёный: test, typecheck (mypy strict), lint (ruff), swagger-lint --strict, architecture-lint, docstring-lint, build.
 - [ ] Покрытие тестами фундамента не ниже sync-аналогов (sample проверка по `coverage report`).
-- [ ] Smoke-тест: `AsyncAvitoClient` через `AsyncFakeTransport` + respx делает один авторизованный запрос; токен рефрешится после 401; retry на 429 срабатывает; `Idempotency-Key` пробрасывается.
+- [ ] Smoke-тест: `AsyncAvitoClient` через `AsyncFakeTransport` (без respx) делает один авторизованный запрос; токен рефрешится после 401; retry на 429 срабатывает; `Idempotency-Key` пробрасывается; `aclose()` корректно закрывает `httpx.AsyncClient` и `AsyncAuthProvider`.
 - [ ] Документация `swagger-binding-subsystem.md` отражает variant и class-gated coverage.
-- [ ] Публичная sync-поверхность не изменилась (тесты sync без правок проходят).
+- [ ] Публичная sync-поверхность не изменилась — formal: `pytest -q tests/core/ tests/auth/ tests/domains/ tests/contracts/ --tb=no` имеет идентичный список pass/fail с baseline-теста с `main` (см. pre-flight). Любое расхождение = blocker, до выяснения причины PR не мерджится.
+- [ ] Phase 1a (`_merge_headers` рефакторинг) выделен отдельным коммитом внутри PR — для bisect-friendly history.
 
 ### M2…M13 — Этапы по доменам (по PR на домен)
 
@@ -415,12 +532,15 @@ DoD:
 | M10 | `autoteka` | 26 | использует autoteka token flow → проверить `AsyncAuthProvider.get_autoteka_access_token` |
 | M11 | `ads` | 28 | вторая и третья `AsyncPaginatedList` (`Ad.list`, `AutoloadProfile`/`AutoloadReport.list`) |
 | M12 | `orders` | 45 | самый большой |
-| M13 | M-final | — | convenience-методы `AsyncAvitoClient` (`account_health`, `business_summary`, `listing_health`, `chat_summary`, `order_summary`, `review_summary`, `promotion_summary`, `capabilities`); финальный hardening; `docs/site/how-to/async.md`; CHANGELOG → 2.1.0 |
+| M13 | M-final | — | convenience-методы `AsyncAvitoClient` (`account_health`, `business_summary`, `listing_health`, `chat_summary`, `order_summary`, `review_summary`, `promotion_summary`, `capabilities`) — выполняют независимые подзапросы через `asyncio.gather(...)` (sync делает их последовательно); per-section error handling — как в sync `_safe_summary`. Финальный hardening; `docs/site/how-to/async.md`; CHANGELOG → 2.1.0 |
 
 Содержимое каждого M2…M12:
 
 1. `avito/<domain>/async_domain.py` с `Async<X>(AsyncDomainObject)` для каждого sync-`<X>`.
-   Импортирует те же `OperationSpec` из `avito/<domain>/operations.py`.
+   Импортирует те же `OperationSpec` из `avito/<domain>/operations.py` **явно по именам**
+   (`from avito.<domain>.operations import LIST_SPEC, GET_SPEC, ...`) — иначе
+   `_operation_specs_for_sdk_method` не сможет резолвнуть spec через `__globals__`
+   и swagger-lint выдаст `SWAGGER_OPERATION_SPEC_MISSING`.
 2. Каждый публичный метод декорируется `@swagger_operation(..., variant="async")` теми же
    аргументами `(method, path, spec, operation_id, factory, factory_args, method_args,
    deprecated, legacy)`, что и sync.
@@ -428,7 +548,11 @@ DoD:
 4. `tests/domains/<domain>/test_<domain>_async.py` — зеркало
    `tests/domains/<domain>/test_<domain>.py`, через `AsyncFakeTransport`. Тесты помечаем
    `@pytest.mark.asyncio`.
-5. Если в домене есть пагинация — соответствующие методы возвращают `AsyncPaginatedList[T]`.
+5. Если в домене есть пагинация — соответствующие методы возвращают `AsyncPaginatedList[T]`
+   или `AsyncPaginator[T]` (зеркально sync — выбор делается из sync-контракта). M4
+   `accounts` — первый домен, использующий `AsyncPaginatedList`; M11 `ads` — первый
+   домен, где может понадобиться возврат `AsyncPaginator` напрямую (см.
+   `avito/ads/domain.py:266`).
 6. `docs/site/reference/<domain>.md` дополняется async-секцией (или второй колонкой).
 7. `make check` после этапа: swagger-lint --strict теперь требует async-coverage 1:1 для
    этого домена (class-gated rule увидит свежий `Async<X>` класс).
@@ -458,29 +582,32 @@ poetry run pytest tests/core/test_async_transport.py tests/core/test_async_pagin
   tests/auth/test_async_provider.py tests/contracts/test_async_parity.py
 ```
 
-Ручной smoke (M1, в тесте — не на проде):
+Ручной smoke (M1, в тесте — не на проде; через `AsyncFakeTransport`, без `respx`):
 ```python
-import asyncio, httpx, respx
-from avito.async_client import AsyncAvitoClient
-from avito.config import AvitoSettings
-from avito.auth.settings import AuthSettings
+import asyncio
+from avito.testing.async_fake_transport import AsyncFakeTransport
+from avito.core.types import RequestContext
 
 async def main():
-    async with AsyncAvitoClient(AvitoSettings(
-        base_url="https://api.avito.ru",
-        auth=AuthSettings(client_id="x", client_secret="y"),
-    )) as client:
-        with respx.mock(base_url="https://api.avito.ru") as mock:
-            mock.post("/token").respond(json={"access_token":"t","expires_in":3600})
-            mock.get("/core/v1/accounts/self").respond(json={"id": 1})
-            payload = await client.transport.request_json(
-                "GET", "/core/v1/accounts/self",
-                context=RequestContext("smoke"),
-            )
-            assert payload == {"id": 1}
+    async with (
+        AsyncFakeTransport()
+        .add_json("POST", "/token", {"access_token": "t", "expires_in": 3600})
+        .add_json("GET", "/core/v1/accounts/self", {"id": 1})
+        .as_client()
+    ) as client:
+        payload = await client.transport.request_json(
+            "GET", "/core/v1/accounts/self",
+            context=RequestContext("smoke"),
+        )
+        assert payload == {"id": 1}
 
 asyncio.run(main())
 ```
+
+`AsyncFakeTransport` строится на `httpx.MockTransport(self._handle)` поверх
+`httpx.AsyncClient` — это уже самодостаточный механизм перехвата; `respx` поверх него
+избыточен. Использовать `respx` стоит только если в smoke нужен уникальный матчер,
+которого `add_json`/`add` не покрывает (на текущем этапе таких нет).
 
 ### Каждый M2…M12
 ```bash
@@ -508,8 +635,16 @@ poetry run pytest                                          # полный наб
 | Риск | Mitigation |
 |---|---|
 | Расхождение retry/auth-логики sync vs async | Вся не-IO логика — в `_transport_shared.py` и `_cache.py`, обе обёртки делегируют. |
-| `AsyncPaginatedList` не наследует `list` → ломаются ожидания сервисов | Документируем в docstring; parity-test допускает `PaginatedList[T]` ↔ `AsyncPaginatedList[T]`. List-API не реплицируется намеренно. |
-| Auth-bindings не попадают в async-coverage | `_NON_DOMAIN_BINDING_MODULES` дополнен async-модулем; class-gated coverage гейтится по присутствию `AsyncTokenClient`/`AsyncAlternateTokenClient`. |
+| `_merge_headers` срытно делает sync IO (`get_access_token()`) | Phase 1a первым шагом рефакторит контракт: helper принимает уже резолвнутый `bearer_token: str | None`. Без этого shared слой не IO-agnostic, и vary-логика расползётся. |
+| `AsyncPaginatedList` не наследует `list` → ломаются ожидания сервисов | Документируем в docstring; parity-test допускает `PaginatedList[T]` ↔ `AsyncPaginatedList[T]` и `Paginator[T]` ↔ `AsyncPaginator[T]`. List-API не реплицируется намеренно. |
+| `AsyncPaginator` не покрывает кейс прямого возврата `Paginator` без `as_list()` | Контракт `AsyncPaginator` симметричен sync (`iter_pages`/`collect`/`as_list`); все 5 текущих usage-сайтов покрыты. |
+| Auth-bindings не попадают в async-coverage | `_NON_DOMAIN_BINDING_MODULES` дополнен строго `"avito.auth.async_token_client"`; class-gated coverage гейтится по присутствию `AsyncTokenClient`/`AsyncAlternateTokenClient`. |
 | Двойной декор одной функции | Текущая защита `__swagger_binding__` остаётся; sync и async — разные функции. |
-| Гонка на refresh-токене в async | `asyncio.Lock` в `AsyncAuthProvider` + double-checked pattern (как sync, но через `await`). |
-| Convenience-методы (`account_health`, …) расходятся между sync/async | Делаем их в M-final, когда все домены уже портированы; реализация буквально awaits то же, что sync вызывает напрямую. |
+| Гонка на основном refresh-токене в async | `asyncio.Lock` (`_refresh_lock`) в `AsyncAuthProvider` + double-checked pattern (как sync, но через `await`). |
+| Гонка на autoteka-токене в async | Отдельный `_autoteka_refresh_lock` + double-checked в `get_autoteka_access_token()`. Sync аналога не имел, потому что в sync GIL предотвращает деление instruction stream между потоками; в async это явная race-condition. |
+| `asyncio.Lock` создан вне event loop'а → cross-loop UB | `AsyncAuthProvider` создаётся внутри `AsyncAvitoClient` (через `__aenter__` или `_from_transport`); в docstring явное предупреждение «не переиспользовать между event loop'ами». Python 3.10+ лениво биндит lock к loop'у при первом `await`. |
+| Миграция `_access_token` в `TokenCache` ломает `tests/core/test_authentication.py:122-127` | `AuthProvider` сохраняет `@property`/setter shim'ы для всех трёх частных полей; шим помечен legacy-комментом и удаляется в отдельном PR. |
+| `_operation_specs_for_sdk_method` не находит spec из `async_domain.py` | Pre-flight smoke-тест с async-методом + явным импортом spec; текущая реализация через `unwrapped_method.__globals__` (`swagger_linter.py:578-601`) обязана работать, потому что `from ...operations import SOME_SPEC` ставит spec в `__globals__` модуля. Если не работает — фикс в Phase 1b. |
+| Convenience-методы (`account_health`, …) теряют main user-value async (параллелизм) | M-final требует `asyncio.gather(...)` для независимых подзапросов + `return_exceptions=True` + конверсия per-секция как в sync `_safe_summary`. Запрещено реализовывать «sync, обмазанный await». |
+| `AsyncTokenClient._request_token` закольцован через основной auth-провайдер | Внутри создаётся независимый `AsyncTransport` с `auth_provider=None` (зеркало sync `TokenClient._build_transport()`). |
+| Sync поведение незаметно изменилось в Phase 1 | DoD M1 включает baseline-diff: `pytest --tb=no -q` до и после M1 даёт идентичный список pass/fail. Любое расхождение блокирует merge. Phase 1a — отдельный коммит для bisect. |
