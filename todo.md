@@ -16,7 +16,7 @@ SDK сейчас полностью синхронный: `AvitoClient` → `Tra
 | Стиль | Параллельные классы вручную: рядом с каждым sync-слоем кладём `Async*` класс. Codegen не используем. |
 | Размещение | `avito/<domain>/async_domain.py` рядом с `domain.py`. |
 | Swagger-binding | `@swagger_operation(..., variant="sync"\|"async")`. Уникальный ключ линтера — `(operation_key, variant)`. |
-| Sequencing | M1 — фундамент с тестами; M2…M13 — порт каждого домена отдельным PR. До появления первого `AsyncX` класса strict-coverage по `variant="async"` пуст и не падает. |
+| Sequencing | M1 — фундамент с тестами; M2-PoC — proof-of-concept шаблона на `tariffs` (валидация фундамента, может вернуть feedback); M3…M12 — закрытие каждого домена отдельным PR на 100%; M-final — convenience-методы и релиз. До появления первого `AsyncX` класса strict-coverage по `variant="async"` пуст и не падает. |
 | Pagination | `AsyncPaginatedList[ItemT]` — отдельный класс (не наследник `list`), без list-API parity (только `__aiter__` / `materialize` / `loaded_count` / `is_materialized` / `known_total` / `source_total`). |
 
 ## Архитектура: что общее, что дублируем
@@ -150,7 +150,7 @@ tests/auth/test_async_provider.py
 tests/contracts/test_async_parity.py     # инвариант "Async<X> ↔ X" для всех портированных доменов
 ```
 
-### Новые файлы (M2…M13, на каждый домен)
+### Новые файлы (M2-PoC + M3…M12, на каждый домен)
 
 ```
 avito/<domain>/async_domain.py
@@ -415,8 +415,10 @@ class AsyncAvitoClient:
     async def __aenter__(self) -> AsyncAvitoClient: ...
     async def __aexit__(self, *exc) -> None: ...
 
-    # M2+ постепенно добавляются (один factory на этап):
-    # def account(self, user_id=None) -> AsyncAccount: ...
+    # M2-PoC: tariff() добавляется как валидация шаблона
+    # M3+: на каждом этапе добавляются ВСЕ factory-методы домена сразу
+    # def tariff(self) -> AsyncTariff: ...                # M2-PoC
+    # def account(self, user_id=None) -> AsyncAccount: ...# M4
     # ...
 ```
 
@@ -515,13 +517,43 @@ DoD:
 - [ ] Публичная sync-поверхность не изменилась — formal: `pytest -q tests/core/ tests/auth/ tests/domains/ tests/contracts/ --tb=no` имеет идентичный список pass/fail с baseline-теста с `main` (см. pre-flight). Любое расхождение = blocker, до выяснения причины PR не мерджится.
 - [ ] Phase 1a (`_merge_headers` рефакторинг) выделен отдельным коммитом внутри PR — для bisect-friendly history.
 
-### M2…M13 — Этапы по доменам (по PR на домен)
+### M2-PoC — Proof-of-concept шаблона (отдельный PR, до переработки доменов)
 
-Порядок (нарастающая сложность; пилот на самом простом):
+**Цель этого шага — НЕ закрыть домен `tariffs`, а валидировать шаблон.** Это
+осознанное исключение из правила «домен закрывается на 100%»: PoC может вернуть
+feedback вида «контракт `AsyncPaginator` нужно расширить», «discovery не видит
+spec»,  «mypy strict ругается на covariance возврата» — и это нормальный ожидаемый
+выход. Все правки контракта вносятся в **этот же PR**, а если правки требуют
+переработки M1-фундамента — PoC откатывается, фундамент дорабатывается отдельным
+PR, после чего PoC переоткрывается.
+
+PoC берёт `tariffs` (1 sync-операция с binding) — минимальная поверхность без
+пагинации, без autoteka-flow, без write-методов. Этого достаточно, чтобы ткнуть
+все слои фундамента в один сценарий end-to-end.
+
+DoD M2-PoC:
+- [ ] `avito/tariffs/async_domain.py` создан, `AsyncTariff` зеркалит `Tariff`
+      ровно по 1 публичному методу.
+- [ ] `AsyncAvitoClient.tariff()` factory-метод возвращает `AsyncTariff`.
+- [ ] `tests/domains/tariffs/test_tariffs_async.py` зеркалит sync-тест 1:1
+      (golden path + 401 + 429 + transport error). Все тесты зелёные.
+- [ ] `make check` зелёный, включая `swagger-lint --strict` (для `tariffs` теперь
+      требуется async-coverage 1:1).
+- [ ] `tests/contracts/test_async_parity.py` зелёный.
+- [ ] Документация `docs/site/reference/tariffs.md` дополнена async-секцией.
+- [ ] **Lessons learned зафиксированы** в `docs/site/explanations/async-domain-template.md`
+      (новый файл): шаблон файла `async_domain.py`, чек-лист переноса домена,
+      найденные подводные камни. Этот документ становится нормативным для M3+.
+- [ ] Если в ходе PoC понадобились изменения контракта (`AsyncPaginator`/`AsyncFakeTransport`/
+      `swagger_linter`/`AsyncAuthProvider`), они **внесены в этот же PR** или вынесены
+      в отдельный M1.5-PR, но **до** старта M3.
+
+### M3…M12 + M-final — Закрытие доменов (по PR на домен)
+
+Порядок (нарастающая сложность; самый простой шёл в PoC):
 
 | # | Домен | Sync-методов с binding | Особенности |
 |---|---|---|---|
-| M2 | `tariffs` | 1 | пилот — обкатка шаблона |
 | M3 | `ratings` | 4 | без пагинации |
 | M4 | `accounts` | 8 | первая `AsyncPaginatedList` (`get_operations_history`, `list_items_by_employee`); async `_resolve_account_user_id` |
 | M5 | `realty` | 7 | без пагинации |
@@ -529,43 +561,75 @@ DoD:
 | M7 | `messenger` | 18 | без пагинации |
 | M8 | `jobs` | 25 | webhook-методы (REST) |
 | M9 | `promotion` | 24 | без пагинации |
-| M10 | `autoteka` | 26 | использует autoteka token flow → проверить `AsyncAuthProvider.get_autoteka_access_token` |
-| M11 | `ads` | 28 | вторая и третья `AsyncPaginatedList` (`Ad.list`, `AutoloadProfile`/`AutoloadReport.list`) |
-| M12 | `orders` | 45 | самый большой |
-| M13 | M-final | — | convenience-методы `AsyncAvitoClient` (`account_health`, `business_summary`, `listing_health`, `chat_summary`, `order_summary`, `review_summary`, `promotion_summary`, `capabilities`) — выполняют независимые подзапросы через `asyncio.gather(...)` (sync делает их последовательно); per-section error handling — как в sync `_safe_summary`. Финальный hardening; `docs/site/how-to/async.md`; CHANGELOG → 2.1.0 |
+| M10 | `autoteka` | 26 | использует autoteka token flow → end-to-end проверка `AsyncAuthProvider.get_autoteka_access_token` + `_autoteka_refresh_lock` под нагрузкой (concurrent first-touch) |
+| M11 | `ads` | 28 | вторая и третья `AsyncPaginatedList` (`Ad.list`, `AutoloadProfile`/`AutoloadReport.list`); прямой возврат `AsyncPaginator` (`avito/ads/domain.py:266`) |
+| M12 | `orders` | 45 | самый большой; идемпотентность критична |
+| M-final | — | — | convenience-методы `AsyncAvitoClient` (`account_health`, `business_summary`, `listing_health`, `chat_summary`, `order_summary`, `review_summary`, `promotion_summary`, `capabilities`) — выполняют независимые подзапросы через `asyncio.gather(...)`; per-section error handling — как в sync `_safe_summary`. Финальный hardening; `docs/site/how-to/async.md`; CHANGELOG → 2.1.0 |
 
-Содержимое каждого M2…M12:
+Содержимое каждого M3…M12:
 
-1. `avito/<domain>/async_domain.py` с `Async<X>(AsyncDomainObject)` для каждого sync-`<X>`.
-   Импортирует те же `OperationSpec` из `avito/<domain>/operations.py` **явно по именам**
+1. `avito/<domain>/async_domain.py` с `Async<X>(AsyncDomainObject)` для **каждого**
+   sync-`<X>` в домене. Импортирует те же `OperationSpec` из
+   `avito/<domain>/operations.py` **явно по именам**
    (`from avito.<domain>.operations import LIST_SPEC, GET_SPEC, ...`) — иначе
    `_operation_specs_for_sdk_method` не сможет резолвнуть spec через `__globals__`
    и swagger-lint выдаст `SWAGGER_OPERATION_SPEC_MISSING`.
-2. Каждый публичный метод декорируется `@swagger_operation(..., variant="async")` теми же
-   аргументами `(method, path, spec, operation_id, factory, factory_args, method_args,
-   deprecated, legacy)`, что и sync.
-3. Регистрация `Async<X>` в `AsyncAvitoClient` (factory-метод по имени, идентичному sync).
+2. **Каждый** публичный метод декорируется `@swagger_operation(..., variant="async")`
+   теми же аргументами `(method, path, spec, operation_id, factory, factory_args,
+   method_args, deprecated, legacy)`, что и sync.
+3. Регистрация **всех** `Async<X>` домена в `AsyncAvitoClient` (factory-методы по
+   именам, идентичным sync).
 4. `tests/domains/<domain>/test_<domain>_async.py` — зеркало
-   `tests/domains/<domain>/test_<domain>.py`, через `AsyncFakeTransport`. Тесты помечаем
-   `@pytest.mark.asyncio`.
-5. Если в домене есть пагинация — соответствующие методы возвращают `AsyncPaginatedList[T]`
-   или `AsyncPaginator[T]` (зеркально sync — выбор делается из sync-контракта). M4
-   `accounts` — первый домен, использующий `AsyncPaginatedList`; M11 `ads` — первый
-   домен, где может понадобиться возврат `AsyncPaginator` напрямую (см.
-   `avito/ads/domain.py:266`).
+   `tests/domains/<domain>/test_<domain>.py`, через `AsyncFakeTransport`. Тесты
+   помечаем `@pytest.mark.asyncio`. **Каждый** sync-тест имеет async-двойник
+   с тем же сценарием.
+5. Если в домене есть пагинация — соответствующие методы возвращают
+   `AsyncPaginatedList[T]` или `AsyncPaginator[T]` (зеркально sync). M4 `accounts` —
+   первый домен с `AsyncPaginatedList`; M11 `ads` — первый домен с прямым
+   `AsyncPaginator` (см. `avito/ads/domain.py:266`).
 6. `docs/site/reference/<domain>.md` дополняется async-секцией (или второй колонкой).
-7. `make check` после этапа: swagger-lint --strict теперь требует async-coverage 1:1 для
-   этого домена (class-gated rule увидит свежий `Async<X>` класс).
-8. `tests/contracts/test_async_parity.py` зелёный для всех уже портированных доменов.
+7. Если в домене есть write-методы с `dry_run` — async-двойник реализует тот же
+   контракт: при `dry_run=True` транспорт **не вызывается** (тест проверяет
+   `count(method=..., path=...) == 0`).
+8. Если в домене есть idempotency-key поведение — async-тесты явно проверяют
+   проброс заголовка `Idempotency-Key`.
 
-### Definition of done на каждом этапе
+### Definition of done каждого M3…M12 — закрыть домен на 100%, без работы на потом
 
-- [ ] Все sync-методы домена имеют async-двойников (parity-тест зелёный).
-- [ ] Все async-методы покрыты тестами с теми же сценариями, что sync (golden path,
-      ошибки 401/403/422/429, пагинация если есть, idempotency для write-методов,
-      `dry_run` если есть).
-- [ ] `make check` зелёный.
-- [ ] Документация и `make docs-strict` зелёные.
+«100%» определяется проверяемо. Все пункты ниже — **обязательные**, не «nice to have»:
+
+- [ ] **Покрытие методов 1:1**: для каждого публичного sync-метода домена есть
+      async-двойник; `tests/contracts/test_async_parity.py` зелёный для домена.
+      Локальная проверка: `python -c "from avito.<domain>.domain import *; from
+      avito.<domain>.async_domain import *"` + parity-test без skip-маркеров.
+- [ ] **Покрытие тестов 1:1**: каждый сценарий из `tests/domains/<domain>/test_*.py`
+      имеет async-двойник; счётчики тестов сверены: `pytest --collect-only -q
+      tests/domains/<domain>/ | grep -c "test_.*async\|test_.*[^c]$"` показывает
+      идентичное количество sync- и async-тестов. Покрываются: golden path, 401,
+      403, 422, 429, transport error/timeout, пагинация (если есть), idempotency
+      (для write), `dry_run` (если есть в sync).
+- [ ] **Swagger-lint coverage 1:1 для домена**: `swagger-lint --strict` после этапа
+      требует async binding для **каждой** swagger-операции этого домена; class-gated
+      coverage гейт включён, и domain больше не «пуст по async». Никаких
+      исключений/skip'ов для отдельных методов.
+- [ ] **Документация**: `docs/site/reference/<domain>.md` содержит async-секцию для
+      **всех** портированных классов; `make docs-strict` зелёный; ссылки и примеры
+      кода скомпилированы.
+- [ ] **Никаких TODO/FIXME/`pytest.skip`/`xfail` в добавленных файлах**:
+      `git diff main..HEAD -- avito/<domain>/ tests/domains/<domain>/ | grep -E
+      "TODO|FIXME|@pytest.mark.skip|xfail"` пуст. Любая отсрочка работы = blocker.
+- [ ] **`make check` локально и в CI зелёный**.
+- [ ] **AsyncAvitoClient полностью настроен для домена**: factory-методы возвращают
+      готовые объекты, lifecycle (`aclose`/`__aexit__`) корректно закрывает все
+      ресурсы домена.
+- [ ] **Регрессия sync = 0**: список pass/fail sync-тестов идентичен предыдущему
+      этапу (sanity-проверка через сравнение `pytest -q --tb=no` до и после).
+- [ ] **Cumulative parity invariant**: после merge'а `tests/contracts/test_async_parity.py`
+      зелёный для **всех** уже портированных доменов (включая текущий). Этап не
+      может ослабить инвариант для предыдущих доменов.
+- [ ] **Нет работы «потом»**: переоткрытие PR с фразой «допилю в следующем PR»
+      запрещено. Если scope не закрывается — PR разделяется или раздвигается, но
+      не оставляется частичный домен в main.
 
 ## Верификация (как проверить, что план сработал)
 
@@ -609,12 +673,39 @@ asyncio.run(main())
 избыточен. Использовать `respx` стоит только если в smoke нужен уникальный матчер,
 которого `add_json`/`add` не покрывает (на текущем этапе таких нет).
 
-### Каждый M2…M12
+### M2-PoC (proof-of-concept)
 ```bash
-poetry run pytest tests/domains/<domain>/                 # sync + async
-poetry run pytest tests/contracts/test_async_parity.py    # инвариант parity
-make swagger-lint                                         # async-coverage 1:1 для этого домена
+poetry run pytest tests/domains/tariffs/                  # sync + async для tariffs
+poetry run pytest tests/contracts/test_async_parity.py    # parity для tariffs
+make swagger-lint                                         # async-coverage 1:1 для tariffs
 make check
+# Артефакт: docs/site/explanations/async-domain-template.md создан
+```
+
+### Каждый M3…M12 (закрытие домена на 100%)
+```bash
+# Sync regression baseline (sanity)
+poetry run pytest -q --tb=no tests/domains/<domain>/test_<domain>.py > /tmp/sync_before.txt
+
+# После применения изменений:
+poetry run pytest tests/domains/<domain>/                 # sync + async
+poetry run pytest -q --tb=no tests/domains/<domain>/test_<domain>.py > /tmp/sync_after.txt
+diff /tmp/sync_before.txt /tmp/sync_after.txt             # должен быть пустой
+
+poetry run pytest tests/contracts/test_async_parity.py    # parity для всех закрытых доменов
+make swagger-lint                                         # async-coverage 1:1 для этого домена
+
+# Грязные следы — пустой выхлоп
+git diff main..HEAD -- avito/<domain>/ tests/domains/<domain>/ \
+  | grep -E "TODO|FIXME|@pytest.mark.skip|xfail" || echo "OK: no leftover work"
+
+# Cumulative счётчики (sync-тестов = async-тестов в домене)
+sync_count=$(poetry run pytest --collect-only -q tests/domains/<domain>/test_<domain>.py | grep -c "::test_")
+async_count=$(poetry run pytest --collect-only -q tests/domains/<domain>/test_<domain>_async.py | grep -c "::test_")
+test "$sync_count" -eq "$async_count" && echo "OK: $sync_count == $async_count"
+
+make check
+make docs-strict
 ```
 
 ### M-final
@@ -646,5 +737,7 @@ poetry run pytest                                          # полный наб
 | Миграция `_access_token` в `TokenCache` ломает `tests/core/test_authentication.py:122-127` | `AuthProvider` сохраняет `@property`/setter shim'ы для всех трёх частных полей; шим помечен legacy-комментом и удаляется в отдельном PR. |
 | `_operation_specs_for_sdk_method` не находит spec из `async_domain.py` | Pre-flight smoke-тест с async-методом + явным импортом spec; текущая реализация через `unwrapped_method.__globals__` (`swagger_linter.py:578-601`) обязана работать, потому что `from ...operations import SOME_SPEC` ставит spec в `__globals__` модуля. Если не работает — фикс в Phase 1b. |
 | Convenience-методы (`account_health`, …) теряют main user-value async (параллелизм) | M-final требует `asyncio.gather(...)` для независимых подзапросов + `return_exceptions=True` + конверсия per-секция как в sync `_safe_summary`. Запрещено реализовывать «sync, обмазанный await». |
+| Скрытая работа «на потом» в доменных PR (TODO/FIXME/skip) | DoD M3…M12 явно требует пустой выхлоп `grep -E "TODO|FIXME|@pytest.mark.skip|xfail"` по diff'у; счётчики sync- и async-тестов сравниваются равенством; PR не мерджится при частичном покрытии домена. |
+| PoC обнаруживает, что фундамент (M1) недостаточен | Это и есть назначение PoC: feedback от M2-PoC → правки фундамента в этом же PR или M1.5-PR; `tariffs`-домен после доработок закрыт на 100%, как и остальные. M3 не стартует, пока M2-PoC не зелёный. |
 | `AsyncTokenClient._request_token` закольцован через основной auth-провайдер | Внутри создаётся независимый `AsyncTransport` с `auth_provider=None` (зеркало sync `TokenClient._build_transport()`). |
 | Sync поведение незаметно изменилось в Phase 1 | DoD M1 включает baseline-diff: `pytest --tb=no -q` до и после M1 даёт идентичный список pass/fail. Любое расхождение блокирует merge. Phase 1a — отдельный коммит для bisect. |
