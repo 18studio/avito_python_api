@@ -63,6 +63,16 @@ IO-agnostic вычисления (без httpx-вызова и sleep): `_decide_
 `AsyncTransport` остаются тонкими обёртками с двумя различиями: формой sleep и формой
 client.request.
 
+**Контракт retry-петли в обоих режимах.** Catch-блок в `Transport.request()` /
+`AsyncTransport.request()` ловит **только** `Exception`-наследников (явно: `httpx.RequestError`
+и его подклассы). `BaseException` (включая `asyncio.CancelledError`,
+`KeyboardInterrupt`, `SystemExit`) **никогда не уходит в retry** — пробрасывается
+наружу немодифицированным. Это критично для async: иначе SDK будет ловить отмену
+корутины и пытаться её ретраить, нарушая cancellation-семантику. Sync-режим тоже
+получает это уточнение (поведенчески идентично — `KeyboardInterrupt` уже не
+ретраится в `httpx.RequestError`-блоке). Закрепляется тестом
+`tests/core/test_async_transport.py::test_cancelled_error_is_not_retried`.
+
 **Важное уточнение по `_merge_headers`.** Текущая реализация
 (`avito/core/transport.py:410-428`) внутри себя делает синхронный вызов
 `self._auth_provider.get_access_token()` — то есть couples token retrieval с merge.
@@ -72,8 +82,9 @@ async-варианте) выполняют сами `Transport`/`AsyncTransport`
 Phase 1 (без поведенческих изменений sync), и он blocking для всего остального M1.
 
 Аналогично: `avito/auth/_cache.py` содержит in-memory state (поля `_access_token`,
-`_refresh_token`, `_autoteka_access_token`) и чистые helpers (`_is_token_fresh`,
-`_map_token_response` уже в provider.py — переедет туда). `AuthProvider` и `AsyncAuthProvider`
+`_refresh_token`, `_autoteka_access_token`) и чистые helpers (`_is_token_fresh`).
+Module-level функция `_map_token_response` (`avito/auth/provider.py:35`) переезжает
+в `_cache.py` без изменения сигнатуры. `AuthProvider` и `AsyncAuthProvider`
 делегируют кешу, сами добавляют только sync/async lock + IO.
 
 ### Порядок зависимостей в M1
@@ -194,7 +205,19 @@ class AsyncTransport:
 2. передаёт `bearer_token` в shared `_merge_headers(...)` — строго pure-функция;
 3. петля retry-decisions делегирует в shared `_decide_*_retry`;
 4. при 401 — `self._auth_provider.invalidate_token()` (sync-операция clear cache),
-   повторный `await self._auth_provider.get_access_token()`, один retry.
+   повторный `await self._auth_provider.get_access_token()`, один retry;
+5. ловит **только** `Exception`-наследников (`httpx.RequestError` и т.п.).
+   `asyncio.CancelledError` и любой `BaseException` пробрасываются наружу без retry —
+   см. контракт shared retry-петли выше.
+
+**Rate-limiter в async.** Один `RateLimiter` принадлежит одному `AsyncTransport`
+(а не каждой корутине-вызову). Все корутины, делящие транспорт, должны
+сериализоваться через `asyncio.Lock` внутри лимитера — иначе N параллельных запросов
+независимо посчитают «надо ждать X секунд» и улетят пачкой после ожидания, нарушив
+лимит. Sync `RateLimiter` (логика «ждать сколько») переезжает в `_transport_shared.py`
+без поведенческих изменений; `AsyncRateLimiter`-обёртка — тонкая: `asyncio.Lock`
++ `await asyncio.sleep(delay)`. Lock создаётся лениво (как `_refresh_lock` в
+`AsyncAuthProvider`) — биндится к event loop'у при первом `await`.
 
 ### `avito/core/operations.py` (расширение)
 
@@ -276,12 +299,12 @@ class AsyncPaginator[ItemT]:
 страничного перехода идентична sync `PaginatedList._consume_page` (включая `next_cursor`,
 `page+per_page`, `has_next_page`).
 
-`AsyncPaginator` обязателен: sync-домены используют его в 5 местах
-(`avito/ads/domain.py:266,1183`, `avito/accounts/domain.py:170,383`), включая один кейс,
-где возвращается `Paginator` напрямую (без `as_list()`) — async-двойник такого метода
-вернёт `AsyncPaginator`. У него тот же контракт, что и у sync `Paginator`, но
-`iter_pages()` — `AsyncIterator`, `collect()` — корутина. Внутри `as_list()` создаёт
-`AsyncPaginatedList`, передавая `first_page` как и sync-аналог.
+`AsyncPaginator` обязателен: sync-домены используют его в 4 местах
+(`avito/ads/domain.py:266,1183`, `avito/accounts/domain.py:170,383`), включая один кейс
+(`avito/ads/domain.py:266`), где возвращается `Paginator` напрямую (без `as_list()`) —
+async-двойник такого метода вернёт `AsyncPaginator`. У него тот же контракт, что и у
+sync `Paginator`, но `iter_pages()` — `AsyncIterator`, `collect()` — корутина. Внутри
+`as_list()` создаёт `AsyncPaginatedList`, передавая `first_page` как и sync-аналог.
 
 ### `avito/auth/_cache.py`
 
@@ -321,6 +344,11 @@ Shim-ы помечены `# legacy private accessor — see PR M1` и удаля
 ### `avito/auth/async_provider.py`
 
 ```python
+class AsyncTokenFetcher(Protocol):
+    """Async-зеркало sync `TokenFetcher` (avito/auth/provider.py:67-70)."""
+    async def __call__(self, settings: AuthSettings) -> TokenResponse: ...
+
+
 @dataclass(slots=True)
 class AsyncAuthProvider:
     settings: AuthSettings
@@ -422,16 +450,68 @@ class AsyncAvitoClient:
     # ...
 ```
 
+**Ownership чужого `httpx.AsyncClient`.** Если `http_client` передан в `__init__`
+извне — пользователь сам отвечает за его lifecycle: `aclose()` / `__aexit__` его
+**не** закрывают (`AsyncTransport` хранит флаг `_owns_client = http_client is None`).
+Это зеркало sync-политики (см. `avito/core/transport.py` — sync `Transport` уже
+делает это для `httpx.Client`). Любое расхождение с sync = blocker.
+
+**Rollback при partial failure в `__aenter__`.** Если `__aenter__` бросает в
+середине (например, `httpx.AsyncClient` уже создан, но `AsyncAuthProvider.__post_init__`
+или ленивая инициализация локов даёт исключение), весь уже-созданный state должен
+быть закрыт до проброса наружу. Реализация:
+
+```python
+async def __aenter__(self) -> AsyncAvitoClient:
+    try:
+        # любая инициализация, которая может бросить
+        await self._transport.__aenter__()
+        return self
+    except BaseException:
+        await self.aclose()  # idempotent: безопасен на полу-инициализированном state
+        raise
+```
+
+`aclose()` идемпотентен и устойчив к закрытию полу-инициализированного состояния
+(каждый под-ресурс проверяет `is None` перед `await x.aclose()`). Закрепляется
+тестом `tests/core/test_async_client_lifecycle.py::test_aenter_rollback_on_partial_failure`.
+
 В M1 `AsyncAvitoClient` без factory-методов — только lifecycle и smoke-вызов через сырой
 `transport.request_json(...)` в тесте. **Convenience методы `account_health`,
 `business_summary`, `listing_health`, `chat_summary`, `order_summary`, `review_summary`,
 `promotion_summary`, `capabilities`** на `AsyncAvitoClient` — отдельный (последний)
 этап M-final, потому что они комбинируют 5+ доменов и не нужны до того, как все домены
 портированы. Реализация **не** должна буквально повторять sync последовательно: каждый
-такой метод запускает независимые подзапросы через `asyncio.gather(...)` — это и есть
-основной user-value async-режима для агрегационных операций. Ошибки per-секция
-обрабатываются `return_exceptions=True` + конверсия `AvitoError → SummaryUnavailableSection`,
-аналогично sync-вспомогательной `_safe_summary` (`avito/client.py:91-98`).
+такой метод запускает независимые подзапросы параллельно — это и есть основной
+user-value async-режима для агрегационных операций.
+
+**Cancellation-safe паттерн (обязательный).** Используется `asyncio.TaskGroup`
+(Python 3.11+, у нас floor 3.12+) с per-section try/except, конвертирующим `AvitoError
+→ SummaryUnavailableSection` (как sync `_safe_summary`, `avito/client.py:91-98`).
+`asyncio.gather(..., return_exceptions=True)` запрещён, потому что он возвращает
+`CancelledError` как обычный результат — это глушит cancellation семантику. Шаблон:
+
+```python
+async def _safe_summary_async[T](
+    section: str, factory: Callable[[], Awaitable[T]],
+) -> tuple[T | None, list[SummaryUnavailableSection]]:
+    try:
+        return await factory(), []
+    except asyncio.CancelledError:
+        raise               # отмена пробрасывается, никогда не глушим
+    except AvitoError as error:
+        return None, [_summary_unavailable_section(section, error)]
+
+async def business_summary(self, ...) -> BusinessSummary:
+    async with asyncio.TaskGroup() as tg:
+        t_acc = tg.create_task(_safe_summary_async("account", lambda: ...))
+        t_chat = tg.create_task(_safe_summary_async("chat", lambda: ...))
+        ...
+    # После выхода из TaskGroup все таски завершены или отменены атомарно.
+```
+
+При отмене внешнего вызова `TaskGroup` отменит все child-таски и пробросит
+`CancelledError` — без зависших корутин и без частичного state.
 
 ### `avito/testing/async_fake_transport.py`
 
@@ -451,6 +531,15 @@ class AsyncFakeTransport:
 `httpx.MockTransport(self._handle)` поверх `httpx.AsyncClient`. `RecordedRequest`,
 `JsonValue`, `json_response`, `route_sequence` — переиспользуем без копий из sync.
 `sleep` — `lambda _: asyncio.sleep(0)`.
+
+**Concurrency policy.** `_handle` мутирует `self.requests.append(...)` и `route.pop(0)`
+для `route_sequence`-сценариев. Для тестов с `asyncio.gather(...)` (в первую очередь
+M-final convenience-методы) `_handle` берёт `self._handle_lock = asyncio.Lock()` и
+сериализует match-and-record под ним. Без этого две параллельные корутины могут
+одновременно дёрнуть `route.pop(0)` и получить непредсказуемый порядок ответов.
+Lock создаётся лениво при первом `_handle`-вызове (cross-loop safe). Документируется
+в docstring класса: «AsyncFakeTransport безопасен для concurrent access внутри
+одного event loop'а; не переиспользовать между разными loop'ами».
 
 ## Swagger binding — детали изменений
 
@@ -495,10 +584,24 @@ class AsyncFakeTransport:
 - [ ] `grep -rn "\._access_token\|\._refresh_token\|\._autoteka_access_token" tests/` —
       зафиксировать все private probes; убедиться, что compat-shim в `AuthProvider`
       покроет каждый. Найденный сейчас кейс: `tests/core/test_authentication.py:122-127`.
-- [ ] `grep -rn "\bPaginator\b" avito/` — зафиксировать все домены-потребители
+- [ ] `grep -rn "\bPaginator\b" avito/` — зафиксировать все 4 usage-сайта
       (`avito/ads/domain.py:266,1183`, `avito/accounts/domain.py:170,383`); они
       определяют, нужен ли `AsyncPaginator.iter_pages()` и/или `as_list()` уже в M1
       или доставляется в первом домене с пагинацией (M4 `accounts`).
+- [ ] `grep -rn "len(.*Paginated\|\\b[a-z_]*list\\[[0-9-]" avito/ tests/` — найти все
+      потребители list-API на `PaginatedList[T]` (индексация, `len`, `bool`, slice).
+      `AsyncPaginatedList` намеренно НЕ повторяет list-API: каждый такой кейс должен
+      быть либо безопасен (только sync), либо явно заменён на `await materialize()` /
+      `loaded_count` в async-двойнике. Список фиксируется в commit-message PoC.
+- [ ] `grep -rn "^async def test_" tests/` — убедиться, что в существующих тестах нет
+      async-функций без `@pytest.mark.asyncio`. После включения
+      `asyncio_mode = "strict"` любой такой тест начнёт игнорироваться (warning,
+      не падение). Если найдены — добавить маркер в pre-flight commit, отдельно от M1.
+- [ ] Подтвердить минимальную поддерживаемую версию Python в `pyproject.toml`. SDK уже
+      использует PEP 695 (`type PageFetcher[ItemT] = ...` в `avito/core/pagination.py:10`),
+      значит требуется Python **3.12+**. Все async-контракты (`type AsyncPageFetcher`,
+      `async def execute[ResponseT]`) сохраняют этот же floor; повышать не нужно, но
+      явно зафиксировать в M1 PR description.
 - [ ] Прогон `pytest -q` на чистом `main` — сохранить файл baseline-теста pass/fail
       статусов (`pytest --tb=no -q > /tmp/baseline_main.txt`). Используется в DoD M1.
 - [ ] Проверить, что `_operation_specs_for_sdk_method` (`avito/core/swagger_linter.py:578`)
@@ -564,7 +667,7 @@ DoD M2-PoC:
 | M10 | `autoteka` | 26 | использует autoteka token flow → end-to-end проверка `AsyncAuthProvider.get_autoteka_access_token` + `_autoteka_refresh_lock` под нагрузкой (concurrent first-touch) |
 | M11 | `ads` | 28 | вторая и третья `AsyncPaginatedList` (`Ad.list`, `AutoloadProfile`/`AutoloadReport.list`); прямой возврат `AsyncPaginator` (`avito/ads/domain.py:266`) |
 | M12 | `orders` | 45 | самый большой; идемпотентность критична |
-| M-final | — | — | convenience-методы `AsyncAvitoClient` (`account_health`, `business_summary`, `listing_health`, `chat_summary`, `order_summary`, `review_summary`, `promotion_summary`, `capabilities`) — выполняют независимые подзапросы через `asyncio.gather(...)`; per-section error handling — как в sync `_safe_summary`. Финальный hardening; `docs/site/how-to/async.md`; CHANGELOG → 2.1.0 |
+| M-final | — | — | convenience-методы `AsyncAvitoClient` (`account_health`, `business_summary`, `listing_health`, `chat_summary`, `order_summary`, `review_summary`, `promotion_summary`, `capabilities`) — выполняют независимые подзапросы через `asyncio.TaskGroup` (cancellation-safe; `asyncio.gather(return_exceptions=True)` запрещён); per-section error handling — как в sync `_safe_summary`. Финальный hardening; `docs/site/how-to/async.md`; CHANGELOG → 2.1.0 |
 
 Содержимое каждого M3…M12:
 
@@ -736,7 +839,14 @@ poetry run pytest                                          # полный наб
 | `asyncio.Lock` создан вне event loop'а → cross-loop UB | `AsyncAuthProvider` создаётся внутри `AsyncAvitoClient` (через `__aenter__` или `_from_transport`); в docstring явное предупреждение «не переиспользовать между event loop'ами». Python 3.10+ лениво биндит lock к loop'у при первом `await`. |
 | Миграция `_access_token` в `TokenCache` ломает `tests/core/test_authentication.py:122-127` | `AuthProvider` сохраняет `@property`/setter shim'ы для всех трёх частных полей; шим помечен legacy-комментом и удаляется в отдельном PR. |
 | `_operation_specs_for_sdk_method` не находит spec из `async_domain.py` | Pre-flight smoke-тест с async-методом + явным импортом spec; текущая реализация через `unwrapped_method.__globals__` (`swagger_linter.py:578-601`) обязана работать, потому что `from ...operations import SOME_SPEC` ставит spec в `__globals__` модуля. Если не работает — фикс в Phase 1b. |
-| Convenience-методы (`account_health`, …) теряют main user-value async (параллелизм) | M-final требует `asyncio.gather(...)` для независимых подзапросов + `return_exceptions=True` + конверсия per-секция как в sync `_safe_summary`. Запрещено реализовывать «sync, обмазанный await». |
+| Convenience-методы (`account_health`, …) теряют main user-value async (параллелизм) | M-final требует `asyncio.TaskGroup` для независимых подзапросов + per-секция try/except `AvitoError → SummaryUnavailableSection` (зеркало sync `_safe_summary`). Запрещено реализовывать «sync, обмазанный await». |
+| `asyncio.gather(return_exceptions=True)` глушит `CancelledError` в convenience-методах | Запрещён; используется `asyncio.TaskGroup` (Python 3.11+, у нас floor 3.12+). При отмене внешнего вызова TaskGroup атомарно отменяет все child-таски без потери cancellation. |
+| Retry-петля ловит `asyncio.CancelledError` и зацикливает отмену | Shared `_decide_*_retry` и обёртки `Transport`/`AsyncTransport` ловят **только** `Exception`, не `BaseException`. Закреплено тестом `test_cancelled_error_is_not_retried`. |
+| `AsyncAvitoClient.__aenter__` оставляет полу-инициализированный state при ошибке | `__aenter__` обёрнут `try/except BaseException`: при любом исключении вызывает идемпотентный `aclose()` и пробрасывает наружу. Закреплено тестом `test_aenter_rollback_on_partial_failure`. |
+| Ownership чужого `httpx.AsyncClient` не определён — потенциальный resource-leak или double-close | `AsyncTransport` хранит `_owns_client = http_client is None`; внешне переданный клиент `aclose()`/`__aexit__` не закрывают. Зеркало sync-политики; расхождение = blocker. |
+| `AsyncFakeTransport` рассинхронизирован при `asyncio.gather` | `_handle_lock = asyncio.Lock()` сериализует match-and-record; create lazily. Закреплено тестом `test_async_fake_transport_concurrent_handle`. |
+| Существующие `async def test_*` в репозитории молча скипаются после `asyncio_mode = "strict"` | Pre-flight `grep -rn "^async def test_" tests/` фиксирует все такие тесты до M1; маркер `@pytest.mark.asyncio` добавляется отдельным pre-flight commit'ом. |
+| `len(PaginatedList)` / `paginated[0]` в коде ломаются при попытке мигрировать на `AsyncPaginatedList` | Pre-flight `grep` фиксирует все list-API usage. `AsyncPaginatedList` не повторяет list-API намеренно; каждый кейс заменяется на `await materialize()` / `loaded_count` в async-двойнике или остаётся sync-only. |
 | Скрытая работа «на потом» в доменных PR (TODO/FIXME/skip) | DoD M3…M12 явно требует пустой выхлоп `grep -E "TODO|FIXME|@pytest.mark.skip|xfail"` по diff'у; счётчики sync- и async-тестов сравниваются равенством; PR не мерджится при частичном покрытии домена. |
 | PoC обнаруживает, что фундамент (M1) недостаточен | Это и есть назначение PoC: feedback от M2-PoC → правки фундамента в этом же PR или M1.5-PR; `tariffs`-домен после доработок закрыт на 100%, как и остальные. M3 не стартует, пока M2-PoC не зелёный. |
 | `AsyncTokenClient._request_token` закольцован через основной auth-провайдер | Внутри создаётся независимый `AsyncTransport` с `auth_provider=None` (зеркало sync `TokenClient._build_transport()`). |
