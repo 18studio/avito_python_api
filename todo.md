@@ -59,9 +59,12 @@ IO-agnostic вычисления (без httpx-вызова и sleep): `_decide_
 `_safe_payload`, `_extract_message`, `_extract_error_code`, `_extract_error_details`,
 `_extract_request_id`, `_normalize_path`, `_normalize_params`, `_normalize_files`,
 `_merge_headers`, `_build_user_agent`, `_extract_filename`, `build_httpx_timeout`,
-`_safe_endpoint`, `_log_http_exchange`, `_log_retry`, `_elapsed_ms`. `Transport` и
-`AsyncTransport` остаются тонкими обёртками с двумя различиями: формой sleep и формой
-client.request.
+`_safe_endpoint`, `_log_http_exchange`, `_log_retry`, `_elapsed_ms`,
+`RateLimitState` (pure token-bucket state с `compute_delay()`/`observe_response()`,
+без `Lock` и без `sleep` — см. блок «Контракт shared-частей RateLimiter» ниже).
+`Transport` и `AsyncTransport` остаются тонкими обёртками с тремя различиями:
+формой sleep, формой client.request, и типом lock'а вокруг `RateLimitState`
+(`threading.Lock` vs `asyncio.Lock`).
 
 **Контракт retry-петли в обоих режимах.** Catch-блок в `Transport.request()` /
 `AsyncTransport.request()` ловит **только** `Exception`-наследников (явно: `httpx.RequestError`
@@ -187,7 +190,7 @@ class AsyncTransport:
                       data=None, files=None, headers=None, content=None,
                       idempotency_key=None) -> httpx.Response: ...
     async def request_json(...) -> object: ...
-    async def download_binary(...) -> BinaryResponse: ...
+    async def download_binary(...) -> BinaryResponse: ...   # full-buffer, см. ниже
     async def aclose(self) -> None: ...
     async def __aenter__(self) -> AsyncTransport: ...
     async def __aexit__(self, *exc) -> None: ...
@@ -210,14 +213,60 @@ class AsyncTransport:
    `asyncio.CancelledError` и любой `BaseException` пробрасываются наружу без retry —
    см. контракт shared retry-петли выше.
 
-**Rate-limiter в async.** Один `RateLimiter` принадлежит одному `AsyncTransport`
+**Rate-limiter в async.** Один rate-limiter принадлежит одному `AsyncTransport`
 (а не каждой корутине-вызову). Все корутины, делящие транспорт, должны
 сериализоваться через `asyncio.Lock` внутри лимитера — иначе N параллельных запросов
 независимо посчитают «надо ждать X секунд» и улетят пачкой после ожидания, нарушив
-лимит. Sync `RateLimiter` (логика «ждать сколько») переезжает в `_transport_shared.py`
-без поведенческих изменений; `AsyncRateLimiter`-обёртка — тонкая: `asyncio.Lock`
-+ `await asyncio.sleep(delay)`. Lock создаётся лениво (как `_refresh_lock` в
-`AsyncAuthProvider`) — биндится к event loop'у при первом `await`.
+лимит.
+
+**Контракт shared-частей RateLimiter.** Текущий `avito/core/rate_limit.py` содержит
+*и* состояние token-bucket'а (`_tokens`, `_blocked_until`, `_updated_at`), *и*
+`while True: self._sleep(delay)` внутри `acquire()` — sleep запечён в метод. Sync
+`RateLimiter` нельзя «обернуть» в async без переделки, потому что внутри стоит
+`threading.Lock`, который удерживать через `await` запрещено. Поэтому декомпозиция
+строгая, в три части:
+
+1. **`RateLimitState`** (pure dataclass в `avito/core/_transport_shared.py`):
+   `_tokens: float`, `_updated_at: float`, `_blocked_until: float`, политика
+   (`rate`, `capacity`, `enabled`). Методы:
+   - `compute_delay(now: float) -> float` — pure-функция, **не** sleep'ает,
+     возвращает 0 если можно сразу, иначе нужную задержку. Резервирует токен,
+     если возвращает 0 (мутирует state).
+   - `observe_response(now: float, headers: Mapping[str, str]) -> None` — pure
+     обновление `_blocked_until` по rate-limit headers (без IO).
+
+2. **`RateLimiter`** (sync, остаётся в `avito/core/rate_limit.py`): хранит
+   `RateLimitState` + `threading.Lock` + `_sleep` + `_clock`. `acquire()` — это
+   `while compute_delay() > 0: time.sleep(delay)` под `threading.Lock`.
+   Поведенчески идентичен текущему (закрепляется baseline-diff'ом sync-тестов).
+
+3. **`AsyncRateLimiter`** (новый, в `avito/core/async_transport.py` или отдельно
+   в `avito/core/_async_rate_limit.py` — выбор фиксируется в M1 PR): хранит
+   **отдельный `RateLimitState`** (не shared с sync — состояние не делится между
+   режимами; sync- и async-транспорты — независимые сущности с независимыми
+   bucket'ами) + `asyncio.Lock` + `_clock` + `_sleep: Callable[[float],
+   Awaitable[None]] = asyncio.sleep`. `async def acquire()` — это
+   `async with self._lock: while (delay := state.compute_delay(now())) > 0:
+   await self._sleep(delay)`.
+
+`asyncio.Lock` в `AsyncRateLimiter` создаётся лениво (как `_refresh_lock` в
+`AsyncAuthProvider`) — биндится к event loop'у при первом `await`. Запрещено
+переиспользовать один `AsyncRateLimiter` между event loop'ами.
+
+**Закрепляется тестами**: `tests/core/test_rate_limit_state.py` (pure compute);
+`tests/core/test_async_transport.py::test_async_rate_limiter_serializes_concurrent_acquires`
+(пять параллельных корутин не уходят пачкой после ожидания, а сериализуются под
+`asyncio.Lock`).
+
+**Семантика `AsyncTransport.download_binary`.** В M1 — **full-buffer**, как sync:
+внутри `await response.aread()` и возвращается `BinaryResponse` с полным `bytes`-
+контентом. Streaming-вариант (`async for chunk in response.aiter_bytes()`) —
+**out of scope для M1…M-final**: ни один публичный sync-метод не возвращает
+chunked stream, parity-test это бы поломал, и пользователи Async API не получат
+расхождения с sync. Если в будущем понадобится stream — это отдельный API
+(`download_binary_stream` или итератор), вводимый отдельным минорным релизом
+после 2.1.0 с симметричным sync-аналогом. Закрепляется тестом
+`tests/core/test_async_transport.py::test_download_binary_full_buffer_matches_sync`.
 
 ### `avito/core/operations.py` (расширение)
 
@@ -256,8 +305,15 @@ class AsyncDomainObject:
     async def _resolve_user_id(self, user_id: int | str | None = None) -> int: ...
 ```
 
-Async-двойник sync-`DomainObject._resolve_user_id`: тот же fallback-порядок (аргумент →
-`AvitoSettings.user_id` → `await self.transport.request_json("GET", "/core/v1/accounts/self")`).
+Async-двойник sync-`DomainObject._resolve_user_id`: тот же fallback-порядок и тот же
+уровень абстракции, что и sync — резолв через `await self._execute(WHOAMI_SPEC)`,
+**не** через сырой `transport.request_json`. Sync-версия идёт через executor-слой
+(`OperationExecutor.execute(spec)`), и async обязан зеркалить ровно это, иначе
+swagger-binding для `/core/v1/accounts/self` не будет покрыт async-cоверажем
+(parity-test и `_validate_complete_bindings` per-variant обнаружат расхождение).
+`WHOAMI_SPEC` живёт в `avito/accounts/operations.py` и реюзается обоими режимами;
+импорт обязан быть явным (`from avito.accounts.operations import WHOAMI_SPEC`),
+иначе `_operation_specs_for_sdk_method` через `__globals__` не резолвится.
 
 ### `avito/core/async_pagination.py`
 
@@ -450,11 +506,57 @@ class AsyncAvitoClient:
     # ...
 ```
 
+**Lifecycle `from_env` и `__init__`.** `from_env` — **синхронная** фабрика
+(зеркало sync `AvitoClient.from_env`): читает `.env`/окружение, конструирует
+`AvitoSettings` и возвращает не-инициализированный `AsyncAvitoClient`. Сетевых
+ресурсов (`httpx.AsyncClient`, `asyncio.Lock`) на этом этапе ещё нет — они
+создаются лениво в `__aenter__` под текущий event loop. Это критично потому,
+что:
+- `httpx.AsyncClient`, созданный в одном loop'е и использованный в другом, даёт
+  неопределённое поведение;
+- `asyncio.Lock` биндится к loop'у при первом `await` и не переносится между
+  loop'ами;
+- `from_env` сам не `async` — пользователь не должен подключать SDK через
+  `await AsyncAvitoClient.from_env()`.
+
+**Контракт использования — обязательные паттерны:**
+
+```python
+# (1) Рекомендованный: контекст-менеджер
+async with AsyncAvitoClient.from_env() as client:
+    ...
+
+# (2) Допустимый: явный aclose
+client = AsyncAvitoClient.from_env()
+async with client:           # инициализация в __aenter__
+    ...
+# или
+client = AsyncAvitoClient.from_env()
+await client.__aenter__()    # эквивалент async with
+try:
+    ...
+finally:
+    await client.aclose()
+```
+
+**Запрещено:**
+```python
+client = AsyncAvitoClient.from_env()
+await client.transport.request_json(...)   # transport ещё None — RuntimeError
+```
+
+`transport`/`auth_provider` — `@property`, возвращают `RuntimeError("AsyncAvitoClient
+не инициализирован: используйте 'async with' или дождитесь '__aenter__'")` до
+первого `__aenter__`. Закрепляется тестом
+`tests/core/test_async_client_lifecycle.py::test_access_before_aenter_raises`.
+
 **Ownership чужого `httpx.AsyncClient`.** Если `http_client` передан в `__init__`
 извне — пользователь сам отвечает за его lifecycle: `aclose()` / `__aexit__` его
 **не** закрывают (`AsyncTransport` хранит флаг `_owns_client = http_client is None`).
 Это зеркало sync-политики (см. `avito/core/transport.py` — sync `Transport` уже
-делает это для `httpx.Client`). Любое расхождение с sync = blocker.
+делает это для `httpx.Client`). Любое расхождение с sync = blocker. Если
+`http_client` передан, его loop должен совпадать с loop'ом, в котором будет
+вызван `__aenter__`; cross-loop ownership — UB, проверяется только документацией.
 
 **Rollback при partial failure в `__aenter__`.** Если `__aenter__` бросает в
 середине (например, `httpx.AsyncClient` уже создан, но `AsyncAuthProvider.__post_init__`
@@ -481,15 +583,33 @@ async def __aenter__(self) -> AsyncAvitoClient:
 `business_summary`, `listing_health`, `chat_summary`, `order_summary`, `review_summary`,
 `promotion_summary`, `capabilities`** на `AsyncAvitoClient` — отдельный (последний)
 этап M-final, потому что они комбинируют 5+ доменов и не нужны до того, как все домены
-портированы. Реализация **не** должна буквально повторять sync последовательно: каждый
-такой метод запускает независимые подзапросы параллельно — это и есть основной
-user-value async-режима для агрегационных операций.
+портированы.
 
-**Cancellation-safe паттерн (обязательный).** Используется `asyncio.TaskGroup`
-(Python 3.11+, у нас floor 3.12+) с per-section try/except, конвертирующим `AvitoError
-→ SummaryUnavailableSection` (как sync `_safe_summary`, `avito/client.py:91-98`).
-`asyncio.gather(..., return_exceptions=True)` запрещён, потому что он возвращает
-`CancelledError` как обычный результат — это глушит cancellation семантику. Шаблон:
+**Классификация методов M-final (важно для имплементации).** Не все 8 методов —
+агрегаторы; путать паттерн нельзя.
+
+| Метод | Тип | Sync поведение | Async поведение |
+|---|---|---|---|
+| `account_health` | агрегатор (5 подзапросов) | последовательно вызывает `listing_health`, `chat_summary`, `order_summary`, `review_summary`, `promotion_summary` (`avito/client.py:206-263`) | **`asyncio.TaskGroup`** на 5 параллельных подзапросов; per-section `_safe_summary_async` |
+| `listing_health` | агрегатор (≥2 подзапроса) | вызывает `ad.list_items`, статистику, spendings (`avito/client.py:265-368`) | **`asyncio.TaskGroup`** на независимые ветки; зависимые ветки (нужен `item_ids` от первой) — последовательно, как sync |
+| `business_summary` | **алиас** для `account_health` | `return self.account_health(...)` (`avito/client.py:184-204`) | `return await self.account_health(...)` — **никакого `TaskGroup`**, делегирование 1:1 |
+| `chat_summary` | leaf (1 подзапрос) | один вызов `messenger`-домена | один `await` — параллелизма нет |
+| `order_summary` | leaf | один подзапрос | один `await` |
+| `review_summary` | leaf+safe | один подзапрос с `try/except` (`avito/client.py:396-410`) | один `await` + `_safe_summary_async` |
+| `promotion_summary` | leaf | один подзапрос | один `await` |
+| `capabilities` | probe-агрегатор | последовательно дёргает методы и ловит `AvitoError`, чтобы понять «доступно ли» (`avito/client.py:467+`) | **`asyncio.TaskGroup`** оправдан: каждая capability — независимый сетевой probe; параллельность экономит latency. Per-section `try/except AvitoError → CapabilityUnavailable` |
+
+Правило: «параллелим только если sync делает 2+ независимых сетевых вызова». Алиасы
+(`business_summary`) и leaf'ы (`chat_summary`, `order_summary`, `promotion_summary`) —
+**обычные `async def` с одним `await`**, без `TaskGroup`. Это записано в DoD M-final
+ниже как явная проверка через code review checklist.
+
+**Cancellation-safe паттерн для агрегаторов (обязательный).** Используется
+`asyncio.TaskGroup` (Python 3.11+, у нас floor 3.12+) с per-section try/except,
+конвертирующим `AvitoError → SummaryUnavailableSection` (как sync `_safe_summary`,
+`avito/client.py:91-98`). `asyncio.gather(..., return_exceptions=True)` запрещён,
+потому что он возвращает `CancelledError` как обычный результат — это глушит
+cancellation семантику. Шаблон:
 
 ```python
 async def _safe_summary_async[T](
@@ -537,9 +657,16 @@ class AsyncFakeTransport:
 M-final convenience-методы) `_handle` берёт `self._handle_lock = asyncio.Lock()` и
 сериализует match-and-record под ним. Без этого две параллельные корутины могут
 одновременно дёрнуть `route.pop(0)` и получить непредсказуемый порядок ответов.
-Lock создаётся лениво при первом `_handle`-вызове (cross-loop safe). Документируется
-в docstring класса: «AsyncFakeTransport безопасен для concurrent access внутри
-одного event loop'а; не переиспользовать между разными loop'ами».
+
+**Инициализация lock'а в `__init__` (а не лениво).** Лениво создавать `asyncio.Lock`
+из `_handle` нельзя: две корутины, одновременно прошедшие `if self._handle_lock is
+None`, создадут разные lock-объекты — и сериализация сломается до первого `await`.
+Поэтому `self._handle_lock = asyncio.Lock()` создаётся в `__init__` под текущий
+event loop. Цена: `AsyncFakeTransport` нельзя переиспользовать между event loop'ами
+(под `pytest-asyncio strict` это и так не происходит — каждый тест получает свой
+loop). Документируется в docstring: «AsyncFakeTransport безопасен для concurrent
+access внутри одного event loop'а; создавать новый instance в каждом тесте; не
+переиспользовать между loop'ами».
 
 ## Swagger binding — детали изменений
 
@@ -558,7 +685,28 @@ Lock создаётся лениво при первом `_handle`-вызове 
    - `_validate_duplicate_bindings` — ключ `(operation_key, variant)` вместо `operation_key`. Допустимо иметь две независимые цепочки (sync + async) на одну swagger-операцию.
    - `_validate_complete_bindings(operations, bindings)` → `_validate_complete_bindings(operations, bindings, variant)`. Запускается дважды:
      - для `variant="sync"`: ожидаемое множество = все `operations` (как сейчас).
-     - для `variant="async"`: ожидаемое множество = только операции из доменов, у которых найден хотя бы один `Async*` discovery binding (class-gated). Помимо `_API_DOMAINS`, для `domain == "auth"` берём операции из `Авторизация.json` и `Автотека.json`, если найден `AsyncTokenClient` / `AsyncAlternateTokenClient`.
+     - для `variant="async"`: ожидаемое множество = **per-class**, не per-domain.
+       Для каждого sync-класса в домене (`<X>`) проверяем: существует ли
+       `Async<X>` (по имени, `cls.__name__.startswith("Async") and
+       cls.__name__.removeprefix("Async") == sync_cls.__name__`, в том же пакете).
+       Если да — все swagger-операции, привязанные к sync-методам этого класса,
+       обязаны иметь async-двойник в `Async<X>`. Если нет — класс считается
+       «ещё не портированным», и его операции не входят в expected для
+       `variant="async"` на этом этапе.
+
+       Помимо `_API_DOMAINS`, для `domain == "auth"` берём операции из
+       `Авторизация.json` и `Автотека.json`, если найден `AsyncTokenClient` /
+       `AsyncAlternateTokenClient` соответственно (та же per-class логика).
+
+       Это даёт два важных свойства:
+       1. M1 фундамент мерджится: ни одного `Async<X>` нет → expected = ∅,
+          линтер зелёный.
+       2. Большой домен (например, M11 `ads` с 3 классами `Ad`/`AutoloadProfile`/
+          `AutoloadReport`) теоретически можно разбить на под-PR'ы по классу;
+          DoD M3…M12 всё равно требует закрытия домена на 100%, но per-class
+          гранулярность даёт безопасную точку выхода, если PR раздувается.
+          (Дробление допустимо только при явном решении, а не «сделаю остальное
+          потом» — см. DoD M3…M12.)
    - `_validate_operation_spec_coverage` — без изменений (sync OperationSpec — единый источник истины для обоих режимов; реюз спеки между sync и async-методами не запрещён). `used_specs` — `set[id(spec)]`, поэтому одна и та же `OperationSpec` от sync и async binding'ов не дублируется и не теряется.
    - `_operation_specs_for_sdk_method` (`avito/core/swagger_linter.py:578`) — резолвит spec через `unwrapped_method.__globals__`. Async-методы должны импортировать spec явно (`from avito.<domain>.operations import LIST_SPEC`), иначе резолв вернёт `()` и spec будет считаться unbound. Pre-flight тест проверяет, что это работает; если нет — расширяем функцию в Phase 1b.
    - `_validate_json_body_model_coverage` — без изменений (контрактные схемы общие).
@@ -619,6 +767,10 @@ DoD:
 - [ ] Документация `swagger-binding-subsystem.md` отражает variant и class-gated coverage.
 - [ ] Публичная sync-поверхность не изменилась — formal: `pytest -q tests/core/ tests/auth/ tests/domains/ tests/contracts/ --tb=no` имеет идентичный список pass/fail с baseline-теста с `main` (см. pre-flight). Любое расхождение = blocker, до выяснения причины PR не мерджится.
 - [ ] Phase 1a (`_merge_headers` рефакторинг) выделен отдельным коммитом внутри PR — для bisect-friendly history.
+- [ ] CHANGELOG `## [Unreleased]` дополнен: `- Фундамент Async API: AsyncTransport,
+      AsyncAuthProvider, AsyncOperationExecutor, AsyncPaginatedList,
+      AsyncAvitoClient (без factory-методов доменов); RateLimitState вынесен в
+      shared`.
 
 ### M2-PoC — Proof-of-concept шаблона (отдельный PR, до переработки доменов)
 
@@ -650,6 +802,8 @@ DoD M2-PoC:
 - [ ] Если в ходе PoC понадобились изменения контракта (`AsyncPaginator`/`AsyncFakeTransport`/
       `swagger_linter`/`AsyncAuthProvider`), они **внесены в этот же PR** или вынесены
       в отдельный M1.5-PR, но **до** старта M3.
+- [ ] CHANGELOG `## [Unreleased]` дополнен: `- Async-поддержка домена tariffs:
+      AsyncTariff (PoC шаблона)`.
 
 ### M3…M12 + M-final — Закрытие доменов (по PR на домен)
 
@@ -667,7 +821,7 @@ DoD M2-PoC:
 | M10 | `autoteka` | 26 | использует autoteka token flow → end-to-end проверка `AsyncAuthProvider.get_autoteka_access_token` + `_autoteka_refresh_lock` под нагрузкой (concurrent first-touch) |
 | M11 | `ads` | 28 | вторая и третья `AsyncPaginatedList` (`Ad.list`, `AutoloadProfile`/`AutoloadReport.list`); прямой возврат `AsyncPaginator` (`avito/ads/domain.py:266`) |
 | M12 | `orders` | 45 | самый большой; идемпотентность критична |
-| M-final | — | — | convenience-методы `AsyncAvitoClient` (`account_health`, `business_summary`, `listing_health`, `chat_summary`, `order_summary`, `review_summary`, `promotion_summary`, `capabilities`) — выполняют независимые подзапросы через `asyncio.TaskGroup` (cancellation-safe; `asyncio.gather(return_exceptions=True)` запрещён); per-section error handling — как в sync `_safe_summary`. Финальный hardening; `docs/site/how-to/async.md`; CHANGELOG → 2.1.0 |
+| M-final | — | — | convenience-методы `AsyncAvitoClient`: только агрегаторы (`account_health`, `listing_health`, `capabilities`) реализуются через `asyncio.TaskGroup` с per-section error handling (`_safe_summary_async`); leaf'ы (`chat_summary`, `order_summary`, `promotion_summary`, `review_summary`) — обычный `async def` с одним `await`; алиас `business_summary` делегирует в `account_health`. `asyncio.gather(return_exceptions=True)` запрещён. Финальный hardening; `docs/site/how-to/async.md`; CHANGELOG `## [Unreleased]` → `## [2.1.0]` (свод накопленных пунктов из M1…M12 + запись про convenience-методы). |
 
 Содержимое каждого M3…M12:
 
@@ -733,6 +887,12 @@ DoD M2-PoC:
 - [ ] **Нет работы «потом»**: переоткрытие PR с фразой «допилю в следующем PR»
       запрещено. Если scope не закрывается — PR разделяется или раздвигается, но
       не оставляется частичный домен в main.
+- [ ] **CHANGELOG обновлён**: в `docs/CHANGELOG.md` (раздел `## [Unreleased]`)
+      добавлена строка вида `- Async-поддержка домена <domain>: Async<X>, Async<Y>
+      (#<PR-номер>)`. M-final сводит накопленные `Unreleased`-строки в релиз 2.1.0,
+      добавляя только запись про convenience-методы и `AsyncAvitoClient`-агрегаторы.
+      Без этого history-readers не увидят, в каком PR домен стал async, и release
+      notes 2.1.0 не получится собрать механически.
 
 ## Верификация (как проверить, что план сработал)
 
@@ -829,6 +989,13 @@ poetry run pytest                                          # полный наб
 | Риск | Mitigation |
 |---|---|
 | Расхождение retry/auth-логики sync vs async | Вся не-IO логика — в `_transport_shared.py` и `_cache.py`, обе обёртки делегируют. |
+| `RateLimiter` неприменим к async (sleep + `threading.Lock` запечены в `acquire()`) | Декомпозиция в три части: pure `RateLimitState.compute_delay()` в shared (без sleep, без lock), sync `RateLimiter` поверх (`threading.Lock` + `time.sleep`), отдельный `AsyncRateLimiter` (`asyncio.Lock` + `await asyncio.sleep`). State **не** делится между режимами — sync и async транспорты независимы. |
+| `_resolve_user_id` в async идёт через сырой `request_json`, а не через executor | Async-двойник обязан использовать `await self._execute(WHOAMI_SPEC)`, как sync. Иначе swagger-binding для `/core/v1/accounts/self` не покрыт async-coverage'ом, parity-test и `_validate_complete_bindings` падают. |
+| `download_binary` в async может неявно стать streaming, расходясь с sync | M1 фиксирует full-buffer-семантику (`await response.aread()`), как sync. Streaming — отдельный API после 2.1.0 с симметричным sync-аналогом. Закреплено тестом `test_download_binary_full_buffer_matches_sync`. |
+| Convenience-метод М-final реализован как «sync с обмазанным await» (потеря параллелизма) ИЛИ leaf-метод обёрнут в ненужный `TaskGroup` | DoD M-final проверяет классификацию по таблице: TaskGroup — только для агрегаторов с 2+ независимыми сетевыми вызовами (`account_health`, `listing_health`, `capabilities`); алиасы и leaf'ы — обычный `async def` с одним `await`. Code review checklist. |
+| Class-gated swagger-coverage применён per-domain → большой домен (`ads`) нельзя разбить, либо мини-домен с двумя классами требует доделки до merge'а | Class-gated применяется **per-class**: `Async<X>` существует ↔ все операции класса `<X>` обязаны иметь async-binding. Отсутствие `Async<Y>` в том же домене не блокирует мердж класса `Async<X>`. DoD M3…M12 всё равно требует домен закрыть на 100%. |
+| `from_env` инициализирует loop-зависимые ресурсы вне loop'а → cross-loop UB | `from_env` синхронен, ресурсы (`httpx.AsyncClient`, `asyncio.Lock`) создаются в `__aenter__`. Доступ к `transport`/`auth_provider` до `__aenter__` бросает `RuntimeError` с понятным сообщением. Закреплено тестом `test_access_before_aenter_raises`. |
+| Release notes 2.1.0 невозможно собрать механически, потому что в PR M3…M12 нет CHANGELOG-записей | DoD M3…M12 требует `## [Unreleased]` строку в `docs/CHANGELOG.md` на каждый PR. M-final сводит накопленное в `## [2.1.0]`. |
 | `_merge_headers` срытно делает sync IO (`get_access_token()`) | Phase 1a первым шагом рефакторит контракт: helper принимает уже резолвнутый `bearer_token: str | None`. Без этого shared слой не IO-agnostic, и vary-логика расползётся. |
 | `AsyncPaginatedList` не наследует `list` → ломаются ожидания сервисов | Документируем в docstring; parity-test допускает `PaginatedList[T]` ↔ `AsyncPaginatedList[T]` и `Paginator[T]` ↔ `AsyncPaginator[T]`. List-API не реплицируется намеренно. |
 | `AsyncPaginator` не покрывает кейс прямого возврата `Paginator` без `as_list()` | Контракт `AsyncPaginator` симметричен sync (`iter_pages`/`collect`/`as_list`); все 5 текущих usage-сайтов покрыты. |
@@ -844,7 +1011,7 @@ poetry run pytest                                          # полный наб
 | Retry-петля ловит `asyncio.CancelledError` и зацикливает отмену | Shared `_decide_*_retry` и обёртки `Transport`/`AsyncTransport` ловят **только** `Exception`, не `BaseException`. Закреплено тестом `test_cancelled_error_is_not_retried`. |
 | `AsyncAvitoClient.__aenter__` оставляет полу-инициализированный state при ошибке | `__aenter__` обёрнут `try/except BaseException`: при любом исключении вызывает идемпотентный `aclose()` и пробрасывает наружу. Закреплено тестом `test_aenter_rollback_on_partial_failure`. |
 | Ownership чужого `httpx.AsyncClient` не определён — потенциальный resource-leak или double-close | `AsyncTransport` хранит `_owns_client = http_client is None`; внешне переданный клиент `aclose()`/`__aexit__` не закрывают. Зеркало sync-политики; расхождение = blocker. |
-| `AsyncFakeTransport` рассинхронизирован при `asyncio.gather` | `_handle_lock = asyncio.Lock()` сериализует match-and-record; create lazily. Закреплено тестом `test_async_fake_transport_concurrent_handle`. |
+| `AsyncFakeTransport` рассинхронизирован при `asyncio.gather` | `_handle_lock = asyncio.Lock()` сериализует match-and-record; **создаётся в `__init__`**, не лениво (лениво — гонка на самой инициализации lock'а). Закреплено тестом `test_async_fake_transport_concurrent_handle`. |
 | Существующие `async def test_*` в репозитории молча скипаются после `asyncio_mode = "strict"` | Pre-flight `grep -rn "^async def test_" tests/` фиксирует все такие тесты до M1; маркер `@pytest.mark.asyncio` добавляется отдельным pre-flight commit'ом. |
 | `len(PaginatedList)` / `paginated[0]` в коде ломаются при попытке мигрировать на `AsyncPaginatedList` | Pre-flight `grep` фиксирует все list-API usage. `AsyncPaginatedList` не повторяет list-API намеренно; каждый кейс заменяется на `await materialize()` / `loaded_count` в async-двойнике или остаётся sync-only. |
 | Скрытая работа «на потом» в доменных PR (TODO/FIXME/skip) | DoD M3…M12 явно требует пустой выхлоп `grep -E "TODO|FIXME|@pytest.mark.skip|xfail"` по diff'у; счётчики sync- и async-тестов сравниваются равенством; PR не мерджится при частичном покрытии домена. |
