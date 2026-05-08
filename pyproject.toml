@@ -10,7 +10,7 @@ license="MIT"
 readme="README.md"
 homepage="https://github.com/p141592/avito_python_api"
 repository="https://github.com/p141592/avito_python_api"
-documentation="https://p141592.github.io/avito_python_api/"
+documentation="https://18studio.github.io/avito_python_api/"
 keywords=["avito", "sdk", "python", "api"]
 classifiers=[
     "License :: OSI Approved :: MIT License",
