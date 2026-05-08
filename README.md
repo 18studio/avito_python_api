@@ -1,7 +1,7 @@
 # SDK для Avito
 
-[![CI](https://github.com/p141592/avito_python_api/actions/workflows/ci.yml/badge.svg)](https://github.com/p141592/avito_python_api/actions/workflows/ci.yml)
-[![Coverage Status](https://coveralls.io/repos/github/p141592/avito_python_api/badge.svg?branch=main)](https://coveralls.io/github/p141592/avito_python_api?branch=main)
+[![CI](https://github.com/18studio/avito_python_api/actions/workflows/ci.yml/badge.svg)](https://github.com/18studio/avito_python_api/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/18studio/avito_python_api/badge.svg?branch=main)](https://coveralls.io/github/18studio/avito_python_api?branch=main)
 [![PyPI Downloads](https://img.shields.io/pypi/dm/avito-py.svg)](https://pypi.org/project/avito-py/)
 [![Docs](https://img.shields.io/badge/docs-latest-blue)](https://18studio.github.io/avito_python_api/)
 
@@ -85,19 +85,6 @@ with AvitoClient(settings) as avito:
 
 Все опциональные параметры конструктора — keyword-only. `AvitoClient` иммутабелен: `base_url`, таймауты, retry-политика и `auth` не меняются у живого клиента — вместо этого создаётся новый клиент.
 
-Async-поверхность использует те же доменные методы и модели, но требует `async with`:
-
-```python
-from avito import AsyncAvitoClient
-
-async with AsyncAvitoClient.from_env() as avito:
-    profile = await avito.account().get_self()
-    listings = await (await avito.ad(user_id=123).list(limit=20)).materialize()
-```
-
-Подробный контракт async lifecycle, ASGI-рецепты и ограничения описаны в
-[async how-to](https://p141592.github.io/avito_python_api/how-to/async/).
-
 ### Переменные окружения
 
 | Переменная | Обязательная | Описание |
@@ -120,6 +107,71 @@ async with AsyncAvitoClient.from_env() as avito:
 - значения из process environment имеют приоритет над `.env`;
 - `AvitoSettings.from_env()` и `AvitoClient.from_env()` детерминированно читают `.env` из текущей рабочей директории или из переданного `env_file`;
 - при отсутствии `AVITO_CLIENT_ID` или `AVITO_CLIENT_SECRET` SDK поднимает `ConfigurationError` при создании клиента, до первого HTTP-запроса.
+
+## Асинхронный режим
+
+Для async-кода используйте `AsyncAvitoClient`. Он повторяет доменную поверхность
+`AvitoClient`: фабрики (`account()`, `ad()`, `chat()`, `order()` и другие),
+аргументы методов и возвращаемые SDK-модели остаются теми же, но сетевые вызовы
+выполняются через `await`.
+
+`AsyncAvitoClient` обязательно открывается через `async with`: в этот момент SDK
+создаёт loop-bound `httpx.AsyncClient`, async locks и transport. Для ручного
+закрытия есть `await avito.aclose()`, но для application-кода предпочтителен
+контекстный менеджер.
+
+```python
+from avito import AsyncAvitoClient
+
+
+async def load_active_ads() -> list[str]:
+    async with AsyncAvitoClient.from_env() as avito:
+        profile = await avito.account().get_self()
+        ads = await avito.ad(user_id=profile.id).list(status="active", limit=20)
+        items = await ads.materialize()
+        return [item.title for item in items]
+```
+
+Async-пагинация возвращает `AsyncPaginatedList[T]`, а не обычный `list`.
+Читайте страницы через `async for` или явно материализуйте результат:
+
+```python
+from avito import AsyncAvitoClient
+
+
+async def print_ads() -> None:
+    async with AsyncAvitoClient.from_env() as avito:
+        ads = await avito.ad(user_id=123).list(status="active", limit=100)
+
+        async for item in ads:
+            print(item.title)
+```
+
+Для ASGI-приложений создавайте один `AsyncAvitoClient` в lifespan приложения и
+закрывайте его на shutdown. Один экземпляр клиента нельзя переносить между event
+loop.
+
+```python
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from avito import AsyncAvitoClient
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async with AsyncAvitoClient.from_env() as avito:
+        app.state.avito = avito
+        yield
+
+
+app = FastAPI(lifespan=lifespan)
+```
+
+Подробнее: [Асинхронный режим](https://18studio.github.io/avito_python_api/how-to/async/)
+и справочник [AvitoClient и AsyncAvitoClient](https://18studio.github.io/avito_python_api/reference/client/).
 
 ## Примеры по доменам
 

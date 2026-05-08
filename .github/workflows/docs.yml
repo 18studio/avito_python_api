@@ -57,7 +57,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          args: --root-dir "${{ github.workspace }}/site" --exclude "avito\.ru" --exclude "^https://p141592\.github\.io/avito_python_api/" --retry-wait-time 5 --max-retries 3 --timeout 30 site/
+          args: --root-dir "${{ github.workspace }}/site" --exclude "avito\.ru" --exclude "^https://18studio\.github\.io/avito_python_api/" --retry-wait-time 5 --max-retries 3 --timeout 30 site/
 
   deploy:
     runs-on: ubuntu-latest

@@ -12,6 +12,7 @@ Explanations описывают причины архитектурных реш
 | [Семантика пагинации](pagination-semantics.md) | Почему `PaginatedList` ленивый и когда загружаются страницы |
 | [Dry-run и идемпотентность](dry-run-and-idempotency.md) | Как write-операции проверяются без сетевого вызова |
 | [Стратегия тестирования](testing-strategy.md) | Как `FakeTransport`, contract-тесты и docs-harness проверяют SDK |
+| [Шаблон async-домена](async-domain-template.md) | Как портировать доменный объект в `async_domain.py` без нарушения Swagger bindings |
 | [Покрытие API и deprecation](api-coverage-and-deprecations.md) | Как specs, reference и runtime warnings связаны между собой |
 | [Swagger binding subsystem](swagger-binding-subsystem.md) | Как Swagger specs, bindings, strict lint, JSON report и contract runner сохраняют coverage-контекст |
 | [Resolution конфигурации](config-resolution.md) | Как env, `.env` и defaults превращаются в `AvitoSettings` |
