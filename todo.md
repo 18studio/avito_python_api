@@ -1246,31 +1246,31 @@ pagination, without autoteka-flow, without write methods. That is enough to poke
 all foundation layers in one end-to-end scenario.
 
 DoD M2-PoC:
-- [ ] `avito/tariffs/async_domain.py` is created, `AsyncTariff` mirrors `Tariff`
+- [x] `avito/tariffs/async_domain.py` is created, `AsyncTariff` mirrors `Tariff`
       exactly on 1 public method.
-- [ ] `AsyncTariff` contains class-level metadata mirroring `Tariff`:
+- [x] `AsyncTariff` contains class-level metadata mirroring `Tariff`:
       `__swagger_domain__ = "tariffs"`, `__sdk_factory__ = "tariff"`,
       `__sdk_factory_args__ = {"tariff_id": "path.tariff_id"}`.
-- [ ] `avito/tariffs/__init__.py` exports `AsyncTariff` next to `Tariff`.
-- [ ] `AsyncAvitoClient.tariff()` factory method returns `AsyncTariff`.
-- [ ] `tests/domains/tariffs/test_tariffs_async.py` contains an async double of the sync
+- [x] `avito/tariffs/__init__.py` exports `AsyncTariff` next to `Tariff`.
+- [x] `AsyncAvitoClient.tariff()` factory method returns `AsyncTariff`.
+- [x] `tests/domains/tariffs/test_tariffs_async.py` contains an async double of the sync
       golden-path scenario and additional async-risk scenarios: 401, 429,
       transport error. All tests are green.
-- [ ] `make check` is green, including `swagger-lint --strict` (for `tariffs` async-coverage
+- [x] `make check` is green, including `swagger-lint --strict` (for `tariffs` async-coverage
       1:1 is now required).
-- [ ] `scripts/lint_async_parity.py` is green.
-- [ ] `tests/contracts/test_async_swagger_contracts.py` is green for async auth +
+- [x] `scripts/lint_async_parity.py` is green.
+- [x] `tests/contracts/test_async_swagger_contracts.py` is green for async auth +
       `tariffs`.
-- [ ] The generated reference docs `docs/site/reference/domains/tariffs.md`
+- [x] The generated reference docs `docs/site/reference/domains/tariffs.md`
       contain an async section.
-- [ ] **`_gen_reference.py` is validated on a real domain**: after the builder extension in M1, on M2-PoC it sees `AsyncTariff` for the first time and must generate a reference page with both classes (`Tariff` + `AsyncTariff`). `make docs-strict` is green, in the generated `site/reference/domains/tariffs/` or `site/reference/domains/tariffs.html` both sections are present. If the builder requires polish — it is included in the same PR (this is what the PoC is for). Specifically in `_gen_reference.py`: `public_domain_packages()` additionally returns the package if `*/async_domain.py` exists; `public_domain_classes()` imports `avito.<package>.domain` and `avito.<package>.async_domain` directly, not just `avito.<package>.__all__`; `Async<X>` is filtered through `cls.__name__.startswith("Async")` + `issubclass(AsyncDomainObject)`; `write_domain_pages()` writes explicit mkdocstrings directives for each class in the order `Tariff` → `AsyncTariff`, not one shared `::: avito.tariffs`; `EXCLUDED_PACKAGES` remains the same; for `auth` (excluded) async classes do not get a reference.
-- [ ] **Lessons learned are recorded** in `docs/site/explanations/async-domain-template.md`
+- [x] **`_gen_reference.py` is validated on a real domain**: after the builder extension in M1, on M2-PoC it sees `AsyncTariff` for the first time and must generate a reference page with both classes (`Tariff` + `AsyncTariff`). `make docs-strict` is green, in the generated `site/reference/domains/tariffs/` or `site/reference/domains/tariffs.html` both sections are present. If the builder requires polish — it is included in the same PR (this is what the PoC is for). Specifically in `_gen_reference.py`: `public_domain_packages()` additionally returns the package if `*/async_domain.py` exists; `public_domain_classes()` imports `avito.<package>.domain` and `avito.<package>.async_domain` directly, not just `avito.<package>.__all__`; `Async<X>` is filtered through `cls.__name__.startswith("Async")` + `issubclass(AsyncDomainObject)`; `write_domain_pages()` writes explicit mkdocstrings directives for each class in the order `Tariff` → `AsyncTariff`, not one shared `::: avito.tariffs`; `EXCLUDED_PACKAGES` remains the same; for `auth` (excluded) async classes do not get a reference.
+- [x] **Lessons learned are recorded** in `docs/site/explanations/async-domain-template.md`
       (a new file): the `async_domain.py` file template, a domain port checklist,
       pitfalls discovered. This document becomes normative for M3+.
-- [ ] If in the course of the PoC contract changes are needed (`AsyncPaginator`/`AsyncFakeTransport`/
+- [x] If in the course of the PoC contract changes are needed (`AsyncPaginator`/`AsyncFakeTransport`/
       `swagger_linter`/`AsyncAuthProvider`), they are **made in the same PR** or split out
       into a separate M1.5-PR, but **before** the start of M3.
-- [ ] The root `CHANGELOG.md` (`## [Unreleased]`) is updated with:
+- [x] The root `CHANGELOG.md` (`## [Unreleased]`) is updated with:
       `- Async-поддержка домена tariffs: AsyncTariff (PoC шаблона)`.
 
 ### M3…M12 + M-final — Closing domains (one PR per domain)

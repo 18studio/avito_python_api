@@ -11,6 +11,7 @@ and this project adheres to Semantic Versioning.
 - Фундамент Async API: `AsyncTransport`, `AsyncAuthProvider`,
   `AsyncOperationExecutor`, `AsyncPaginatedList`, `AsyncAvitoClient` без
   доменных factory-методов; `RateLimitState` вынесен в shared.
+- Async-поддержка домена tariffs: `AsyncTariff` (PoC шаблона).
 - Добавлен `ClientClosedError` для вызовов после `AvitoClient.close()`.
 
 ### Deprecated

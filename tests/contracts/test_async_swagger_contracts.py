@@ -10,5 +10,6 @@ def test_async_swagger_bindings_are_discoverable_for_auth() -> None:
 
     assert {binding.class_name for binding in async_bindings} == {
         "AsyncAlternateTokenClient",
+        "AsyncTariff",
         "AsyncTokenClient",
     }

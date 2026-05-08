@@ -13,10 +13,11 @@ from avito.config import AvitoSettings
 from avito.core.async_transport import AsyncTransport
 from avito.core.exceptions import ClientClosedError
 from avito.core.types import TransportDebugInfo
+from avito.tariffs import AsyncTariff
 
 
 class AsyncAvitoClient:
-    """Асинхронная публичная точка входа SDK без доменных factory-методов в M1."""
+    """Асинхронная публичная точка входа SDK с factory-методами портированных доменов."""
 
     def __init__(
         self,
@@ -110,6 +111,11 @@ class AsyncAvitoClient:
         """Возвращает безопасный снимок transport-настроек для диагностики."""
 
         return self._require_transport().debug_info()
+
+    def tariff(self, tariff_id: int | str | None = None) -> AsyncTariff:
+        """Создает async-доменный объект тарифа."""
+
+        return AsyncTariff(self._require_transport(), tariff_id=tariff_id)
 
     async def aclose(self) -> None:
         """Закрывает transport и auth-provider; повторный вызов безопасен."""
