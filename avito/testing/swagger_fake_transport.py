@@ -19,6 +19,7 @@ import httpx
 from avito.auth import AuthSettings
 from avito.auth.models import ClientCredentialsRequest, RefreshTokenRequest
 from avito.auth.provider import AlternateTokenClient, TokenClient
+from avito.autoteka.models import MonitoringEventsQuery
 from avito.client import AvitoClient
 from avito.core.swagger_discovery import DiscoveredSwaggerBinding
 from avito.core.swagger_names import swagger_field_aliases
@@ -33,6 +34,10 @@ from avito.core.swagger_schema_paths import (
     SwaggerSchemaPathError,
     resolve_body_path,
 )
+from avito.jobs.models import ApplicationIdsQuery, ResumeSearchQuery, VacanciesQuery
+from avito.messenger.models import UploadImageFile
+from avito.ratings.models import ReviewsQuery
+from avito.realty.models import RealtyInterval
 from avito.testing.fake_transport import FakeTransport, JsonValue, RecordedRequest
 
 SdkValue = object
@@ -354,8 +359,6 @@ class SwaggerFakeTransport(FakeTransport):
         if argument_name == "query":
             return self._query_value(annotation)
         if argument_name == "files" or "UploadImageFile" in annotation:
-            from avito.messenger.models import UploadImageFile
-
             return [
                 UploadImageFile(
                     field_name="image",
@@ -404,24 +407,14 @@ class SwaggerFakeTransport(FakeTransport):
 
     def _query_value(self, annotation: str) -> object:
         if "MonitoringEventsQuery" in annotation:
-            from avito.autoteka.models import MonitoringEventsQuery
-
             return MonitoringEventsQuery(limit=2)
         if "ApplicationIdsQuery" in annotation:
-            from avito.jobs.models import ApplicationIdsQuery
-
             return ApplicationIdsQuery(updated_at_from="2026-04-01T00:00:00+00:00")
         if "ResumeSearchQuery" in annotation:
-            from avito.jobs.models import ResumeSearchQuery
-
             return ResumeSearchQuery(query="python")
         if "VacanciesQuery" in annotation:
-            from avito.jobs.models import VacanciesQuery
-
             return VacanciesQuery(query="python")
         if "ReviewsQuery" in annotation:
-            from avito.ratings.models import ReviewsQuery
-
             return ReviewsQuery(offset=0, limit=10)
         return self._value_for_name("query")
 
@@ -583,8 +576,6 @@ class SwaggerFakeTransport(FakeTransport):
 
     def _value_for_name(self, name: str) -> object:
         if name == "intervals":
-            from avito.realty.models import RealtyInterval
-
             return [RealtyInterval(date="2026-05-01", available=True)]
         if name == "blocked_dates":
             return ["2026-05-01"]
@@ -689,15 +680,15 @@ class SwaggerFakeTransport(FakeTransport):
         return match.groupdict() if match is not None else {}
 
     def _path_pattern(self, template: str) -> re.Pattern[str]:
-        pattern = "^"
+        pattern_parts = ["^"]
         position = 0
         for match in _PATH_PARAMETER_RE.finditer(template):
-            pattern += re.escape(template[position : match.start()])
-            pattern += f"(?P<{match.group(1)}>[^/]+)"
+            pattern_parts.append(re.escape(template[position : match.start()]))
+            pattern_parts.append(f"(?P<{match.group(1)}>[^/]+)")
             position = match.end()
-        pattern += re.escape(template[position:])
-        pattern += "$"
-        return re.compile(pattern)
+        pattern_parts.append(re.escape(template[position:]))
+        pattern_parts.append("$")
+        return re.compile("".join(pattern_parts))
 
     def _normalize_swagger_path(self, path: str) -> str:
         if path != "/":

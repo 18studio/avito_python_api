@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 import mkdocs_gen_files
 
+from avito import AvitoClient
 from avito.core.domain import AsyncDomainObject, DomainObject
 from avito.core.swagger_discovery import discover_swagger_bindings
 from avito.core.swagger_linter import lint_swagger_bindings
@@ -327,8 +328,6 @@ def write_summary(domain_pages: list[str]) -> None:
 
 
 def ensure_debug_info_exists() -> None:
-    from avito import AvitoClient
-
     debug_info = getattr(AvitoClient, "debug_info", None)
     if debug_info is None or not callable(debug_info):
         raise RuntimeError("AvitoClient.debug_info отсутствует в публичном reference-контракте.")

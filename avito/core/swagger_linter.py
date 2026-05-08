@@ -11,6 +11,7 @@ from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from types import ModuleType
 
+from avito.async_client import AsyncAvitoClient
 from avito.client import AvitoClient
 from avito.core.deprecation import DeprecatedSdkSymbol
 from avito.core.operations import OperationSpec
@@ -551,8 +552,6 @@ def _validate_factory(binding: DiscoveredSwaggerBinding) -> tuple[SwaggerReportE
 
     client_type: type[object]
     if binding.variant == "async":
-        from avito.async_client import AsyncAvitoClient
-
         client_type = AsyncAvitoClient
     else:
         client_type = AvitoClient
