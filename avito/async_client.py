@@ -21,6 +21,13 @@ from avito.cpa import (
     AsyncCpaChat,
     AsyncCpaLead,
 )
+from avito.jobs import (
+    AsyncApplication,
+    AsyncJobDictionary,
+    AsyncJobWebhook,
+    AsyncResume,
+    AsyncVacancy,
+)
 from avito.messenger import (
     AsyncChat,
     AsyncChatMedia,
@@ -272,6 +279,31 @@ class AsyncAvitoClient:
         """Создает async-доменный объект рассылки спецпредложений."""
 
         return AsyncSpecialOfferCampaign(self._require_transport(), campaign_id=campaign_id)
+
+    def vacancy(self, vacancy_id: int | str | None = None) -> AsyncVacancy:
+        """Создает async-доменный объект вакансии."""
+
+        return AsyncVacancy(self._require_transport(), vacancy_id=vacancy_id)
+
+    def application(self) -> AsyncApplication:
+        """Создает async-доменный объект откликов."""
+
+        return AsyncApplication(self._require_transport())
+
+    def resume(self, resume_id: int | str | None = None) -> AsyncResume:
+        """Создает async-доменный объект резюме."""
+
+        return AsyncResume(self._require_transport(), resume_id=resume_id)
+
+    def job_webhook(self) -> AsyncJobWebhook:
+        """Создает async-доменный объект webhook Авито Работы."""
+
+        return AsyncJobWebhook(self._require_transport())
+
+    def job_dictionary(self, dictionary_id: int | str | None = None) -> AsyncJobDictionary:
+        """Создает async-доменный объект справочника Авито Работы."""
+
+        return AsyncJobDictionary(self._require_transport(), dictionary_id=dictionary_id)
 
     async def aclose(self) -> None:
         """Закрывает transport и auth-provider; повторный вызов безопасен."""
