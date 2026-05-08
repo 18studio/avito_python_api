@@ -1066,40 +1066,40 @@ reuse across loops."
 
 Before opening PR M1 (all of this is done locally and validated before commit):
 
-- [ ] `grep -rn "\._access_token\|\._refresh_token\|\._autoteka_access_token" tests/` —
+- [x] `grep -rn "\._access_token\|\._refresh_token\|\._autoteka_access_token" tests/` —
       record all private probes; ensure that the compat-shim in `AuthProvider`
       covers each. Currently found case: `tests/core/test_authentication.py:122-127`.
-- [ ] `grep -rn "\bPaginator\b" avito/` — record all 4 usage sites
+- [x] `grep -rn "\bPaginator\b" avito/` — record all 4 usage sites
       (`avito/ads/domain.py:266,1183`, `avito/accounts/domain.py:170,383`).
       All current usage sites end with `.as_list(...)`; there is no direct public
       return of `Paginator`. `AsyncPaginator.as_list()` is needed by M4
       (`accounts`), but a root-level export of `AsyncPaginator` is not needed.
-- [ ] `grep -rn "len(.*Paginated\|\\b[a-z_]*list\\[[0-9-]" avito/ tests/` — find all
+- [x] `grep -rn "len(.*Paginated\|\\b[a-z_]*list\\[[0-9-]" avito/ tests/` — find all
       consumers of the list API on `PaginatedList[T]` (indexing, `len`, `bool`, slice).
       `AsyncPaginatedList` deliberately does NOT replicate the list API: each such case must
       either be safe (sync-only), or explicitly replaced with `await materialize()` /
       `loaded_count` in the async double. The list is recorded in the PoC commit message.
-- [ ] `grep -rn "^async def test_" tests/` — ensure that existing tests have no
+- [x] `grep -rn "^async def test_" tests/` — ensure that existing tests have no
       async functions without `@pytest.mark.asyncio`. After enabling
       `asyncio_mode = "strict"`, any such test will start being ignored (warning,
       not failure). If found — add the marker in a pre-flight commit, separately from M1.
-- [ ] Confirm the minimum supported Python version in `pyproject.toml`. The SDK already
+- [x] Confirm the minimum supported Python version in `pyproject.toml`. The SDK already
       uses PEP 695 (`type PageFetcher[ItemT] = ...` in `avito/core/pagination.py:10`),
       which means Python **3.12+** is required. All async contracts (`type AsyncPageFetcher`,
       `async def execute[ResponseT]`) keep this same floor; raising it is unnecessary, but
       explicitly recorded in the M1 PR description.
-- [ ] Baseline run on a clean `main` — save **nodeids of existing tests** and
+- [x] Baseline run on a clean `main` — save **nodeids of existing tests** and
       their pass/fail statuses:
       `poetry run pytest --collect-only -q tests/core tests/auth tests/domains tests/contracts | grep '::' > /tmp/baseline_nodeids.txt`
       and then `poetry run pytest -q --tb=no $(cat /tmp/baseline_nodeids.txt) >
       /tmp/baseline_main.txt`. Used in the M1 DoD; new async tests after M1
       do not enter the baseline comparison.
-- [ ] Verify that `_operation_specs_for_sdk_method` (`avito/core/swagger_linter.py:578`)
+- [x] Verify that `_operation_specs_for_sdk_method` (`avito/core/swagger_linter.py:578`)
       works with `async_domain.py`: a test stub with `async def m(self): return self._execute(SOME_SPEC)`
       and `from ...operations import SOME_SPEC` — the function must find `SOME_SPEC` via
       `unwrapped_method.__globals__`. If it does not work — extend the function (Phase 1b),
       otherwise leave unchanged.
-- [ ] Read `docs/site/assets/_gen_reference.py` in full and record
+- [x] Read `docs/site/assets/_gen_reference.py` in full and record
       existing filter points: `PACKAGE_ROOT.glob("*/domain.py")`,
       `EXCLUDED_PACKAGES`, `public_domain_classes()` (filter by `DomainObject` inheritance
       and `value.__module__.startswith(f"avito.{package}.")`), `public_domain_methods()`
@@ -1110,25 +1110,25 @@ Before opening PR M1 (all of this is done locally and validated before commit):
       `write_domain_pages()` must move to explicit class directives sync → async
       and not rely solely on `avito.<package>.__all__`. Without this, the reference will be
       asymmetric.
-- [ ] Read `scripts/lint_architecture.py` and `scripts/lint_docstrings.py`:
+- [x] Read `scripts/lint_architecture.py` and `scripts/lint_docstrings.py`:
       current checks look only at `domain.py` and `ast.FunctionDef`. M1 must
       extend them to `async_domain.py` and `ast.AsyncFunctionDef`.
-- [ ] Read `avito/core/deprecation.py`: the current `deprecated_method` returns a
+- [x] Read `avito/core/deprecation.py`: the current `deprecated_method` returns a
       sync wrapper. M1 must add an async-aware wrapper before porting the
       deprecated methods of `cpa`/`ads`.
-- [ ] `grep -rn "@deprecated_method\|deprecated_method(" avito/cpa/ avito/ads/` —
+- [x] `grep -rn "@deprecated_method\|deprecated_method(" avito/cpa/ avito/ads/` —
       record the **exact** number of sync deprecated methods that require async doubles.
       At the time of writing the plan: 3 in `avito/cpa/domain.py:491,541,585` and 4 in
       `avito/ads/domain.py:1416,1457,1523,1558` — totaling 7. The async-aware wrapper in
       `deprecation.py` is a mandatory artifact of M1, without which M6 (`cpa`) and M11 (`ads`)
       cannot close. If the actual number diverges from the recorded one — update
       the sequencing table and DoD M6/M11 before the start of M1.
-- [ ] Read `avito/core/swagger_linter.py::_validate_factory` in full and record
+- [x] Read `avito/core/swagger_linter.py::_validate_factory` in full and record
       current behavior: which fields of the binding it gates on (`factory`, `factory_args`),
       how it resolves the factory on `AvitoClient`, what it considers an error. M1 must extend
       it with class-gated coverage (see Swagger section). Without full understanding of the current
       logic, the extension risks weakening the invariant for sync bindings.
-- [ ] **Run pre-flight locally, record results in a tracked artifact**:
+- [x] **Run pre-flight locally, record results in a tracked artifact**:
       a new file `docs/dev/preflight-async-m1.md` is created and committed in
       a separate pre-flight commit (before opening M1) capturing **all** of the
       following in machine-readable form:
