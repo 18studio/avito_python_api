@@ -5,3 +5,9 @@
 итерации. `materialize()` загружает все страницы и возвращает обычный список.
 
 ::: avito.PaginatedList
+
+`AsyncPaginatedList[T]` — async-аналог. Он не наследуется от `list`, читается через
+`async for` или `await materialize()` и не поддерживает конкурентную итерацию одного
+экземпляра из нескольких coroutine.
+
+::: avito.AsyncPaginatedList

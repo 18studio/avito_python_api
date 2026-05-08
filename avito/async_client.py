@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from datetime import date, datetime
 from pathlib import Path
 
 import httpx
@@ -15,6 +17,7 @@ from avito.ads import (
     AsyncAutoloadProfile,
     AsyncAutoloadReport,
 )
+from avito.ads.models import CallStats, ListingStats, ListingStatus, SpendingRecord
 from avito.auth.async_provider import AsyncAuthProvider
 from avito.auth.async_token_client import AsyncAlternateTokenClient, AsyncTokenClient
 from avito.auth.settings import AuthSettings
@@ -25,9 +28,16 @@ from avito.autoteka import (
     AsyncAutotekaValuation,
     AsyncAutotekaVehicle,
 )
+from avito.client import (
+    _default_summary_date_range,
+    _safe_summary_async,
+    _sum_optional_float,
+    _sum_optional_int,
+    _summary_unavailable_section,
+)
 from avito.config import AvitoSettings
 from avito.core.async_transport import AsyncTransport
-from avito.core.exceptions import ClientClosedError
+from avito.core.exceptions import AvitoError, ClientClosedError
 from avito.core.types import TransportDebugInfo
 from avito.cpa import (
     AsyncCallTrackingCall,
@@ -50,6 +60,15 @@ from avito.messenger import (
     AsyncChatWebhook,
     AsyncSpecialOfferCampaign,
 )
+from avito.orders import (
+    AsyncDeliveryOrder,
+    AsyncDeliveryTask,
+    AsyncOrder,
+    AsyncOrderLabel,
+    AsyncSandboxDelivery,
+    AsyncStock,
+)
+from avito.orders.models import OrderStatus
 from avito.promotion import (
     AsyncAutostrategyCampaign,
     AsyncBbipPromotion,
@@ -58,6 +77,7 @@ from avito.promotion import (
     AsyncTargetActionPricing,
     AsyncTrxPromotion,
 )
+from avito.promotion.models import PromotionOrderServiceStatus, PromotionOrderStatus
 from avito.ratings import AsyncRatingProfile, AsyncReview, AsyncReviewAnswer
 from avito.realty import (
     AsyncRealtyAnalyticsReport,
@@ -65,7 +85,21 @@ from avito.realty import (
     AsyncRealtyListing,
     AsyncRealtyPricing,
 )
+from avito.summary import (
+    AccountHealthSummary,
+    CapabilityDiscoveryResult,
+    CapabilityInfo,
+    ChatSummary,
+    ListingHealthItem,
+    ListingHealthSummary,
+    OrderSummary,
+    PromotionSummary,
+    ReviewSummary,
+    SummaryUnavailableSection,
+)
 from avito.tariffs import AsyncTariff
+
+SummaryDate = date | datetime | str
 
 
 class AsyncAvitoClient:
@@ -163,6 +197,388 @@ class AsyncAvitoClient:
         """Возвращает безопасный снимок transport-настроек для диагностики."""
 
         return self._require_transport().debug_info()
+
+    async def business_summary(
+        self,
+        *,
+        user_id: int | str | None = None,
+        listing_limit: int = 50,
+        listing_page_size: int = 50,
+        date_from: SummaryDate | None = None,
+        date_to: SummaryDate | None = None,
+    ) -> AccountHealthSummary:
+        """Возвращает итоговую async read-only сводку бизнеса."""
+
+        return await self.account_health(
+            user_id=user_id,
+            listing_limit=listing_limit,
+            listing_page_size=listing_page_size,
+            date_from=date_from,
+            date_to=date_to,
+        )
+
+    async def account_health(
+        self,
+        *,
+        user_id: int | str | None = None,
+        listing_limit: int = 50,
+        listing_page_size: int = 50,
+        date_from: SummaryDate | None = None,
+        date_to: SummaryDate | None = None,
+    ) -> AccountHealthSummary:
+        """Возвращает итоговую async read-only health-сводку аккаунта."""
+
+        resolved_user_id = await self._resolve_user_id(user_id)
+        async with asyncio.TaskGroup() as task_group:
+            balance_task = task_group.create_task(self.account(resolved_user_id).get_balance())
+            listings_task = task_group.create_task(
+                self.listing_health(
+                    user_id=resolved_user_id,
+                    limit=listing_limit,
+                    page_size=listing_page_size,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+            )
+            chats_task = task_group.create_task(
+                _safe_summary_async(
+                    "chats",
+                    lambda: self.chat_summary(user_id=resolved_user_id),
+                )
+            )
+            orders_task = task_group.create_task(
+                _safe_summary_async("orders", self.order_summary)
+            )
+            reviews_task = task_group.create_task(
+                _safe_summary_async("reviews", self.review_summary)
+            )
+        balance = balance_task.result()
+        listings = listings_task.result()
+        item_ids = [item.item_id for item in listings.items if item.item_id is not None]
+        promotion, promotion_unavailable = await _safe_summary_async(
+            "promotion",
+            lambda: self.promotion_summary(item_ids=item_ids),
+        )
+        chats, chats_unavailable = chats_task.result()
+        orders, orders_unavailable = orders_task.result()
+        reviews, reviews_unavailable = reviews_task.result()
+        unavailable_sections = [
+            *listings.unavailable_sections,
+            *chats_unavailable,
+            *orders_unavailable,
+            *reviews_unavailable,
+            *promotion_unavailable,
+        ]
+        if chats is not None:
+            unavailable_sections.extend(chats.unavailable_sections)
+        if orders is not None:
+            unavailable_sections.extend(orders.unavailable_sections)
+        if reviews is not None:
+            unavailable_sections.extend(reviews.unavailable_sections)
+        if promotion is not None:
+            unavailable_sections.extend(promotion.unavailable_sections)
+        return AccountHealthSummary(
+            user_id=resolved_user_id,
+            balance_total=balance.total,
+            balance_real=balance.real,
+            balance_bonus=balance.bonus,
+            listings=listings,
+            chats=chats,
+            orders=orders,
+            reviews=reviews,
+            promotion=promotion,
+            unavailable_sections=unavailable_sections,
+        )
+
+    async def listing_health(
+        self,
+        *,
+        user_id: int | str | None = None,
+        limit: int = 50,
+        page_size: int = 50,
+        date_from: SummaryDate | None = None,
+        date_to: SummaryDate | None = None,
+    ) -> ListingHealthSummary:
+        """Возвращает async health-сводку объявлений."""
+
+        resolved_user_id = await self._resolve_user_id(user_id)
+        listing_collection = await self.ad(user_id=resolved_user_id).list(
+            limit=limit,
+            page_size=page_size,
+        )
+        listings = await listing_collection.materialize()
+        item_ids = [item.item_id for item in listings if item.item_id is not None]
+        stats_by_item_id: dict[int, ListingStats] = {}
+        calls_by_item_id: dict[int, CallStats] = {}
+        spendings_by_item_id: dict[int, SpendingRecord] = {}
+        unavailable_sections: list[SummaryUnavailableSection] = []
+        if item_ids:
+            stats_date_from, stats_date_to = _default_summary_date_range(date_from, date_to)
+            async with asyncio.TaskGroup() as task_group:
+                item_stats_task = task_group.create_task(
+                    self.ad_stats(user_id=resolved_user_id).get_item_stats(
+                        item_ids=item_ids,
+                        date_from=stats_date_from,
+                        date_to=stats_date_to,
+                    )
+                )
+                calls_stats_task = task_group.create_task(
+                    self.ad_stats(user_id=resolved_user_id).get_calls_stats(
+                        item_ids=item_ids,
+                        date_from=stats_date_from,
+                        date_to=stats_date_to,
+                    )
+                )
+                spendings_task = task_group.create_task(
+                    _safe_summary_async(
+                        "spendings",
+                        lambda: self.ad_stats(user_id=resolved_user_id).get_account_spendings(
+                            item_ids=item_ids,
+                            date_from=stats_date_from,
+                            date_to=stats_date_to,
+                            spending_types=["promotion", "presence", "commission", "rest"],
+                            grouping="day",
+                        ),
+                    )
+                )
+            item_stats = item_stats_task.result()
+            calls_stats = calls_stats_task.result()
+            spendings, spendings_unavailable = spendings_task.result()
+            stats_by_item_id = {
+                stats.item_id: stats for stats in item_stats.items if stats.item_id is not None
+            }
+            calls_by_item_id = {
+                stats.item_id: stats for stats in calls_stats.items if stats.item_id is not None
+            }
+            unavailable_sections.extend(spendings_unavailable)
+            if spendings is not None:
+                spendings_by_item_id = {
+                    item.item_id: item for item in spendings.items if item.item_id is not None
+                }
+        health_items = [
+            ListingHealthItem(
+                item_id=listing.item_id,
+                title=listing.title,
+                status=listing.status,
+                price=listing.price,
+                url=listing.url,
+                is_visible=listing.is_visible,
+                views=stats_by_item_id[listing.item_id].views
+                if listing.item_id in stats_by_item_id
+                else None,
+                contacts=stats_by_item_id[listing.item_id].contacts
+                if listing.item_id in stats_by_item_id
+                else None,
+                favorites=stats_by_item_id[listing.item_id].favorites
+                if listing.item_id in stats_by_item_id
+                else None,
+                calls=calls_by_item_id[listing.item_id].calls
+                if listing.item_id in calls_by_item_id
+                else None,
+                spendings=spendings_by_item_id[listing.item_id].amount
+                if listing.item_id in spendings_by_item_id
+                else None,
+            )
+            for listing in listings
+        ]
+        loaded_listings = len(health_items)
+        total_listings = listing_collection.source_total
+        listing_limit = limit if limit >= 0 else None
+        expected_loaded = (
+            min(total_listings, listing_limit)
+            if total_listings is not None and listing_limit is not None
+            else total_listings
+        )
+        return ListingHealthSummary(
+            user_id=resolved_user_id,
+            items=health_items,
+            loaded_listings=loaded_listings,
+            total_listings=total_listings,
+            listing_limit=listing_limit,
+            is_complete=expected_loaded is not None and loaded_listings >= expected_loaded,
+            visible_listings=sum(1 for item in health_items if item.is_visible is True),
+            active_listings=sum(1 for item in health_items if item.status is ListingStatus.ACTIVE),
+            total_views=_sum_optional_int(item.views for item in health_items),
+            total_contacts=_sum_optional_int(item.contacts for item in health_items),
+            total_favorites=_sum_optional_int(item.favorites for item in health_items),
+            total_calls=_sum_optional_int(item.calls for item in health_items),
+            total_spendings=_sum_optional_float(item.spendings for item in health_items),
+            unavailable_sections=unavailable_sections,
+        )
+
+    async def chat_summary(self, *, user_id: int | str | None = None) -> ChatSummary:
+        """Возвращает итоговую async read-only сводку по чатам."""
+
+        resolved_user_id = await self._resolve_user_id(user_id)
+        result = await self.chat(user_id=resolved_user_id).list()
+        unread_counts = [item.unread_count or 0 for item in result.items]
+        return ChatSummary(
+            user_id=resolved_user_id,
+            total_chats=result.total if result.total is not None else len(result.items),
+            unread_chats=sum(1 for count in unread_counts if count > 0),
+            unread_messages=sum(unread_counts),
+        )
+
+    async def order_summary(self) -> OrderSummary:
+        """Возвращает итоговую async read-only сводку по заказам."""
+
+        result = await self.order().list()
+        return OrderSummary(
+            total_orders=result.total if result.total is not None else len(result.items),
+            active_orders=sum(
+                1
+                for item in result.items
+                if item.status is not None and item.status is not OrderStatus.UNKNOWN
+            ),
+        )
+
+    async def review_summary(self) -> ReviewSummary:
+        """Возвращает итоговую async read-only сводку по отзывам."""
+
+        reviews_error: AvitoError | None = None
+        try:
+            reviews = await self.review().list()
+        except AvitoError as error:
+            reviews = None
+            reviews_error = error
+        rating = await self.rating_profile().get()
+        scores = [item.score for item in reviews.items if item.score is not None] if reviews else []
+        average_score = sum(scores) / len(scores) if scores else None
+        unavailable_sections = (
+            [_summary_unavailable_section("reviews", reviews_error)]
+            if reviews_error is not None
+            else []
+        )
+        return ReviewSummary(
+            total_reviews=(
+                reviews.total
+                if reviews is not None and reviews.total is not None
+                else rating.reviews_count
+                if reviews is None
+                else len(reviews.items)
+            ),
+            average_score=average_score if reviews is not None else rating.score,
+            unanswered_reviews=(
+                sum(1 for item in reviews.items if item.can_answer is True)
+                if reviews is not None
+                else None
+            ),
+            rating_score=rating.score,
+            unavailable_sections=unavailable_sections,
+        )
+
+    async def promotion_summary(self, *, item_ids: list[int] | None = None) -> PromotionSummary:
+        """Возвращает итоговую async read-only сводку по продвижению."""
+
+        if item_ids:
+            async with asyncio.TaskGroup() as task_group:
+                orders_task = task_group.create_task(
+                    self.promotion_order().list_orders(item_ids=item_ids)
+                )
+                services_task = task_group.create_task(
+                    self.promotion_order().list_services(item_ids=item_ids)
+                )
+            orders = orders_task.result()
+            services = services_task.result()
+        else:
+            orders = await self.promotion_order().list_orders(item_ids=item_ids)
+            services = None
+        service_items = services.items if services is not None else []
+        return PromotionSummary(
+            total_orders=len(orders.items),
+            active_orders=sum(
+                1
+                for item in orders.items
+                if item.status
+                in {
+                    PromotionOrderStatus.INITIALIZED,
+                    PromotionOrderStatus.WAITING,
+                    PromotionOrderStatus.IN_PROCESS,
+                    PromotionOrderStatus.PROCESSED,
+                    PromotionOrderStatus.APPLIED,
+                    PromotionOrderStatus.AUTO,
+                    PromotionOrderStatus.CREATED,
+                    PromotionOrderStatus.MANUAL,
+                    PromotionOrderStatus.PARTIAL,
+                }
+            ),
+            total_services=len(service_items),
+            available_services=sum(
+                1
+                for item in service_items
+                if item.status
+                in {
+                    PromotionOrderServiceStatus.ACTIVE,
+                    PromotionOrderServiceStatus.AVAILABLE,
+                }
+            ),
+        )
+
+    def capabilities(self) -> CapabilityDiscoveryResult:
+        """Возвращает справочник возможностей SDK без сетевых probe-запросов."""
+
+        has_user_id = self.debug_info().user_id is not None
+        configured_reasons = ["Настроены OAuth client_id и client_secret."]
+        user_id_reasons = (
+            ["Настроен user_id или его можно получить через профиль."]
+            if has_user_id
+            else [
+                "Для части операций SDK получит user_id через профиль или потребует явный аргумент."
+            ]
+        )
+        return CapabilityDiscoveryResult(
+            items=[
+                CapabilityInfo(
+                    operation="account_health",
+                    factory_method="account_health",
+                    is_available=True,
+                    reasons=configured_reasons + user_id_reasons,
+                    possible_error_codes=[400, 401, 403, 429],
+                ),
+                CapabilityInfo(
+                    operation="listing_health",
+                    factory_method="listing_health",
+                    is_available=True,
+                    reasons=user_id_reasons
+                    + [
+                        "400 возможен при неверном фильтре, 403 при недоступном аккаунте, 429 при лимите."
+                    ],
+                    possible_error_codes=[400, 403, 429],
+                ),
+                CapabilityInfo(
+                    operation="chat_summary",
+                    factory_method="chat_summary",
+                    is_available=True,
+                    reasons=user_id_reasons
+                    + ["403 возможен без доступа к мессенджеру, 429 при лимите запросов."],
+                    possible_error_codes=[400, 403, 429],
+                ),
+                CapabilityInfo(
+                    operation="order_summary",
+                    factory_method="order_summary",
+                    is_available=True,
+                    reasons=["Операция использует read-only список заказов."],
+                    possible_error_codes=[400, 403, 429],
+                ),
+                CapabilityInfo(
+                    operation="review_summary",
+                    factory_method="review_summary",
+                    is_available=True,
+                    reasons=["Операция использует список отзывов и рейтинг профиля."],
+                    possible_error_codes=[400, 403, 429],
+                ),
+                CapabilityInfo(
+                    operation="promotion_summary",
+                    factory_method="promotion_summary",
+                    is_available=True,
+                    reasons=[
+                        "Сводка заявок доступна без item_ids; сводка услуг требует item_ids.",
+                        "403 возможен без доступа к продвижению, 429 при лимите запросов.",
+                    ],
+                    possible_error_codes=[400, 403, 429],
+                ),
+            ]
+        )
 
     def account(self, user_id: int | str | None = None) -> AsyncAccount:
         """Создает async-доменный объект аккаунта."""
@@ -398,6 +814,36 @@ class AsyncAvitoClient:
 
         return AsyncAutostrategyCampaign(self._require_transport(), campaign_id=campaign_id)
 
+    def order(self) -> AsyncOrder:
+        """Создает async-доменный объект заказа."""
+
+        return AsyncOrder(self._require_transport())
+
+    def order_label(self, task_id: int | str | None = None) -> AsyncOrderLabel:
+        """Создает async-доменный объект этикетки заказа."""
+
+        return AsyncOrderLabel(self._require_transport(), task_id=task_id)
+
+    def delivery_order(self) -> AsyncDeliveryOrder:
+        """Создает async-доменный объект доставки."""
+
+        return AsyncDeliveryOrder(self._require_transport())
+
+    def sandbox_delivery(self) -> AsyncSandboxDelivery:
+        """Создает async-доменный объект песочницы доставки."""
+
+        return AsyncSandboxDelivery(self._require_transport())
+
+    def delivery_task(self, task_id: int | str | None = None) -> AsyncDeliveryTask:
+        """Создает async-доменный объект задачи доставки."""
+
+        return AsyncDeliveryTask(self._require_transport(), task_id=task_id)
+
+    def stock(self) -> AsyncStock:
+        """Создает async-доменный объект остатков."""
+
+        return AsyncStock(self._require_transport())
+
     def autoteka_vehicle(
         self,
         vehicle_id: int | str | None = None,
@@ -487,6 +933,11 @@ class AsyncAvitoClient:
         if self._transport is None:
             raise RuntimeError("AsyncAvitoClient не инициализирован: используйте 'async with'.")
         return self._transport
+
+    async def _resolve_user_id(self, user_id: int | str | None = None) -> int:
+        return await AsyncAccount(self._require_transport(), user_id=user_id)._resolve_user_id(
+            user_id
+        )
 
 
 __all__ = ("AsyncAvitoClient",)

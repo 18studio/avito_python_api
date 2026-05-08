@@ -1,6 +1,6 @@
 """Публичные тестовые утилиты SDK."""
 
-from avito.testing.async_fake_transport import AsyncFakeTransport
+from avito.testing.async_fake_transport import AsyncFakeTransport, FanoutPeakRecorder
 from avito.testing.async_swagger_fake_transport import AsyncSwaggerFakeTransport
 from avito.testing.fake_transport import (
     FakeResponse,
@@ -21,6 +21,7 @@ __all__ = (
     "FakeTransport",
     "AsyncFakeTransport",
     "AsyncSwaggerFakeTransport",
+    "FanoutPeakRecorder",
     "FakeResponse",
     "JsonValue",
     "RecordedRequest",

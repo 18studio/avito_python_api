@@ -24,11 +24,17 @@ from avito.testing.fake_transport import JsonValue, RecordedRequest, RouteRespon
 class AsyncFakeTransport:
     """Deterministic async fake transport for SDK contract tests."""
 
-    def __init__(self, *, base_url: str = "https://api.avito.ru") -> None:
+    def __init__(
+        self,
+        *,
+        base_url: str = "https://api.avito.ru",
+        fanout_recorder: FanoutPeakRecorder | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.requests: list[RecordedRequest] = []
         self._routes: dict[tuple[str, str], deque[RouteResponder]] = {}
         self._handle_lock = asyncio.Lock()
+        self._fanout_recorder = fanout_recorder
 
     def add(self, method: str, path: str, *responses: RouteResponder) -> AsyncFakeTransport:
         """Регистрирует один или несколько ответов для HTTP-маршрута."""
@@ -174,6 +180,15 @@ class AsyncFakeTransport:
         return settings, auth_provider, http_client
 
     async def _handle(self, request: httpx.Request) -> httpx.Response:
+        if self._fanout_recorder is not None:
+            await self._fanout_recorder.enter()
+        try:
+            return await self._handle_recorded(request)
+        finally:
+            if self._fanout_recorder is not None:
+                await self._fanout_recorder.exit()
+
+    async def _handle_recorded(self, request: httpx.Request) -> httpx.Response:
         async with self._handle_lock:
             recorded = RecordedRequest(
                 method=request.method.upper(),
@@ -208,4 +223,22 @@ class AsyncFakeTransport:
             return None
 
 
-__all__ = ("AsyncFakeTransport",)
+class FanoutPeakRecorder:
+    """Считает пик одновременно выполняющихся async fake-запросов."""
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._active = 0
+        self.peak = 0
+
+    async def enter(self) -> None:
+        async with self._lock:
+            self._active += 1
+            self.peak = max(self.peak, self._active)
+
+    async def exit(self) -> None:
+        async with self._lock:
+            self._active -= 1
+
+
+__all__ = ("AsyncFakeTransport", "FanoutPeakRecorder")

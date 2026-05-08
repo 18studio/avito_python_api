@@ -1,6 +1,7 @@
 nav:
   - index.md
   - auth-and-config.md
+  - async.md
   - account-profile.md
   - ad-listing-and-stats.md
   - promotion-dry-run.md

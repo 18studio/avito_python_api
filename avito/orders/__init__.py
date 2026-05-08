@@ -1,5 +1,13 @@
 """Пакет orders."""
 
+from avito.orders.async_domain import (
+    AsyncDeliveryOrder,
+    AsyncDeliveryTask,
+    AsyncOrder,
+    AsyncOrderLabel,
+    AsyncSandboxDelivery,
+    AsyncStock,
+)
 from avito.orders.domain import (
     DeliveryOrder,
     DeliveryTask,
@@ -91,6 +99,12 @@ from avito.orders.models import (
 )
 
 __all__ = (
+    "AsyncDeliveryOrder",
+    "AsyncDeliveryTask",
+    "AsyncOrder",
+    "AsyncOrderLabel",
+    "AsyncSandboxDelivery",
+    "AsyncStock",
     "CourierRangesResult",
     "CustomAreaScheduleEntry",
     "CustomAreaScheduleRequest",

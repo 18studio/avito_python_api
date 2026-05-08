@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import date, datetime
 from pathlib import Path
 from types import TracebackType
@@ -94,6 +94,16 @@ def _safe_summary[SummaryT](
 ) -> tuple[SummaryT | None, list[SummaryUnavailableSection]]:
     try:
         return factory(), []
+    except AvitoError as error:
+        return None, [_summary_unavailable_section(section, error)]
+
+
+async def _safe_summary_async[SummaryT](
+    section: str,
+    factory: Callable[[], Awaitable[SummaryT]],
+) -> tuple[SummaryT | None, list[SummaryUnavailableSection]]:
+    try:
+        return await factory(), []
     except AvitoError as error:
         return None, [_summary_unavailable_section(section, error)]
 
