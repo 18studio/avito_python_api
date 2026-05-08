@@ -10,6 +10,13 @@ from avito.accounts import AsyncAccount, AsyncAccountHierarchy
 from avito.auth.async_provider import AsyncAuthProvider
 from avito.auth.async_token_client import AsyncAlternateTokenClient, AsyncTokenClient
 from avito.auth.settings import AuthSettings
+from avito.autoteka import (
+    AsyncAutotekaMonitoring,
+    AsyncAutotekaReport,
+    AsyncAutotekaScoring,
+    AsyncAutotekaValuation,
+    AsyncAutotekaVehicle,
+)
 from avito.config import AvitoSettings
 from avito.core.async_transport import AsyncTransport
 from avito.core.exceptions import ClientClosedError
@@ -344,6 +351,40 @@ class AsyncAvitoClient:
         """Создает async-доменный объект кампании автостратегии."""
 
         return AsyncAutostrategyCampaign(self._require_transport(), campaign_id=campaign_id)
+
+    def autoteka_vehicle(
+        self,
+        vehicle_id: int | str | None = None,
+    ) -> AsyncAutotekaVehicle:
+        """Создает async-доменный объект автомобиля Автотеки."""
+
+        return AsyncAutotekaVehicle(self._require_transport(), vehicle_id=vehicle_id)
+
+    def autoteka_report(
+        self,
+        report_id: int | str | None = None,
+    ) -> AsyncAutotekaReport:
+        """Создает async-доменный объект отчетов Автотеки."""
+
+        return AsyncAutotekaReport(self._require_transport(), report_id=report_id)
+
+    def autoteka_monitoring(self) -> AsyncAutotekaMonitoring:
+        """Создает async-доменный объект мониторинга Автотеки."""
+
+        return AsyncAutotekaMonitoring(self._require_transport())
+
+    def autoteka_scoring(
+        self,
+        scoring_id: int | str | None = None,
+    ) -> AsyncAutotekaScoring:
+        """Создает async-доменный объект скоринга Автотеки."""
+
+        return AsyncAutotekaScoring(self._require_transport(), scoring_id=scoring_id)
+
+    def autoteka_valuation(self) -> AsyncAutotekaValuation:
+        """Создает async-доменный объект оценки автомобиля Автотеки."""
+
+        return AsyncAutotekaValuation(self._require_transport())
 
     async def aclose(self) -> None:
         """Закрывает transport и auth-provider; повторный вызов безопасен."""

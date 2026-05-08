@@ -1,5 +1,12 @@
 """Пакет autoteka."""
 
+from avito.autoteka.async_domain import (
+    AsyncAutotekaMonitoring,
+    AsyncAutotekaReport,
+    AsyncAutotekaScoring,
+    AsyncAutotekaValuation,
+    AsyncAutotekaVehicle,
+)
 from avito.autoteka.domain import (
     AutotekaMonitoring,
     AutotekaReport,
@@ -41,6 +48,11 @@ from avito.autoteka.models import (
 )
 
 __all__ = (
+    "AsyncAutotekaMonitoring",
+    "AsyncAutotekaReport",
+    "AsyncAutotekaScoring",
+    "AsyncAutotekaValuation",
+    "AsyncAutotekaVehicle",
     "AutotekaLeadEvent",
     "AutotekaLeadsResult",
     "AutotekaMonitoring",

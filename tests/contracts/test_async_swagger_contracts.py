@@ -12,6 +12,11 @@ def test_async_swagger_bindings_are_discoverable_for_ported_domains() -> None:
         "AsyncAccount",
         "AsyncAccountHierarchy",
         "AsyncAlternateTokenClient",
+        "AsyncAutotekaMonitoring",
+        "AsyncAutotekaReport",
+        "AsyncAutotekaScoring",
+        "AsyncAutotekaValuation",
+        "AsyncAutotekaVehicle",
         "AsyncCallTrackingCall",
         "AsyncChat",
         "AsyncChatMedia",
@@ -43,4 +48,4 @@ def test_async_swagger_bindings_are_discoverable_for_ported_domains() -> None:
         "AsyncTokenClient",
         "AsyncTrxPromotion",
     }
-    assert len(async_bindings) == 105
+    assert len(async_bindings) == 131
