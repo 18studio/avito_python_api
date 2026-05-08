@@ -1,5 +1,12 @@
 """Пакет cpa."""
 
+from avito.cpa.async_domain import (
+    AsyncCallTrackingCall,
+    AsyncCpaArchive,
+    AsyncCpaCall,
+    AsyncCpaChat,
+    AsyncCpaLead,
+)
 from avito.cpa.domain import CallTrackingCall, CpaArchive, CpaCall, CpaChat, CpaLead
 from avito.cpa.models import (
     CallTrackingCallInfo,
@@ -28,6 +35,11 @@ from avito.cpa.models import (
 )
 
 __all__ = (
+    "AsyncCallTrackingCall",
+    "AsyncCpaArchive",
+    "AsyncCpaCall",
+    "AsyncCpaChat",
+    "AsyncCpaLead",
     "CallTrackingCall",
     "CallTrackingCallInfo",
     "CallTrackingCallResponse",

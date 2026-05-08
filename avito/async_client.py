@@ -14,7 +14,20 @@ from avito.config import AvitoSettings
 from avito.core.async_transport import AsyncTransport
 from avito.core.exceptions import ClientClosedError
 from avito.core.types import TransportDebugInfo
+from avito.cpa import (
+    AsyncCallTrackingCall,
+    AsyncCpaArchive,
+    AsyncCpaCall,
+    AsyncCpaChat,
+    AsyncCpaLead,
+)
 from avito.ratings import AsyncRatingProfile, AsyncReview, AsyncReviewAnswer
+from avito.realty import (
+    AsyncRealtyAnalyticsReport,
+    AsyncRealtyBooking,
+    AsyncRealtyListing,
+    AsyncRealtyPricing,
+)
 from avito.tariffs import AsyncTariff
 
 
@@ -124,6 +137,31 @@ class AsyncAvitoClient:
 
         return AsyncAccountHierarchy(self._require_transport(), user_id=user_id)
 
+    def cpa_lead(self) -> AsyncCpaLead:
+        """Создает async-доменный объект CPA-лида."""
+
+        return AsyncCpaLead(self._require_transport())
+
+    def cpa_chat(self, chat_id: int | str | None = None) -> AsyncCpaChat:
+        """Создает async-доменный объект CPA-чата."""
+
+        return AsyncCpaChat(self._require_transport(), action_id=chat_id)
+
+    def cpa_call(self) -> AsyncCpaCall:
+        """Создает async-доменный объект CPA-звонка."""
+
+        return AsyncCpaCall(self._require_transport())
+
+    def cpa_archive(self, call_id: int | str | None = None) -> AsyncCpaArchive:
+        """Создает async-доменный объект архивных операций CPA."""
+
+        return AsyncCpaArchive(self._require_transport(), call_id=call_id)
+
+    def call_tracking_call(self, call_id: int | str | None = None) -> AsyncCallTrackingCall:
+        """Создает async-доменный объект CallTracking."""
+
+        return AsyncCallTrackingCall(self._require_transport(), call_id=call_id)
+
     def tariff(self, tariff_id: int | str | None = None) -> AsyncTariff:
         """Создает async-доменный объект тарифа."""
 
@@ -143,6 +181,50 @@ class AsyncAvitoClient:
         """Создает async-доменный объект рейтингового профиля."""
 
         return AsyncRatingProfile(self._require_transport())
+
+    def realty_listing(
+        self,
+        item_id: int | str | None = None,
+        *,
+        user_id: int | str | None = None,
+    ) -> AsyncRealtyListing:
+        """Создает async-доменный объект объявления недвижимости."""
+
+        return AsyncRealtyListing(self._require_transport(), item_id=item_id, user_id=user_id)
+
+    def realty_booking(
+        self,
+        item_id: int | str | None = None,
+        *,
+        user_id: int | str | None = None,
+    ) -> AsyncRealtyBooking:
+        """Создает async-доменный объект бронирования недвижимости."""
+
+        return AsyncRealtyBooking(self._require_transport(), item_id=item_id, user_id=user_id)
+
+    def realty_pricing(
+        self,
+        item_id: int | str | None = None,
+        *,
+        user_id: int | str | None = None,
+    ) -> AsyncRealtyPricing:
+        """Создает async-доменный объект цен недвижимости."""
+
+        return AsyncRealtyPricing(self._require_transport(), item_id=item_id, user_id=user_id)
+
+    def realty_analytics_report(
+        self,
+        item_id: int | str | None = None,
+        *,
+        user_id: int | str | None = None,
+    ) -> AsyncRealtyAnalyticsReport:
+        """Создает async-доменный объект аналитического отчета недвижимости."""
+
+        return AsyncRealtyAnalyticsReport(
+            self._require_transport(),
+            item_id=item_id,
+            user_id=user_id,
+        )
 
     async def aclose(self) -> None:
         """Закрывает transport и auth-provider; повторный вызов безопасен."""

@@ -1,5 +1,11 @@
 """Пакет realty."""
 
+from avito.realty.async_domain import (
+    AsyncRealtyAnalyticsReport,
+    AsyncRealtyBooking,
+    AsyncRealtyListing,
+    AsyncRealtyPricing,
+)
 from avito.realty.domain import (
     RealtyAnalyticsReport,
     RealtyBooking,
@@ -25,6 +31,10 @@ from avito.realty.models import (
 )
 
 __all__ = (
+    "AsyncRealtyAnalyticsReport",
+    "AsyncRealtyBooking",
+    "AsyncRealtyListing",
+    "AsyncRealtyPricing",
     "RealtyActionResult",
     "RealtyAnalyticsInfo",
     "RealtyAnalyticsReport",
