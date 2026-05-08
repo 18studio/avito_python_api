@@ -77,7 +77,7 @@ docs-report:
 
 docs-check: docs-strict
 	ln -sfn . site/avito_python_api
-	lychee --root-dir "$(PWD)/site" --exclude "avito\.ru" --exclude "^https://p141592\.github\.io/avito_python_api/" --retry-wait-time 5 --max-retries 3 --timeout 30 site/
+	lychee --root-dir "$(PWD)/site" --exclude "avito\.ru" --exclude "^https://18studio\.github\.io/avito_python_api/" --retry-wait-time 5 --max-retries 3 --timeout 30 site/
 
 qa-docs:
 	poetry run pydocstyle \

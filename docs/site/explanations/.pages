@@ -7,6 +7,7 @@ nav:
   - pagination-semantics.md
   - dry-run-and-idempotency.md
   - testing-strategy.md
+  - async-domain-template.md
   - api-coverage-and-deprecations.md
   - swagger-binding-subsystem.md
   - config-resolution.md

@@ -5,7 +5,8 @@
 
 | Страница | Что искать |
 |---|---|
-| [AvitoClient](client.md) | Инициализация, контекстный менеджер, фабричные методы, `debug_info()` |
+| [AvitoClient и AsyncAvitoClient](client.md) | Sync/async инициализация, контекстные менеджеры, фабричные методы, `debug_info()` |
+| [Асинхронный режим](../how-to/async.md) | Практический lifecycle `AsyncAvitoClient`, ASGI и async fake transport |
 | [Конфигурация](config.md) | `AvitoSettings`, `AuthSettings`, env-переменные, per-operation overrides |
 | [Покрытие API](coverage.md) | 204/204 Swagger operations из binding report |
 | [Методы API](operations.md) | Карта Swagger operation → публичный SDK-метод |

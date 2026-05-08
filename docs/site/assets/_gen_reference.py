@@ -16,7 +16,7 @@ from avito.core.swagger_report import build_swagger_binding_report
 
 EXCLUDED_PACKAGES = {"auth", "core", "testing"}
 PACKAGE_ROOT = Path("avito")
-GITHUB_API_URL = "https://github.com/p141592/avito_python_api/blob/main/docs/avito/api"
+GITHUB_API_URL = "https://github.com/18studio/avito_python_api/blob/main/docs/avito/api"
 
 
 def public_domain_packages() -> list[str]:
