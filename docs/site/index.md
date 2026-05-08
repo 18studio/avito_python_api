@@ -7,7 +7,7 @@ hide:
 
 <section class="avito-hero" markdown>
 
-**`avito-py`** — синхронный Python SDK для работы с Avito API через единый объектный фасад `AvitoClient`.
+**`avito-py`** — Python SDK для работы с Avito API через sync/async фасады `AvitoClient` и `AsyncAvitoClient`.
 Скрывает transport, OAuth и retry-логику. Возвращает типизированные `dataclass`-модели. Покрывает 204 операции Avito API.
 
 ```bash
@@ -39,7 +39,7 @@ pip install avito-py
 
     ---
 
-    Пошаговые рецепты: авторизация, мессенджер, заказы, пагинация, тестирование и другие.
+    Пошаговые рецепты: авторизация, async lifecycle, мессенджер, заказы, пагинация, тестирование и другие.
 
     [:octicons-arrow-right-24: How-to рецепты](how-to/index.md)
 

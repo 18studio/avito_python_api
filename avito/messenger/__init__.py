@@ -1,5 +1,12 @@
 """Пакет messenger."""
 
+from avito.messenger.async_domain import (
+    AsyncChat,
+    AsyncChatMedia,
+    AsyncChatMessage,
+    AsyncChatWebhook,
+    AsyncSpecialOfferCampaign,
+)
 from avito.messenger.domain import (
     Chat,
     ChatMedia,
@@ -33,6 +40,11 @@ from avito.messenger.models import (
 )
 
 __all__ = (
+    "AsyncChat",
+    "AsyncChatMedia",
+    "AsyncChatMessage",
+    "AsyncChatWebhook",
+    "AsyncSpecialOfferCampaign",
     "Chat",
     "ChatInfo",
     "ChatMedia",

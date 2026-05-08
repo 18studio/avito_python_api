@@ -1,5 +1,5 @@
 site_name: avito-py
-site_description: Синхронный Python SDK для Avito API
+site_description: Sync/async Python SDK для Avito API
 site_url: https://18studio.github.io/avito_python_api/
 repo_url: https://github.com/p141592/avito_python_api
 repo_name: p141592/avito_python_api

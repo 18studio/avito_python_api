@@ -90,6 +90,41 @@ class OperationTransport(Protocol):
         """Execute request and return decoded JSON payload."""
 
 
+class AsyncOperationTransport(Protocol):
+    """Async transport methods required by the operation executor."""
+
+    async def request(
+        self,
+        method: HttpMethod,
+        path: str,
+        *,
+        context: RequestContext,
+        params: Mapping[str, object] | None = None,
+        json_body: object | None = None,
+        data: Mapping[str, object] | None = None,
+        files: Mapping[str, object] | None = None,
+        headers: Mapping[str, str] | None = None,
+        content: bytes | None = None,
+        idempotency_key: str | None = None,
+    ) -> httpx.Response:
+        """Execute raw request and return response object."""
+
+    async def request_json(
+        self,
+        method: HttpMethod,
+        path: str,
+        *,
+        context: RequestContext,
+        params: Mapping[str, object] | None = None,
+        json_body: object | None = None,
+        data: Mapping[str, object] | None = None,
+        files: Mapping[str, object] | None = None,
+        headers: Mapping[str, str] | None = None,
+        idempotency_key: str | None = None,
+    ) -> object:
+        """Execute request and return decoded JSON payload."""
+
+
 @dataclass(slots=True, frozen=True)
 class EmptyResponse:
     """Typed result for successful operations without response body."""
@@ -121,6 +156,7 @@ class OperationExecutor:
     """Execute operation specs through the shared transport layer."""
 
     def __init__(self, transport: OperationTransport) -> None:
+        """Initialize OperationExecutor."""
         self._transport = transport
 
     def execute(
@@ -201,6 +237,88 @@ class OperationExecutor:
         return spec.response_model.from_payload(payload)
 
 
+class AsyncOperationExecutor:
+    """Execute operation specs through the async transport layer."""
+
+    def __init__(self, transport: AsyncOperationTransport) -> None:
+        """Initialize AsyncOperationExecutor."""
+        self._transport = transport
+
+    async def execute(
+        self,
+        spec: OperationSpec[ResponseT],
+        *,
+        path_params: Mapping[str, object] | None = None,
+        query: object | Mapping[str, object] | None = None,
+        request: object | Mapping[str, object] | None = None,
+        headers: Mapping[str, str] | None = None,
+        idempotency_key: str | None = None,
+        data: Mapping[str, object] | None = None,
+        files: Mapping[str, object] | None = None,
+        timeout: ApiTimeouts | None = None,
+        retry: RetryOverride | None = None,
+    ) -> ResponseT:
+        """Execute operation spec and return typed response object."""
+
+        path = render_path(spec.path, path_params or {})
+        params = _serialize_query(spec, query)
+        json_body = _serialize_request(spec, request)
+        request_headers = _merge_content_type(headers, spec.content_type)
+        effective_retry = spec.retry_mode if retry is None or retry == "default" else retry
+        context = RequestContext(
+            operation_name=spec.name,
+            allow_retry=effective_retry == "enabled",
+            retry_disabled=effective_retry == "disabled",
+            requires_auth=spec.requires_auth,
+            timeout=timeout,
+        )
+
+        if spec.response_kind == "binary":
+            return cast(
+                ResponseT,
+                await _request_binary_async(
+                    self._transport,
+                    spec=spec,
+                    path=path,
+                    context=context,
+                    params=params,
+                    headers=request_headers,
+                    idempotency_key=idempotency_key,
+                ),
+            )
+        if spec.response_kind == "empty":
+            response = await self._transport.request(
+                spec.method,
+                path,
+                context=context,
+                params=params,
+                json_body=json_body,
+                data=data,
+                files=files,
+                headers=request_headers,
+                idempotency_key=idempotency_key,
+            )
+            return cast(
+                ResponseT,
+                EmptyResponse(status_code=response.status_code, headers=dict(response.headers)),
+            )
+
+        payload = await self._transport.request_json(
+            spec.method,
+            path,
+            context=context,
+            params=params,
+            json_body=json_body,
+            data=data,
+            files=files,
+            headers=request_headers,
+            idempotency_key=idempotency_key,
+        )
+        if spec.response_model is None:
+            return cast(ResponseT, payload)
+        return spec.response_model.from_payload(payload)
+
+
 def render_path(path_template: str, path_params: Mapping[str, object]) -> str:
     """Render operation path and percent-encode path parameter values."""
 
@@ -214,6 +332,7 @@ def _serialize_query[SpecResponseT](
     spec: OperationSpec[SpecResponseT],
     query: object | Mapping[str, object] | None,
 ) -> Mapping[str, object] | None:
+    """Serialize query."""
     if query is None:
         return None
     if isinstance(query, RequestModel):
@@ -229,6 +348,7 @@ def _serialize_request[SpecResponseT](
     spec: OperationSpec[SpecResponseT],
     request: object | Mapping[str, object] | None,
 ) -> object | None:
+    """Serialize request."""
     if request is None:
         return None
     if isinstance(request, RequestModel):
@@ -244,6 +364,7 @@ def _merge_content_type(
     headers: Mapping[str, str] | None,
     content_type: str | None,
 ) -> Mapping[str, str] | None:
+    """Run the merge content type helper."""
     if content_type is None:
         return headers
     merged = dict(headers or {})
@@ -261,6 +382,7 @@ def _request_binary[SpecResponseT](
     headers: Mapping[str, str] | None,
     idempotency_key: str | None,
 ) -> BinaryResponse:
+    """Run the request binary helper."""
     response = transport.request(
         spec.method,
         path,
@@ -278,7 +400,36 @@ def _request_binary[SpecResponseT](
     )
 
 
+async def _request_binary_async[SpecResponseT](
+    transport: AsyncOperationTransport,
+    *,
+    spec: OperationSpec[SpecResponseT],
+    path: str,
+    context: RequestContext,
+    params: Mapping[str, object] | None,
+    headers: Mapping[str, str] | None,
+    idempotency_key: str | None,
+) -> BinaryResponse:
+    """Run the request binary async helper."""
+    response = await transport.request(
+        spec.method,
+        path,
+        context=context,
+        params=params,
+        headers=headers,
+        idempotency_key=idempotency_key,
+    )
+    return BinaryResponse(
+        content=response.content,
+        content_type=response.headers.get("content-type"),
+        filename=_extract_filename(response.headers.get("content-disposition")),
+        status_code=response.status_code,
+        headers=dict(response.headers),
+    )
+
+
 def _extract_filename(content_disposition: str | None) -> str | None:
+    """Extract filename."""
     if content_disposition is None:
         return None
     message = Message()
@@ -292,6 +443,8 @@ def _extract_filename(content_disposition: str | None) -> str | None:
 
 __all__ = (
     "EmptyResponse",
+    "AsyncOperationExecutor",
+    "AsyncOperationTransport",
     "OperationExecutor",
     "OperationSpec",
     "OperationTransport",

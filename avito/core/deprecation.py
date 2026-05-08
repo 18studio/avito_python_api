@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import wraps
-from typing import ParamSpec, TypeVar
+from inspect import iscoroutinefunction
+from typing import ParamSpec, TypeVar, cast
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -29,6 +30,7 @@ def warn_deprecated_once(
     removal_version: str,
     deprecated_since: str,
 ) -> None:
+    """Run the warn deprecated once helper."""
     if symbol in _WARNED_SYMBOLS:
         return
     _WARNED_SYMBOLS.add(symbol)
@@ -50,6 +52,7 @@ def deprecated_method(
     removal_version: str,
     deprecated_since: str,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Run the deprecated method helper."""
     metadata = DeprecatedSdkSymbol(
         symbol=symbol,
         replacement=replacement,
@@ -58,8 +61,26 @@ def deprecated_method(
     )
 
     def decorate(method: Callable[P, R]) -> Callable[P, R]:
+        """Run the decorate helper."""
+        if iscoroutinefunction(method):
+            @wraps(method)
+            async def async_wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+                """Run the async wrapped helper."""
+                warn_deprecated_once(
+                    symbol=symbol,
+                    replacement=replacement,
+                    removal_version=removal_version,
+                    deprecated_since=deprecated_since,
+                )
+                async_method = cast(Callable[P, Awaitable[R]], method)
+                return await async_method(*args, **kwargs)
+
+            async_wrapped.__sdk_deprecation__ = metadata  # type: ignore[attr-defined]
+            return async_wrapped  # type: ignore[return-value]
+
         @wraps(method)
         def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+            """Run the wrapped helper."""
             warn_deprecated_once(
                 symbol=symbol,
                 replacement=replacement,

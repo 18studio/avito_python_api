@@ -8,6 +8,26 @@ and this project adheres to Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Нет изменений.
+
+## [2.1.0] - 2026-05-08
+
+### Added
+- Фундамент Async API: `AsyncTransport`, `AsyncAuthProvider`,
+  `AsyncOperationExecutor`, `AsyncPaginatedList`, `AsyncAvitoClient` без
+  доменных factory-методов; `RateLimitState` вынесен в shared.
+- Async-поддержка домена tariffs: `AsyncTariff` (PoC шаблона).
+- Async-поддержка домена accounts: AsyncAccount, AsyncAccountHierarchy.
+- Async-поддержка домена ads: AsyncAd, AsyncAdStats, AsyncAdPromotion, AsyncAutoloadProfile, AsyncAutoloadReport, AsyncAutoloadArchive.
+- Async-поддержка домена autoteka: AsyncAutotekaVehicle, AsyncAutotekaReport, AsyncAutotekaMonitoring, AsyncAutotekaScoring, AsyncAutotekaValuation.
+- Async-поддержка домена cpa: AsyncCallTrackingCall, AsyncCpaArchive, AsyncCpaCall, AsyncCpaChat, AsyncCpaLead.
+- Async-поддержка домена jobs: AsyncApplication, AsyncJobDictionary, AsyncJobWebhook, AsyncResume, AsyncVacancy.
+- Async-поддержка домена messenger: AsyncChat, AsyncChatMedia, AsyncChatMessage, AsyncChatWebhook, AsyncSpecialOfferCampaign.
+- Async-поддержка домена orders: AsyncOrder, AsyncOrderLabel, AsyncDeliveryOrder, AsyncSandboxDelivery, AsyncDeliveryTask, AsyncStock.
+- Async-поддержка домена promotion: AsyncPromotionOrder, AsyncBbipPromotion, AsyncTrxPromotion, AsyncCpaAuction, AsyncTargetActionPricing, AsyncAutostrategyCampaign.
+- Async-поддержка домена ratings: AsyncRatingProfile, AsyncReview, AsyncReviewAnswer.
+- Async-поддержка домена realty: AsyncRealtyAnalyticsReport, AsyncRealtyBooking, AsyncRealtyListing, AsyncRealtyPricing.
+- Async convenience methods для `AsyncAvitoClient`: `business_summary`, `account_health`, `listing_health`, `chat_summary`, `order_summary`, `review_summary`, `promotion_summary`, `capabilities`.
 - Добавлен `ClientClosedError` для вызовов после `AvitoClient.close()`.
 
 ### Deprecated

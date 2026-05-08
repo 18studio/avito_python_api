@@ -1,6 +1,8 @@
 """Пакет общей инфраструктуры SDK."""
 
-from avito.core.domain import DomainObject
+from avito.core.async_pagination import AsyncPaginatedList, AsyncPaginator
+from avito.core.async_transport import AsyncTransport
+from avito.core.domain import AsyncDomainObject, DomainObject
 from avito.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
@@ -17,7 +19,13 @@ from avito.core.exceptions import (
 )
 from avito.core.fields import api_field
 from avito.core.models import ApiErrorPayload, ApiModel, EmptyRequest, RequestModel
-from avito.core.operations import EmptyResponse, OperationExecutor, OperationSpec
+from avito.core.operations import (
+    AsyncOperationExecutor,
+    AsyncOperationTransport,
+    EmptyResponse,
+    OperationExecutor,
+    OperationSpec,
+)
 from avito.core.pagination import PaginatedList, Paginator
 from avito.core.payload import JsonReader
 from avito.core.retries import RetryDecision, RetryPolicy
@@ -37,6 +45,12 @@ __all__ = (
     "ApiTimeouts",
     "ApiModel",
     "ApiErrorPayload",
+    "AsyncDomainObject",
+    "AsyncOperationExecutor",
+    "AsyncOperationTransport",
+    "AsyncPaginatedList",
+    "AsyncPaginator",
+    "AsyncTransport",
     "AuthenticationError",
     "AuthorizationError",
     "AvitoError",

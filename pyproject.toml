@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "avito-py"
-version = "2.0.0"
+version = "2.1.0"
 description = "SDK для разработки инструментов на базе Avito API"
 authors = ["Nikolay Baryshnikov <root@k0d.ru>"]
 packages=[
@@ -36,6 +36,7 @@ ruff = "^0.12.12"
 respx = "^0.22.0"
 libcst = "^1.8.6"
 bowler = "^0.9.0"
+pytest-asyncio = "^0.24"
 
 [tool.poetry.group.docs.dependencies]
 mkdocs-material = "^9.5"
@@ -53,6 +54,8 @@ pydocstyle = { version = ">=6.3", extras = ["toml"] }
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["scripts"]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "live: требует доступа к сети; запускать с --live",
 ]

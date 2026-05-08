@@ -6,7 +6,7 @@ MKDOCS_ENV=DISABLE_MKDOCS_2_WARNING=true NO_MKDOCS_2_WARNING=1
 
 check: test quality
 
-quality: typecheck lint swagger-lint architecture-lint docstring-lint build
+quality: typecheck lint swagger-lint architecture-lint async-parity-lint docstring-lint build
 
 build: clean
 	poetry build
@@ -40,6 +40,9 @@ swagger-lint:
 
 architecture-lint:
 	poetry run python scripts/lint_architecture.py
+
+async-parity-lint:
+	poetry run python scripts/lint_async_parity.py
 
 docstring-lint:
 	poetry run python scripts/lint_docstrings.py

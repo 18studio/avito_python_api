@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import ParamSpec, TypeVar
+from typing import Literal, ParamSpec, TypeVar
 
 from avito.core.exceptions import ConfigurationError
 
@@ -18,12 +18,14 @@ _EMPTY_MAPPING: Mapping[str, str] = MappingProxyType({})
 
 
 def _freeze_mapping(value: Mapping[str, str] | None) -> Mapping[str, str]:
+    """Run the freeze mapping helper."""
     if value is None:
         return _EMPTY_MAPPING
     return MappingProxyType(dict(value))
 
 
 def _normalize_method(method: str) -> str:
+    """Normalize method."""
     normalized = method.strip().upper()
     if not normalized:
         raise ConfigurationError("HTTP-метод Swagger binding не может быть пустым.")
@@ -31,6 +33,7 @@ def _normalize_method(method: str) -> str:
 
 
 def _normalize_path(path: str) -> str:
+    """Normalize path."""
     normalized = path.strip()
     if not normalized.startswith("/"):
         raise ConfigurationError("Swagger path должен начинаться с `/`.")
@@ -55,8 +58,12 @@ class SwaggerOperationBinding:
     method_args: Mapping[str, str] = field(default_factory=lambda: _EMPTY_MAPPING)
     deprecated: bool = False
     legacy: bool = False
+    variant: Literal["sync", "async"] = "sync"
 
     def __post_init__(self) -> None:
+        """Run the post init helper."""
+        if self.variant not in {"sync", "async"}:
+            raise ConfigurationError("Swagger binding variant должен быть `sync` или `async`.")
         object.__setattr__(self, "method", _normalize_method(self.method))
         object.__setattr__(self, "path", _normalize_path(self.path))
         object.__setattr__(self, "factory_args", _freeze_mapping(self.factory_args))
@@ -74,6 +81,7 @@ def swagger_operation(
     method_args: Mapping[str, str] | None = None,
     deprecated: bool = False,
     legacy: bool = False,
+    variant: Literal["sync", "async"] = "sync",
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Записывает Swagger binding metadata на публичный SDK-метод."""
 
@@ -87,9 +95,11 @@ def swagger_operation(
         method_args=_freeze_mapping(method_args),
         deprecated=deprecated,
         legacy=legacy,
+        variant=variant,
     )
 
     def decorate(func: Callable[P, R]) -> Callable[P, R]:
+        """Run the decorate helper."""
         if hasattr(func, "__swagger_binding__") or hasattr(func, "__swagger_bindings__"):
             raise ConfigurationError("Несколько Swagger binding-ов на одном SDK method запрещены.")
         func.__swagger_binding__ = binding  # type: ignore[attr-defined]

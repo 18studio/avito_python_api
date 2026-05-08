@@ -1,5 +1,12 @@
 """Пакет jobs."""
 
+from avito.jobs.async_domain import (
+    AsyncApplication,
+    AsyncJobDictionary,
+    AsyncJobWebhook,
+    AsyncResume,
+    AsyncVacancy,
+)
 from avito.jobs.domain import Application, JobDictionary, JobWebhook, Resume, Vacancy
 from avito.jobs.models import (
     ApplicationActionRequest,
@@ -49,6 +56,11 @@ __all__ = (
     "ApplicationStatesResult",
     "ApplicationViewedItem",
     "ApplicationViewedRequest",
+    "AsyncApplication",
+    "AsyncJobDictionary",
+    "AsyncJobWebhook",
+    "AsyncResume",
+    "AsyncVacancy",
     "JobActionResult",
     "JobActionStatus",
     "JobEnrichmentStatus",

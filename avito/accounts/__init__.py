@@ -1,5 +1,6 @@
 """Пакет accounts."""
 
+from avito.accounts.async_domain import AsyncAccount, AsyncAccountHierarchy
 from avito.accounts.domain import Account, AccountHierarchy
 from avito.accounts.models import (
     AccountActionResult,
@@ -26,6 +27,8 @@ __all__ = (
     "AccountHierarchyRole",
     "AccountProfile",
     "AhUserStatus",
+    "AsyncAccount",
+    "AsyncAccountHierarchy",
     "CompanyPhone",
     "CompanyPhonesResult",
     "Employee",

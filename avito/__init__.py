@@ -1,8 +1,10 @@
 """Публичные экспорты пакета SDK для Avito."""
 
+from avito.async_client import AsyncAvitoClient
 from avito.auth.settings import AuthSettings
 from avito.client import AvitoClient
 from avito.config import AvitoSettings
+from avito.core.async_pagination import AsyncPaginatedList
 from avito.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
@@ -34,6 +36,8 @@ from avito.summary import (
 __all__ = (
     "AccountHealthSummary",
     "AuthSettings",
+    "AsyncAvitoClient",
+    "AsyncPaginatedList",
     "AuthenticationError",
     "AuthorizationError",
     "AvitoClient",

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Protocol
 
 import httpx
 
+from avito.auth._cache import TokenCache, map_token_response
 from avito.auth.models import (
     AccessToken,
     ClientCredentialsRequest,
@@ -20,7 +21,6 @@ from avito.core.exceptions import (
     AuthenticationError,
     AvitoError,
     ConfigurationError,
-    ResponseMappingError,
 )
 from avito.core.swagger import swagger_operation
 from avito.core.transport import Transport
@@ -32,42 +32,15 @@ REFRESH_TOKEN_GRANT = "refresh_token"
 _UNSET = object()
 
 
-def _map_token_response(payload: object, *, now: datetime | None = None) -> TokenResponse:
-    if not isinstance(payload, dict):
-        raise ResponseMappingError("OAuth-ответ должен быть JSON-объектом.", payload=payload)
-
-    access_token = payload.get("access_token")
-    if not isinstance(access_token, str) or not access_token:
-        raise ResponseMappingError("В OAuth-ответе отсутствует `access_token`.", payload=payload)
-
-    raw_expires_in = payload.get("expires_in", 0)
-    if not isinstance(raw_expires_in, int | float) or isinstance(raw_expires_in, bool):
-        raise ResponseMappingError("Поле `expires_in` должно быть числом.", payload=payload)
-
-    refresh_token = payload.get("refresh_token")
-    if refresh_token is not None and not isinstance(refresh_token, str):
-        raise ResponseMappingError("Поле `refresh_token` должно быть строкой.", payload=payload)
-
-    token_type = payload.get("token_type", "Bearer")
-    if not isinstance(token_type, str):
-        raise ResponseMappingError("Поле `token_type` должно быть строкой.", payload=payload)
-
-    issued_at = now or datetime.now(UTC)
-    return TokenResponse(
-        access_token=AccessToken(
-            value=access_token,
-            expires_at=issued_at + timedelta(seconds=raw_expires_in),
-            token_type=token_type,
-        ),
-        refresh_token=refresh_token,
-        scope=payload.get("scope") if isinstance(payload.get("scope"), str) else None,
-    )
+_map_token_response = map_token_response
 
 
 class TokenFetcher(Protocol):
     """Контракт получения нового access token из внешнего источника."""
 
-    def __call__(self, settings: AuthSettings) -> TokenResponse: ...
+    def __call__(self, settings: AuthSettings) -> TokenResponse:
+        """Fetch a token payload."""
+        ...
 
 
 @dataclass(slots=True)
@@ -79,9 +52,40 @@ class AuthProvider:
     alternate_token_client: AlternateTokenClient | None = None
     autoteka_token_client: TokenClient | None = None
     token_fetcher: TokenFetcher | None = None
-    _access_token: AccessToken | None = field(default=None, init=False, repr=False)
-    _refresh_token: str | None = field(default=None, init=False, repr=False)
-    _autoteka_access_token: AccessToken | None = field(default=None, init=False, repr=False)
+    _cache: TokenCache = field(default_factory=TokenCache, init=False, repr=False)
+
+    @property
+    def _access_token(self) -> AccessToken | None:
+        """Legacy private accessor kept for existing tests."""
+
+        return self._cache.access_token
+
+    @_access_token.setter
+    def _access_token(self, value: AccessToken | None) -> None:
+        """Run the access token helper."""
+        self._cache.access_token = value
+
+    @property
+    def _refresh_token(self) -> str | None:
+        """Legacy private accessor kept for existing tests."""
+
+        return self._cache.refresh_token
+
+    @_refresh_token.setter
+    def _refresh_token(self, value: str | None) -> None:
+        """Run the refresh token helper."""
+        self._cache.refresh_token = value
+
+    @property
+    def _autoteka_access_token(self) -> AccessToken | None:
+        """Legacy private accessor kept for existing tests."""
+
+        return self._cache.autoteka_access_token
+
+    @_autoteka_access_token.setter
+    def _autoteka_access_token(self, value: AccessToken | None) -> None:
+        """Run the autoteka access token helper."""
+        self._cache.autoteka_access_token = value
 
     def get_access_token(self) -> str:
         """Возвращает валидный access token, обновляя кэш при необходимости."""
@@ -146,6 +150,7 @@ class AuthProvider:
         return self._get_alternate_token_client()
 
     def _fetch_token_response(self) -> TokenResponse:
+        """Fetch token response."""
         if self.token_fetcher is not None:
             token_response = self.token_fetcher(self.settings)
             if isinstance(token_response, AccessToken):
@@ -184,6 +189,7 @@ class AuthProvider:
         refresh_token: str | None | object = _UNSET,
         autoteka_access_token: AccessToken | None | object = _UNSET,
     ) -> None:
+        """Run the update tokens helper."""
         if access_token is not _UNSET:
             self._access_token = access_token if isinstance(access_token, AccessToken) else None
         if refresh_token is not _UNSET:
@@ -195,6 +201,7 @@ class AuthProvider:
             )
 
     def _get_token_client(self) -> TokenClient:
+        """Return token client."""
         if self.token_client is None:
             self.token_client = TokenClient(self.settings)
         token_client = self.token_client
@@ -203,6 +210,7 @@ class AuthProvider:
         return token_client
 
     def _get_alternate_token_client(self) -> AlternateTokenClient:
+        """Return alternate token client."""
         if self.alternate_token_client is None:
             self.alternate_token_client = AlternateTokenClient(self.settings)
         alternate_token_client = self.alternate_token_client
@@ -211,6 +219,7 @@ class AuthProvider:
         return alternate_token_client
 
     def _get_autoteka_token_client(self) -> TokenClient:
+        """Return autoteka token client."""
         if self.autoteka_token_client is None:
             self.autoteka_token_client = TokenClient(
                 self.settings,
@@ -222,11 +231,13 @@ class AuthProvider:
         return autoteka_token_client
 
     def _require_client_id(self) -> str:
+        """Validate required client id."""
         if self.settings.client_id is None:
             raise AuthenticationError("Для OAuth flow не задан `client_id`.")
         return self.settings.client_id
 
     def _require_client_secret(self) -> str:
+        """Validate required client secret."""
         if self.settings.client_secret is None:
             raise AuthenticationError("Для OAuth flow не задан `client_secret`.")
         return self.settings.client_secret
@@ -300,6 +311,7 @@ class TokenClient:
         return self._request_token(payload)
 
     def _request_token(self, payload: dict[str, str]) -> TokenResponse:
+        """Run the request token helper."""
         transport = self._build_transport()
         try:
             response = transport.request(
@@ -343,6 +355,7 @@ class TokenClient:
         return _map_token_response(payload_object)
 
     def _build_transport(self) -> Transport:
+        """Build transport."""
         return Transport(
             self.sdk_settings or AvitoSettings(auth=self.settings),
             auth_provider=None,

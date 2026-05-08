@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import date, datetime
 from pathlib import Path
 from types import TracebackType
@@ -58,6 +58,7 @@ def _default_summary_date_range(
     date_from: SummaryDate | None,
     date_to: SummaryDate | None,
 ) -> tuple[SummaryDate, SummaryDate]:
+    """Run the default summary date range helper."""
     if date_from is not None and date_to is not None:
         return date_from, date_to
     today = date.today().isoformat()
@@ -65,6 +66,7 @@ def _default_summary_date_range(
 
 
 def _sum_optional_int(values: Iterable[int | None]) -> int | None:
+    """Run the sum optional int helper."""
     resolved = [value for value in values if value is not None]
     if not resolved:
         return None
@@ -72,6 +74,7 @@ def _sum_optional_int(values: Iterable[int | None]) -> int | None:
 
 
 def _sum_optional_float(values: Iterable[float | None]) -> float | None:
+    """Run the sum optional float helper."""
     resolved = [value for value in values if value is not None]
     if not resolved:
         return None
@@ -79,6 +82,7 @@ def _sum_optional_float(values: Iterable[float | None]) -> float | None:
 
 
 def _summary_unavailable_section(section: str, error: AvitoError) -> SummaryUnavailableSection:
+    """Run the summary unavailable section helper."""
     return SummaryUnavailableSection(
         section=section,
         operation=error.operation,
@@ -92,8 +96,20 @@ def _safe_summary[SummaryT](
     section: str,
     factory: Callable[[], SummaryT],
 ) -> tuple[SummaryT | None, list[SummaryUnavailableSection]]:
+    """Return a safe summary."""
     try:
         return factory(), []
+    except AvitoError as error:
+        return None, [_summary_unavailable_section(section, error)]
+
+
+async def _safe_summary_async[SummaryT](
+    section: str,
+    factory: Callable[[], Awaitable[SummaryT]],
+) -> tuple[SummaryT | None, list[SummaryUnavailableSection]]:
+    """Return a safe summary async."""
+    try:
+        return await factory(), []
     except AvitoError as error:
         return None, [_summary_unavailable_section(section, error)]
 
@@ -118,6 +134,7 @@ class AvitoClient:
         client_id: str | None = None,
         client_secret: str | None = None,
     ) -> None:
+        """Initialize AvitoClient."""
         if client_id is not None or client_secret is not None:
             from avito.auth.settings import AuthSettings
 
@@ -142,6 +159,7 @@ class AvitoClient:
         transport: Transport,
         auth_provider: AuthProvider,
     ) -> AvitoClient:
+        """Run the from transport helper."""
         client = cls.__new__(cls)
         client._closed = False
         client._settings = settings
@@ -555,6 +573,7 @@ class AvitoClient:
         self.close()
 
     def _build_auth_provider(self) -> AuthProvider:
+        """Build auth provider."""
         return AuthProvider(
             self.settings.auth,
             token_client=TokenClient(self.settings.auth, sdk_settings=self.settings),
@@ -570,14 +589,17 @@ class AvitoClient:
         )
 
     def _ensure_open(self) -> None:
+        """Ensure open."""
         if self._closed:
             raise ClientClosedError("Клиент закрыт; создайте новый AvitoClient.")
 
     def _require_transport(self) -> Transport:
+        """Validate required transport."""
         self._ensure_open()
         return self.transport
 
     def _resolve_user_id(self, user_id: int | str | None = None) -> int:
+        """Resolve user id."""
         return Account(self._require_transport(), user_id=user_id)._resolve_user_id(user_id)
 
     def account(self, user_id: int | str | None = None) -> Account:
