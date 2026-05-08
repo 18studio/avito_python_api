@@ -18,9 +18,12 @@ def test_async_swagger_bindings_are_discoverable_for_ported_domains() -> None:
         "AsyncChatMessage",
         "AsyncChatWebhook",
         "AsyncCpaArchive",
+        "AsyncCpaAuction",
         "AsyncCpaCall",
         "AsyncCpaChat",
         "AsyncCpaLead",
+        "AsyncAutostrategyCampaign",
+        "AsyncBbipPromotion",
         "AsyncApplication",
         "AsyncJobDictionary",
         "AsyncJobWebhook",
@@ -34,7 +37,10 @@ def test_async_swagger_bindings_are_discoverable_for_ported_domains() -> None:
         "AsyncReview",
         "AsyncReviewAnswer",
         "AsyncSpecialOfferCampaign",
+        "AsyncPromotionOrder",
         "AsyncTariff",
+        "AsyncTargetActionPricing",
         "AsyncTokenClient",
+        "AsyncTrxPromotion",
     }
-    assert len(async_bindings) == 81
+    assert len(async_bindings) == 105

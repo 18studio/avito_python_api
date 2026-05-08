@@ -35,6 +35,14 @@ from avito.messenger import (
     AsyncChatWebhook,
     AsyncSpecialOfferCampaign,
 )
+from avito.promotion import (
+    AsyncAutostrategyCampaign,
+    AsyncBbipPromotion,
+    AsyncCpaAuction,
+    AsyncPromotionOrder,
+    AsyncTargetActionPricing,
+    AsyncTrxPromotion,
+)
 from avito.ratings import AsyncRatingProfile, AsyncReview, AsyncReviewAnswer
 from avito.realty import (
     AsyncRealtyAnalyticsReport,
@@ -304,6 +312,38 @@ class AsyncAvitoClient:
         """Создает async-доменный объект справочника Авито Работы."""
 
         return AsyncJobDictionary(self._require_transport(), dictionary_id=dictionary_id)
+
+    def promotion_order(self, order_id: int | str | None = None) -> AsyncPromotionOrder:
+        """Создает async-доменный объект заявок promotion."""
+
+        return AsyncPromotionOrder(self._require_transport(), order_id=order_id)
+
+    def bbip_promotion(self, item_id: int | str | None = None) -> AsyncBbipPromotion:
+        """Создает async-доменный объект BBIP-продвижения."""
+
+        return AsyncBbipPromotion(self._require_transport(), item_id=item_id)
+
+    def trx_promotion(self, item_id: int | str | None = None) -> AsyncTrxPromotion:
+        """Создает async-доменный объект TrxPromo."""
+
+        return AsyncTrxPromotion(self._require_transport(), item_id=item_id)
+
+    def cpa_auction(self, item_id: int | str | None = None) -> AsyncCpaAuction:
+        """Создает async-доменный объект CPA-аукциона."""
+
+        return AsyncCpaAuction(self._require_transport(), item_id=item_id)
+
+    def target_action_pricing(self, item_id: int | str | None = None) -> AsyncTargetActionPricing:
+        """Создает async-доменный объект цены целевого действия."""
+
+        return AsyncTargetActionPricing(self._require_transport(), item_id=item_id)
+
+    def autostrategy_campaign(
+        self, campaign_id: int | str | None = None
+    ) -> AsyncAutostrategyCampaign:
+        """Создает async-доменный объект кампании автостратегии."""
+
+        return AsyncAutostrategyCampaign(self._require_transport(), campaign_id=campaign_id)
 
     async def aclose(self) -> None:
         """Закрывает transport и auth-provider; повторный вызов безопасен."""

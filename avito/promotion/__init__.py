@@ -1,5 +1,13 @@
 """Пакет promotion."""
 
+from avito.promotion.async_domain import (
+    AsyncAutostrategyCampaign,
+    AsyncBbipPromotion,
+    AsyncCpaAuction,
+    AsyncPromotionOrder,
+    AsyncTargetActionPricing,
+    AsyncTrxPromotion,
+)
 from avito.promotion.domain import (
     AutostrategyCampaign,
     BbipPromotion,
@@ -63,6 +71,12 @@ from avito.promotion.models import (
 )
 
 __all__ = (
+    "AsyncAutostrategyCampaign",
+    "AsyncBbipPromotion",
+    "AsyncCpaAuction",
+    "AsyncPromotionOrder",
+    "AsyncTargetActionPricing",
+    "AsyncTrxPromotion",
     "AutostrategyBudget",
     "AutostrategyCampaign",
     "AutostrategyStat",
