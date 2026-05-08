@@ -106,6 +106,7 @@ def _validate_operation_spec_coverage(
     registry: SwaggerRegistry,
     bindings: Sequence[DiscoveredSwaggerBinding],
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate operation spec coverage."""
     operations_by_key = {operation.key: operation for operation in registry.operations}
     used_specs: set[int] = set()
     errors: list[SwaggerReportError] = []
@@ -144,6 +145,7 @@ def _validate_operation_spec_matches_binding(
     operation: SwaggerOperation,
     spec: OperationSpec[object],
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate operation spec matches binding."""
     errors: list[SwaggerReportError] = []
     if normalize_swagger_method(spec.method) != operation.method:
         errors.append(
@@ -176,6 +178,7 @@ def _validate_json_body_model_coverage(
     registry: SwaggerRegistry,
     bindings: Sequence[DiscoveredSwaggerBinding],
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate json body model coverage."""
     operations_by_key = {operation.key: operation for operation in registry.operations}
     errors: list[SwaggerReportError] = []
 
@@ -205,6 +208,7 @@ def _validate_operation_json_body_models(
     operation: SwaggerOperation,
     spec: OperationSpec[object],
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate operation json body models."""
     errors: list[SwaggerReportError] = []
     request_body = operation.request_body
     if request_body is not None and _has_json_content(request_body.content_types):
@@ -275,6 +279,7 @@ def _validate_operation_json_body_models(
 
 
 def _has_json_content(content_types: Sequence[str]) -> bool:
+    """Return whether json content."""
     return any("application/json" in content_type for content_type in content_types)
 
 
@@ -284,6 +289,7 @@ def _contract_error(
     code: str,
     message: str,
 ) -> SwaggerReportError:
+    """Run the contract error helper."""
     return SwaggerReportError(
         code=code,
         message=message,
@@ -293,6 +299,7 @@ def _contract_error(
 
 
 def _validate_no_unbound_operation_specs(used_specs: set[int]) -> tuple[SwaggerReportError, ...]:
+    """Validate no unbound operation specs."""
     errors: list[SwaggerReportError] = []
     for module_name, spec_name, spec in _iter_api_domain_operation_specs():
         if id(spec) in used_specs:
@@ -314,6 +321,7 @@ def _validate_no_unbound_operation_specs(used_specs: set[int]) -> tuple[SwaggerR
 def _validate_legacy_stacked_binding_metadata(
     discovery: SwaggerBindingDiscovery,
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate legacy stacked binding metadata."""
     return tuple(
         SwaggerReportError(
             code="SWAGGER_BINDING_METHOD_MULTIPLE",
@@ -328,6 +336,7 @@ def _validate_legacy_stacked_binding_metadata(
 def _validate_single_binding_per_sdk_method(
     bindings: Sequence[DiscoveredSwaggerBinding],
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate single binding per sdk method."""
     grouped: defaultdict[str, list[DiscoveredSwaggerBinding]] = defaultdict(list)
     for binding in bindings:
         grouped[binding.sdk_method].append(binding)
@@ -358,6 +367,7 @@ def _validate_complete_bindings(
     operations: Sequence[SwaggerOperation],
     bindings: Sequence[DiscoveredSwaggerBinding],
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate complete bindings."""
     bound_operation_keys = {
         binding.operation_key
         for binding in bindings
@@ -381,6 +391,7 @@ def _validate_complete_bindings(
 def _validate_duplicate_bindings(
     bindings: Sequence[DiscoveredSwaggerBinding],
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate duplicate bindings."""
     grouped: defaultdict[tuple[str, str], list[DiscoveredSwaggerBinding]] = defaultdict(list)
     for binding in bindings:
         if binding.operation_key is not None:
@@ -413,6 +424,7 @@ def _resolve_bound_operation(
     spec_names: set[str],
     errors: list[SwaggerReportError],
 ) -> SwaggerOperation | None:
+    """Resolve bound operation."""
     if binding.operation_key is None:
         errors.append(
             SwaggerReportError(
@@ -458,6 +470,7 @@ def _validate_operation_metadata(
     operation: SwaggerOperation,
     sdk_method: Callable[..., object] | None,
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate operation metadata."""
     errors: list[SwaggerReportError] = []
     if binding.operation_id is not None and binding.operation_id != operation.operation_id:
         errors.append(
@@ -523,6 +536,7 @@ def _validate_operation_metadata(
 
 
 def _validate_factory(binding: DiscoveredSwaggerBinding) -> tuple[SwaggerReportError, ...]:
+    """Validate factory."""
     if binding.domain == "auth" and binding.factory is None:
         return ()
     if binding.factory is None:
@@ -566,6 +580,7 @@ def _validate_sdk_method_signature(
     binding: DiscoveredSwaggerBinding,
     sdk_method: Callable[..., object] | None,
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate sdk method signature."""
     if sdk_method is None:
         return (
             SwaggerReportError(
@@ -587,6 +602,7 @@ def _validate_sdk_method_signature(
 def _operation_specs_for_sdk_method(
     sdk_method: Callable[..., object] | None,
 ) -> tuple[OperationSpec[object], ...]:
+    """Run the operation specs for sdk method helper."""
     if sdk_method is None:
         return ()
     unwrapped_method = inspect.unwrap(sdk_method)
@@ -611,6 +627,7 @@ def _operation_specs_for_sdk_method(
 
 
 def _iter_api_domain_operation_specs() -> tuple[tuple[str, str, OperationSpec[object]], ...]:
+    """Run the iter api domain operation specs helper."""
     specs: list[tuple[str, str, OperationSpec[object]]] = []
     for domain in sorted(_API_DOMAINS):
         for module in _iter_domain_operation_modules(domain):
@@ -621,6 +638,7 @@ def _iter_api_domain_operation_specs() -> tuple[tuple[str, str, OperationSpec[ob
 
 
 def _iter_domain_operation_modules(domain: str) -> tuple[ModuleType, ...]:
+    """Run the iter domain operation modules helper."""
     root_module_name = f"avito.{domain}.operations"
     module = importlib.import_module(root_module_name)
     modules: list[ModuleType] = [module]
@@ -633,17 +651,20 @@ def _iter_domain_operation_modules(domain: str) -> tuple[ModuleType, ...]:
 
 
 def _is_execute_call(node: ast.Call) -> bool:
+    """Return whether execute call."""
     name = _call_name(node.func)
     return name in {"self._execute", "_execute"} or name.endswith("._execute")
 
 
 def _name(node: ast.AST) -> str | None:
+    """Run the name helper."""
     if isinstance(node, ast.Name):
         return node.id
     return None
 
 
 def _call_name(node: ast.AST) -> str:
+    """Run the call name helper."""
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Attribute):
@@ -652,6 +673,7 @@ def _call_name(node: ast.AST) -> str:
 
 
 def _attribute_name(node: ast.Attribute) -> str:
+    """Run the attribute name helper."""
     parts = [node.attr]
     value = node.value
     while isinstance(value, ast.Attribute):
@@ -666,6 +688,7 @@ def _validate_binding_expressions(
     binding: DiscoveredSwaggerBinding,
     operation: SwaggerOperation,
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate binding expressions."""
     errors: list[SwaggerReportError] = []
     errors.extend(
         _validate_expression_mapping(
@@ -693,6 +716,7 @@ def _validate_expression_mapping(
     mapping: Mapping[str, str],
     subject: str,
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate expression mapping."""
     errors: list[SwaggerReportError] = []
     for argument_name, expression in sorted(mapping.items()):
         errors.extend(
@@ -715,6 +739,7 @@ def _validate_expression(
     argument_name: str,
     expression: str,
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate expression."""
     if expression == "body":
         if operation.request_body is None:
             return (
@@ -857,6 +882,7 @@ def _validate_parameter_expression(
     field_name: str,
     location: str,
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate parameter expression."""
     parameter_names = {
         parameter.name for parameter in operation.parameters if parameter.location == location
     }
@@ -881,6 +907,7 @@ def _expression_error(
     code: str,
     message: str,
 ) -> SwaggerReportError:
+    """Run the expression error helper."""
     return SwaggerReportError(
         code=code,
         message=message,
@@ -890,6 +917,7 @@ def _expression_error(
 
 
 def _load_sdk_method(binding: DiscoveredSwaggerBinding) -> Callable[..., object] | None:
+    """Load sdk method."""
     module = importlib.import_module(binding.module)
     cls = getattr(module, binding.class_name, None)
     method = getattr(cls, binding.method_name, None)
@@ -897,6 +925,7 @@ def _load_sdk_method(binding: DiscoveredSwaggerBinding) -> Callable[..., object]
 
 
 def _has_runtime_deprecation(method: Callable[..., object] | None) -> bool:
+    """Return whether runtime deprecation."""
     metadata = getattr(method, "__sdk_deprecation__", None)
     return isinstance(metadata, DeprecatedSdkSymbol)
 
@@ -909,6 +938,7 @@ def _validate_signature_mapping(
     subject: str,
     code_prefix: str,
 ) -> tuple[SwaggerReportError, ...]:
+    """Validate signature mapping."""
     parameters = _mappable_parameters(signature)
     parameter_names = set(parameters)
     errors: list[SwaggerReportError] = []
@@ -946,6 +976,7 @@ def _validate_signature_mapping(
 def _mappable_parameters(
     signature: inspect.Signature,
 ) -> Mapping[str, inspect.Parameter]:
+    """Run the mappable parameters helper."""
     return {
         name: parameter
         for name, parameter in signature.parameters.items()

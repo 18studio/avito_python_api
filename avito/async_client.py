@@ -113,6 +113,7 @@ class AsyncAvitoClient:
         client_secret: str | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
+        """Initialize AsyncAvitoClient."""
         if client_id is not None or client_secret is not None:
             auth = AuthSettings(client_id=client_id, client_secret=client_secret)
             settings = AvitoSettings(auth=auth)
@@ -137,6 +138,7 @@ class AsyncAvitoClient:
         transport: AsyncTransport,
         auth_provider: AsyncAuthProvider,
     ) -> AsyncAvitoClient:
+        """Run the from transport helper."""
         client = cls.__new__(cls)
         client._closed = False
         client._entered = True
@@ -147,6 +149,7 @@ class AsyncAvitoClient:
         return client
 
     async def __aenter__(self) -> AsyncAvitoClient:
+        """Enter the async context manager."""
         self._ensure_open()
         if self._entered:
             return self
@@ -164,6 +167,7 @@ class AsyncAvitoClient:
             raise
 
     async def __aexit__(self, *exc: object) -> None:
+        """Exit the async context manager."""
         await self.aclose()
 
     @property
@@ -893,6 +897,7 @@ class AsyncAvitoClient:
             await auth_provider.aclose()
 
     def _build_auth_provider(self) -> AsyncAuthProvider:
+        """Build auth provider."""
         token_client = AsyncTokenClient(
             self.settings.auth,
             client=self._external_http_client,
@@ -917,10 +922,12 @@ class AsyncAvitoClient:
         )
 
     def _ensure_open(self) -> None:
+        """Ensure open."""
         if self._closed:
             raise ClientClosedError("Клиент закрыт; создайте новый AsyncAvitoClient.")
 
     def _ensure_ready(self) -> None:
+        """Ensure ready."""
         self._ensure_open()
         if not self._entered:
             raise RuntimeError(
@@ -929,12 +936,14 @@ class AsyncAvitoClient:
             )
 
     def _require_transport(self) -> AsyncTransport:
+        """Validate required transport."""
         self._ensure_ready()
         if self._transport is None:
             raise RuntimeError("AsyncAvitoClient не инициализирован: используйте 'async with'.")
         return self._transport
 
     async def _resolve_user_id(self, user_id: int | str | None = None) -> int:
+        """Resolve user id."""
         return await AsyncAccount(self._require_transport(), user_id=user_id)._resolve_user_id(
             user_id
         )

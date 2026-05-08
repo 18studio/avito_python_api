@@ -35,6 +35,7 @@ class AsyncTransport:
         client: httpx.AsyncClient | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
+        """Initialize AsyncTransport."""
         self._settings = settings
         self._auth_provider = auth_provider
         self._retry_policy = settings.retry_policy
@@ -47,9 +48,11 @@ class AsyncTransport:
         self._user_agent = shared.build_user_agent(settings.user_agent_suffix)
 
     async def __aenter__(self) -> AsyncTransport:
+        """Enter the async context manager."""
         return self
 
     async def __aexit__(self, *exc: object) -> None:
+        """Exit the async context manager."""
         await self.aclose()
 
     @property
@@ -305,6 +308,7 @@ class AsyncTransport:
         status: int | None,
         decision: RetryDecision,
     ) -> None:
+        """Log retry."""
         _LOGGER.info(
             "transport retry",
             extra={
@@ -319,6 +323,7 @@ class AsyncTransport:
         )
 
     def _log_http_exchange(self, **extra: object) -> None:
+        """Log http exchange."""
         _LOGGER.debug(
             "transport http exchange",
             extra={**extra, "endpoint": shared.safe_endpoint(str(extra["endpoint"]))},

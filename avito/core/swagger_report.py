@@ -100,6 +100,7 @@ def build_swagger_binding_report(
 def _group_bindings_by_operation_key(
     bindings: Sequence[DiscoveredSwaggerBinding],
 ) -> Mapping[str, tuple[DiscoveredSwaggerBinding, ...]]:
+    """Run the group bindings by operation key helper."""
     grouped: defaultdict[str, list[DiscoveredSwaggerBinding]] = defaultdict(list)
     for binding in bindings:
         if binding.operation_key is None:
@@ -116,6 +117,7 @@ def _build_operation_entry(
     bindings: tuple[DiscoveredSwaggerBinding, ...],
     async_bindings: tuple[DiscoveredSwaggerBinding, ...] = (),
 ) -> dict[str, object]:
+    """Build operation entry."""
     if not bindings:
         status = "unbound"
         binding_entry: object = None
@@ -142,6 +144,7 @@ def _build_operation_entry(
 
 
 def _build_binding_entry(binding: DiscoveredSwaggerBinding) -> dict[str, object]:
+    """Build binding entry."""
     return {
         "module": binding.module,
         "class": binding.class_name,
@@ -163,6 +166,7 @@ def _build_binding_entry(binding: DiscoveredSwaggerBinding) -> dict[str, object]
 
 
 def _binding_reference(binding: DiscoveredSwaggerBinding) -> dict[str, object]:
+    """Run the binding reference helper."""
     return {
         "module": binding.module,
         "class": binding.class_name,
@@ -172,6 +176,7 @@ def _binding_reference(binding: DiscoveredSwaggerBinding) -> dict[str, object]:
 
 
 def _variant_binding_entry(bindings: tuple[DiscoveredSwaggerBinding, ...]) -> object:
+    """Run the variant binding entry helper."""
     if not bindings:
         return None
     if len(bindings) == 1:
@@ -183,6 +188,7 @@ def _variant_summary(
     operations: tuple[SwaggerOperation, ...],
     bindings: Sequence[DiscoveredSwaggerBinding],
 ) -> dict[str, int]:
+    """Run the variant summary helper."""
     groups = _group_bindings_by_operation_key(bindings)
     bound = sum(1 for operation in operations if len(groups.get(operation.key, ())) == 1)
     duplicate = sum(1 for operation_bindings in groups.values() if len(operation_bindings) > 1)
@@ -197,6 +203,7 @@ def _variant_summary(
 
 
 def _build_registry_error_entry(error: SwaggerValidationError) -> dict[str, object]:
+    """Build registry error entry."""
     return {
         "code": error.code,
         "message": error.message,
@@ -206,6 +213,7 @@ def _build_registry_error_entry(error: SwaggerValidationError) -> dict[str, obje
 
 
 def _build_report_error_entry(error: SwaggerReportError) -> dict[str, object]:
+    """Build report error entry."""
     return {
         "code": error.code,
         "message": error.message,

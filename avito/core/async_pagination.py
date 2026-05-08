@@ -19,6 +19,7 @@ class AsyncPaginatedList[ItemT]:
         start_page: int = 1,
         first_page: JsonPage[ItemT] | None = None,
     ) -> None:
+        """Initialize AsyncPaginatedList."""
         self._fetch_page = fetch_page
         self._items: list[ItemT] = []
         self._known_total: int | None = None
@@ -31,6 +32,7 @@ class AsyncPaginatedList[ItemT]:
             self._consume_page(first_page)
 
     def __aiter__(self) -> AsyncIterator[ItemT]:
+        """Run the aiter helper."""
         if self._active_iterator:
             raise RuntimeError(
                 "AsyncPaginatedList уже итерируется; используйте materialize() "
@@ -40,6 +42,7 @@ class AsyncPaginatedList[ItemT]:
         return self._iterate()
 
     async def _iterate(self) -> AsyncIterator[ItemT]:
+        """Iterate iterate."""
         index = 0
         try:
             while True:
@@ -91,12 +94,14 @@ class AsyncPaginatedList[ItemT]:
         return self._exhausted
 
     async def _load_next_page(self) -> None:
+        """Load next page."""
         if self._exhausted:
             return
         page = await self._fetch_page(self._next_page_number, self._next_cursor)
         self._consume_page(page)
 
     def _consume_page(self, page: JsonPage[ItemT]) -> None:
+        """Consume page."""
         self._items.extend(page.items)
         self._known_total = page.total
         if page.source_total is not None:
@@ -125,6 +130,7 @@ class AsyncPaginator[ItemT]:
     """Обходит страницы API асинхронно и собирает типизированный результат."""
 
     def __init__(self, fetch_page: AsyncPageFetcher[ItemT]) -> None:
+        """Initialize AsyncPaginator."""
         self._fetch_page = fetch_page
 
     async def iter_pages(self, *, start_page: int = 1) -> AsyncIterator[JsonPage[ItemT]]:

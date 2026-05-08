@@ -59,6 +59,7 @@ class RateLimitState:
 
     @classmethod
     def from_policy(cls, policy: RetryPolicy, *, now: float) -> RateLimitState:
+        """Build rate limit state from retry policy settings."""
         capacity = max(policy.rate_limit_burst, 0)
         return cls(
             enabled=policy.rate_limit_enabled,
@@ -99,6 +100,7 @@ class RateLimitState:
             self.tokens = min(self.tokens, 0.0)
 
     def _refill(self, now: float) -> None:
+        """Refill available rate limit tokens."""
         elapsed = max(now - self.updated_at, 0.0)
         if elapsed > 0.0:
             self.tokens = min(float(self.capacity), self.tokens + elapsed * self.rate)
@@ -117,6 +119,7 @@ def build_httpx_timeout(timeouts: ApiTimeouts) -> httpx.Timeout:
 
 
 def normalize_path(path: str) -> str:
+    """Normalize path."""
     stripped = path.strip()
     if not stripped:
         return "/"
@@ -131,6 +134,7 @@ def normalize_path(path: str) -> str:
 
 
 def normalize_params(params: Mapping[str, object] | None) -> QueryParams | None:
+    """Normalize params."""
     if params is None:
         return None
     normalized: dict[str, QueryParamValue] = {}
@@ -145,18 +149,21 @@ def normalize_params(params: Mapping[str, object] | None) -> QueryParams | None:
 
 
 def normalize_query_scalar(value: object) -> QueryScalar:
+    """Normalize query scalar."""
     if isinstance(value, str | int | float | bool):
         return value
     return str(value)
 
 
 def normalize_files(files: Mapping[str, object] | None) -> RequestFiles | None:
+    """Normalize files."""
     if files is None:
         return None
     return {key: normalize_file_value(value) for key, value in files.items()}
 
 
 def normalize_file_value(value: object) -> FileValue:
+    """Normalize file value."""
     if isinstance(value, bytes | str | BytesIO):
         return value
     if isinstance(value, tuple):
@@ -189,6 +196,7 @@ def merge_headers(
 
 
 def build_user_agent(user_agent_suffix: str | None) -> str:
+    """Build user agent."""
     try:
         package_version = importlib_metadata.version("avito-py")
     except importlib_metadata.PackageNotFoundError:
@@ -212,6 +220,7 @@ def decide_transport_retry(
     is_timeout: bool,
     idempotency_key: str | None,
 ) -> RetryDecision:
+    """Decide transport retry."""
     if attempt >= retry_policy.max_attempts:
         return RetryDecision(False)
     if not retry_policy.retry_on_transport_error:
@@ -239,6 +248,7 @@ def decide_http_retry(
     response: httpx.Response,
     idempotency_key: str | None,
 ) -> RetryDecision:
+    """Decide http retry."""
     if attempt >= retry_policy.max_attempts:
         return RetryDecision(False)
     if not is_retryable_request(
@@ -273,6 +283,7 @@ def is_retryable_request(
     context: RequestContext,
     idempotency_key: str | None,
 ) -> bool:
+    """Return whether retryable request."""
     if context.retry_disabled:
         return False
     normalized_method = method.upper()
@@ -289,6 +300,7 @@ def map_http_error(
     operation: str | None = None,
     attempt: int | None = None,
 ) -> Exception:
+    """Map http error."""
     payload = safe_payload(response)
     message = extract_message(payload) or f"HTTP {response.status_code}"
     error_code = extract_error_code(payload)
@@ -332,6 +344,7 @@ def map_http_error(
 
 
 def safe_payload(response: httpx.Response) -> object:
+    """Return a safe payload."""
     content_type = response.headers.get("content-type", "")
     if "application/json" in content_type:
         try:
@@ -342,6 +355,7 @@ def safe_payload(response: httpx.Response) -> object:
 
 
 def extract_message(payload: object) -> str | None:
+    """Extract message."""
     if isinstance(payload, dict):
         for key in ("message", "error_description", "error", "detail"):
             value = payload.get(key)
@@ -353,6 +367,7 @@ def extract_message(payload: object) -> str | None:
 
 
 def extract_error_code(payload: object) -> str | None:
+    """Extract error code."""
     if not isinstance(payload, dict):
         return None
     value = payload.get("code") or payload.get("error")
@@ -360,6 +375,7 @@ def extract_error_code(payload: object) -> str | None:
 
 
 def extract_error_details(payload: object) -> object | None:
+    """Extract error details."""
     if not isinstance(payload, Mapping):
         return None
     for key in ("details", "fields", "errors", "violations"):
@@ -370,6 +386,7 @@ def extract_error_details(payload: object) -> object | None:
 
 
 def extract_request_id(headers: Mapping[str, str]) -> str | None:
+    """Extract request id."""
     for key in ("x-request-id", "x-correlation-id", "x-amzn-requestid"):
         value = headers.get(key)
         if value:
@@ -378,6 +395,7 @@ def extract_request_id(headers: Mapping[str, str]) -> str | None:
 
 
 def get_retry_after_seconds(headers: Mapping[str, str]) -> float:
+    """Return retry after seconds."""
     raw_value = headers.get("retry-after")
     if raw_value is None:
         return _MIN_RETRY_AFTER_SECONDS
@@ -394,10 +412,12 @@ def get_retry_after_seconds(headers: Mapping[str, str]) -> float:
 
 
 def elapsed_ms(started_at: float) -> int:
+    """Return elapsed ms."""
     return max(int((time.perf_counter() - started_at) * 1000), 0)
 
 
 def safe_endpoint(endpoint: str) -> str:
+    """Return a safe endpoint."""
     parsed = urlsplit(endpoint)
     if parsed.scheme or parsed.netloc:
         return parsed.path or "/"
@@ -405,6 +425,7 @@ def safe_endpoint(endpoint: str) -> str:
 
 
 def extract_filename(content_disposition: str | None) -> str | None:
+    """Extract filename."""
     if content_disposition is None:
         return None
     message = Message()
@@ -417,6 +438,7 @@ def extract_filename(content_disposition: str | None) -> str | None:
 
 
 def _get_header(headers: Mapping[str, str], name: str) -> str | None:
+    """Return header."""
     value = headers.get(name)
     if value is not None:
         return value

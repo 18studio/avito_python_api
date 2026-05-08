@@ -42,6 +42,7 @@ from avito.core.swagger import swagger_operation
 
 
 def _serialize_datetime(value: datetime) -> str:
+    """Serialize datetime."""
     return value.isoformat()
 
 
@@ -159,6 +160,7 @@ class AsyncAccount(AsyncDomainObject):
         """
 
         async def fetch_page(page: int | None, _cursor: str | None) -> JsonPage[OperationRecord]:
+            """Fetch one page of results."""
             result = await self._execute(
                 GET_OPERATIONS_HISTORY,
                 request=OperationsHistoryRequest(
@@ -176,6 +178,7 @@ class AsyncAccount(AsyncDomainObject):
         return AsyncPaginator(fetch_page).as_list(first_page=await fetch_page(1, None))
 
     async def _resolve_account_user_id(self, user_id: int | None) -> int:
+        """Resolve account user id."""
         if user_id is not None or self.user_id is not None:
             return await self._resolve_user_id(user_id or self.user_id)
         profile = await self.get_self()
@@ -373,6 +376,7 @@ class AsyncAccountHierarchy(AsyncDomainObject):
         """
 
         async def fetch_page(page: int | None, _cursor: str | None) -> JsonPage[EmployeeItem]:
+            """Fetch one page of results."""
             current_page = page or 1
             result = await self._execute(
                 LIST_ITEMS_BY_EMPLOYEE,

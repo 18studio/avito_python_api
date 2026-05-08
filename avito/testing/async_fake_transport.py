@@ -30,6 +30,7 @@ class AsyncFakeTransport:
         base_url: str = "https://api.avito.ru",
         fanout_recorder: FanoutPeakRecorder | None = None,
     ) -> None:
+        """Initialize AsyncFakeTransport."""
         self.base_url = base_url.rstrip("/")
         self.requests: list[RecordedRequest] = []
         self._routes: dict[tuple[str, str], deque[RouteResponder]] = {}
@@ -141,6 +142,7 @@ class AsyncFakeTransport:
         authenticated: bool,
         auth_settings: AuthSettings | None,
     ) -> tuple[AvitoSettings, AsyncAuthProvider | None, httpx.AsyncClient]:
+        """Build parts."""
         resolved_auth = auth_settings or AuthSettings(
             client_id="fake-client-id",
             client_secret="fake-client-secret",
@@ -180,6 +182,7 @@ class AsyncFakeTransport:
         return settings, auth_provider, http_client
 
     async def _handle(self, request: httpx.Request) -> httpx.Response:
+        """Handle handle."""
         if self._fanout_recorder is not None:
             await self._fanout_recorder.enter()
         try:
@@ -189,6 +192,7 @@ class AsyncFakeTransport:
                 await self._fanout_recorder.exit()
 
     async def _handle_recorded(self, request: httpx.Request) -> httpx.Response:
+        """Handle recorded."""
         async with self._handle_lock:
             recorded = RecordedRequest(
                 method=request.method.upper(),
@@ -215,6 +219,7 @@ class AsyncFakeTransport:
 
     @staticmethod
     def _decode_json(request: httpx.Request) -> JsonValue:
+        """Decode json."""
         if not request.content:
             return None
         try:
@@ -227,16 +232,19 @@ class FanoutPeakRecorder:
     """Считает пик одновременно выполняющихся async fake-запросов."""
 
     def __init__(self) -> None:
+        """Initialize FanoutPeakRecorder."""
         self._lock = asyncio.Lock()
         self._active = 0
         self.peak = 0
 
     async def enter(self) -> None:
+        """Record fan-out enter event."""
         async with self._lock:
             self._active += 1
             self.peak = max(self.peak, self._active)
 
     async def exit(self) -> None:
+        """Record fan-out exit event."""
         async with self._lock:
             self._active -= 1
 

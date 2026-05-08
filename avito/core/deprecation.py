@@ -30,6 +30,7 @@ def warn_deprecated_once(
     removal_version: str,
     deprecated_since: str,
 ) -> None:
+    """Run the warn deprecated once helper."""
     if symbol in _WARNED_SYMBOLS:
         return
     _WARNED_SYMBOLS.add(symbol)
@@ -51,6 +52,7 @@ def deprecated_method(
     removal_version: str,
     deprecated_since: str,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Run the deprecated method helper."""
     metadata = DeprecatedSdkSymbol(
         symbol=symbol,
         replacement=replacement,
@@ -59,9 +61,11 @@ def deprecated_method(
     )
 
     def decorate(method: Callable[P, R]) -> Callable[P, R]:
+        """Run the decorate helper."""
         if iscoroutinefunction(method):
             @wraps(method)
             async def async_wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+                """Run the async wrapped helper."""
                 warn_deprecated_once(
                     symbol=symbol,
                     replacement=replacement,
@@ -76,6 +80,7 @@ def deprecated_method(
 
         @wraps(method)
         def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+            """Run the wrapped helper."""
             warn_deprecated_once(
                 symbol=symbol,
                 replacement=replacement,

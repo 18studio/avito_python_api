@@ -25,6 +25,7 @@ class AsyncSwaggerFakeTransport(AsyncFakeTransport):
         registry: SwaggerRegistry,
         base_url: str = "https://api.avito.ru",
     ) -> None:
+        """Initialize AsyncSwaggerFakeTransport."""
         super().__init__(base_url=base_url)
         self.registry = registry
         self._sync_helper = SwaggerFakeTransport(registry=registry, base_url=base_url)
@@ -91,6 +92,7 @@ class AsyncSwaggerFakeTransport(AsyncFakeTransport):
         return await method(**self._build_arguments(binding.method_args, method))
 
     async def _handle_recorded(self, request: httpx.Request) -> httpx.Response:
+        """Handle recorded."""
         async with self._handle_lock:
             recorded = RecordedRequest(
                 method=request.method.upper(),
@@ -117,12 +119,14 @@ class AsyncSwaggerFakeTransport(AsyncFakeTransport):
         client: AsyncAvitoClient,
         binding: DiscoveredSwaggerBinding,
     ) -> object:
+        """Build target."""
         if binding.factory is None:
             raise AssertionError(f"Binding не содержит AsyncAvitoClient factory: {binding.sdk_method}")
         factory = getattr(client, binding.factory)
         return factory(**self._build_arguments(binding.factory_args, factory))
 
     def _build_auth_target(self, binding: DiscoveredSwaggerBinding) -> object:
+        """Build auth target."""
         settings = AuthSettings(
             client_id="fake-client-id",
             client_secret="fake-client-secret",
@@ -150,12 +154,15 @@ class AsyncSwaggerFakeTransport(AsyncFakeTransport):
         mapping: Mapping[str, str],
         callable_object: Callable[..., object],
     ) -> dict[str, object]:
+        """Build arguments."""
         return self._sync_helper._build_arguments(mapping, callable_object)
 
     def _match_route(self, request: RecordedRequest) -> SwaggerRoute:
+        """Match route."""
         return self._sync_helper._match_route(request)
 
     def _validate_request(self, operation: SwaggerOperation, request: RecordedRequest) -> None:
+        """Validate request."""
         self._sync_helper._validate_request(operation, request)
 
 

@@ -20,6 +20,7 @@ class AsyncRateLimiter:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
+        """Initialize AsyncRateLimiter."""
         self._clock = clock
         self._sleep = sleep
         self._state = RateLimitState.from_policy(policy, now=clock())

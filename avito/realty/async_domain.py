@@ -138,6 +138,7 @@ class AsyncRealtyListing(AsyncDomainObject):
         )
 
     def _require_item_id(self) -> str:
+        """Validate required item id."""
         if self.item_id is None:
             raise ValidationError("Для операции требуется `item_id`.")
         return str(self.item_id)
@@ -266,11 +267,13 @@ class AsyncRealtyBooking(AsyncDomainObject):
         )
 
     def _require_item_id(self) -> str:
+        """Validate required item id."""
         if self.item_id is None:
             raise ValidationError("Для операции требуется `item_id`.")
         return str(self.item_id)
 
     def _require_user_id(self) -> str:
+        """Validate required user id."""
         if self.user_id is None:
             raise ValidationError("Для операции требуется `user_id`.")
         return str(self.user_id)
@@ -339,11 +342,13 @@ class AsyncRealtyPricing(AsyncDomainObject):
         )
 
     def _require_item_id(self) -> str:
+        """Validate required item id."""
         if self.item_id is None:
             raise ValidationError("Для операции требуется `item_id`.")
         return str(self.item_id)
 
     def _require_user_id(self) -> str:
+        """Validate required user id."""
         if self.user_id is None:
             raise ValidationError("Для операции требуется `user_id`.")
         return str(self.user_id)
@@ -447,6 +452,7 @@ class AsyncRealtyAnalyticsReport(AsyncDomainObject):
         )
 
     def _require_item_id(self) -> str:
+        """Validate required item id."""
         if self.item_id is None:
             raise ValidationError("Для операции требуется `item_id`.")
         return str(self.item_id)

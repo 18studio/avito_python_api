@@ -224,11 +224,13 @@ class AsyncChat(AsyncDomainObject):
         )
 
     def _require_user_id(self) -> int:
+        """Validate required user id."""
         if self.user_id is None:
             raise ValidationError("Для операции требуется `user_id`.")
         return int(self.user_id)
 
     def _require_chat_id(self) -> str:
+        """Validate required chat id."""
         if self.chat_id is None:
             raise ValidationError("Для операции требуется `chat_id`.")
         return str(self.chat_id)
@@ -441,16 +443,19 @@ class AsyncChatMessage(AsyncDomainObject):
         )
 
     def _require_user_id(self) -> int:
+        """Validate required user id."""
         if self.user_id is None:
             raise ValidationError("Для операции требуется `user_id`.")
         return int(self.user_id)
 
     def _require_chat_id(self) -> str:
+        """Validate required chat id."""
         if self.chat_id is None:
             raise ValidationError("Для операции требуется `chat_id`.")
         return str(self.chat_id)
 
     def _require_message_id(self) -> str:
+        """Validate required message id."""
         if self.message_id is None:
             raise ValidationError("Для операции требуется `message_id`.")
         return str(self.message_id)
@@ -677,6 +682,7 @@ class AsyncChatMedia(AsyncDomainObject):
         )
 
     def _require_user_id(self) -> int:
+        """Validate required user id."""
         if self.user_id is None:
             raise ValidationError("Для операции требуется `user_id`.")
         return int(self.user_id)
@@ -901,6 +907,7 @@ class AsyncSpecialOfferCampaign(AsyncDomainObject):
         return await self._execute(GET_SPECIAL_OFFER_TARIFF_INFO, timeout=timeout, retry=retry)
 
     def _require_campaign_id(self) -> str:
+        """Validate required campaign id."""
         if self.campaign_id is None:
             raise ValidationError("Для операции требуется `campaign_id`.")
         return str(self.campaign_id)

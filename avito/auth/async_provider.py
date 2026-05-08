@@ -22,7 +22,9 @@ from avito.core.exceptions import AuthenticationError, ConfigurationError
 class AsyncTokenFetcher(Protocol):
     """Контракт async-получения нового access token из внешнего источника."""
 
-    async def __call__(self, settings: AuthSettings) -> TokenResponse: ...
+    async def __call__(self, settings: AuthSettings) -> TokenResponse:
+        """Fetch a token payload."""
+        ...
 
 
 @dataclass(slots=True)
@@ -116,6 +118,7 @@ class AsyncAuthProvider:
         return self._get_alternate_token_client()
 
     async def _fetch_token_response(self) -> TokenResponse:
+        """Fetch token response."""
         if self.token_fetcher is not None:
             token_response = await self.token_fetcher(self.settings)
             if isinstance(token_response, AccessToken):
@@ -148,6 +151,7 @@ class AsyncAuthProvider:
         )
 
     def _get_token_client(self) -> AsyncTokenClient:
+        """Return token client."""
         if self.token_client is None:
             self.token_client = AsyncTokenClient(self.settings)
         if self.token_client is None:
@@ -155,6 +159,7 @@ class AsyncAuthProvider:
         return self.token_client
 
     def _get_alternate_token_client(self) -> AsyncAlternateTokenClient:
+        """Return alternate token client."""
         if self.alternate_token_client is None:
             self.alternate_token_client = AsyncAlternateTokenClient(self.settings)
         if self.alternate_token_client is None:
@@ -162,6 +167,7 @@ class AsyncAuthProvider:
         return self.alternate_token_client
 
     def _get_autoteka_token_client(self) -> AsyncTokenClient:
+        """Return autoteka token client."""
         if self.autoteka_token_client is None:
             self.autoteka_token_client = AsyncTokenClient(
                 self.settings,
@@ -172,11 +178,13 @@ class AsyncAuthProvider:
         return self.autoteka_token_client
 
     def _require_client_id(self) -> str:
+        """Validate required client id."""
         if self.settings.client_id is None:
             raise AuthenticationError("Для OAuth flow не задан `client_id`.")
         return self.settings.client_id
 
     def _require_client_secret(self) -> str:
+        """Validate required client secret."""
         if self.settings.client_secret is None:
             raise AuthenticationError("Для OAuth flow не задан `client_secret`.")
         return self.settings.client_secret

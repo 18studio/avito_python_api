@@ -99,6 +99,7 @@ def _preview_result(
     target: Mapping[str, object],
     request_payload: Mapping[str, object],
 ) -> PromotionActionResult:
+    """Build result."""
     return PromotionActionResult(
         action=action,
         target=dict(target),
@@ -110,6 +111,7 @@ def _preview_result(
 
 
 def _validate_optional_datetime(name: str, value: datetime | None) -> None:
+    """Validate optional datetime."""
     if value is not None and not isinstance(value, datetime):
         raise ValidationError(f"`{name}` должен быть datetime.")
 
@@ -432,6 +434,7 @@ class AsyncBbipPromotion(AsyncDomainObject):
         )
 
     def _resource_item_ids(self) -> list[int]:
+        """Run the resource item ids helper."""
         if self.item_id is None:
             raise ValidationError("Для операции требуется `item_id` или список `item_ids`.")
         return [int(self.item_id)]
@@ -613,6 +616,7 @@ class AsyncTrxPromotion(AsyncDomainObject):
         )
 
     def _resource_item_ids(self) -> list[int]:
+        """Run the resource item ids helper."""
         if self.item_id is None:
             raise ValidationError("Для операции требуется `item_id` или список `item_ids`.")
         return [int(self.item_id)]
@@ -1033,6 +1037,7 @@ class AsyncTargetActionPricing(AsyncDomainObject):
         )
 
     def _require_item_id(self) -> int:
+        """Validate required item id."""
         if self.item_id is None:
             raise ValidationError("Для операции требуется `item_id`.")
         return int(self.item_id)
@@ -1446,6 +1451,7 @@ class AsyncAutostrategyCampaign(AsyncDomainObject):
         )
 
     def _require_campaign_id(self) -> int:
+        """Validate required campaign id."""
         if self.campaign_id is None:
             raise ValidationError("Для операции требуется `campaign_id`.")
         return int(self.campaign_id)

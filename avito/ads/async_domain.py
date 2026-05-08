@@ -95,6 +95,7 @@ def _preview_result(
     target: dict[str, object],
     request_payload: dict[str, object],
 ) -> PromotionActionResult:
+    """Build result."""
     return PromotionActionResult(
         action=action,
         target=target,
@@ -109,10 +110,12 @@ StatsDate = DateInput
 
 
 def _serialize_stats_date(value: StatsDate) -> str:
+    """Serialize stats date."""
     return serialize_iso_date("date", value)
 
 
 def _bounded_total(total: int | None, max_items: int | None) -> int | None:
+    """Return bounded total."""
     if max_items is None:
         return total
     if total is None:
@@ -129,6 +132,7 @@ def _has_next_ads_page(
     max_items: int | None,
     already_collected: int,
 ) -> bool:
+    """Return whether next ads page."""
     if page_item_count == 0 or page_size <= 0:
         return False
     if max_items is not None and already_collected + collected_count >= max_items:
@@ -331,6 +335,7 @@ class AsyncAd(AsyncDomainObject):
         max_items: int | None,
         first_page_number: int,
     ) -> JsonPage[Listing]:
+        """Fetch ads page."""
         if page is None:
             raise ValidationError("Для операции требуется `page`.")
 
@@ -366,11 +371,13 @@ class AsyncAd(AsyncDomainObject):
         )
 
     def _require_item_id(self) -> int:
+        """Validate required item id."""
         if self.item_id is None:
             raise ValidationError("Для операции требуется `item_id`.")
         return int(self.item_id)
 
     async def _require_ids(self) -> tuple[int, int]:
+        """Validate required ids."""
         if self.item_id is None:
             raise ValidationError("Для операции требуется `item_id`.")
         return int(self.item_id), await self._resolve_user_id(self.user_id)
@@ -625,6 +632,7 @@ class AsyncAdStats(AsyncDomainObject):
         )
 
     async def _require_user_id(self) -> int:
+        """Validate required user id."""
         return await self._resolve_user_id(self.user_id)
 
 
@@ -872,14 +880,17 @@ class AsyncAdPromotion(AsyncDomainObject):
         )
 
     def _require_item_id(self) -> int:
+        """Validate required item id."""
         if self.item_id is None:
             raise ValidationError("Для операции требуется `item_id`.")
         return int(self.item_id)
 
     async def _require_user_id(self) -> int:
+        """Validate required user id."""
         return await self._resolve_user_id(self.user_id)
 
     async def _require_ids(self) -> tuple[int, int]:
+        """Validate required ids."""
         return self._require_item_id(), await self._require_user_id()
 
 
@@ -1184,6 +1195,7 @@ class AsyncAutoloadReport(AsyncDomainObject):
         async def fetch_page(
             page: int | None, _cursor: str | None
         ) -> JsonPage[AutoloadReportSummary]:
+            """Fetch one page of results."""
             current_page = page or 1
             current_offset = base_offset + (current_page - 1) * page_size
             result = await self._execute(
@@ -1416,6 +1428,7 @@ class AsyncAutoloadReport(AsyncDomainObject):
         )
 
     def _require_report_id(self) -> int:
+        """Validate required report id."""
         if self.report_id is None:
             raise ValidationError("Для операции требуется `report_id`.")
         return int(self.report_id)
@@ -1619,6 +1632,7 @@ class AsyncAutoloadArchive(AsyncDomainObject):
         )
 
     def _require_report_id(self) -> int:
+        """Validate required report id."""
         if self.report_id is None:
             raise ValidationError("Для операции требуется `report_id`.")
         return int(self.report_id)

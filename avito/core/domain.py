@@ -134,6 +134,7 @@ class AsyncDomainObject:
 
 
 def _extract_user_id(payload: object) -> int | None:
+    """Extract user id."""
     if not isinstance(payload, dict):
         return None
     for key in ("id", "user_id", "userId"):

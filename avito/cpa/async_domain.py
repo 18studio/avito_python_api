@@ -365,6 +365,7 @@ class AsyncCpaChat(AsyncDomainObject):
         )
 
     def _require_action_id(self) -> str:
+        """Validate required action id."""
         if self.action_id is None:
             raise ValidationError("Для операции требуется `action_id`.")
         return str(self.action_id)
@@ -634,6 +635,7 @@ class AsyncCpaArchive(AsyncDomainObject):
         )
 
     def _require_call_id(self) -> str:
+        """Validate required call id."""
         if self.call_id is None:
             raise ValidationError("Для операции требуется `call_id`.")
         return str(self.call_id)
@@ -784,6 +786,7 @@ class AsyncCallTrackingCall(AsyncDomainObject):
         )
 
     def _require_call_id(self) -> str:
+        """Validate required call id."""
         if self.call_id is None:
             raise ValidationError("Для операции требуется `call_id`.")
         return str(self.call_id)

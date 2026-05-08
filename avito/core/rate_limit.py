@@ -20,6 +20,7 @@ class RateLimiter:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        """Initialize RateLimiter."""
         self._state = RateLimitState.from_policy(policy, now=clock())
         self._clock = clock
         self._sleep = sleep
@@ -43,6 +44,7 @@ class RateLimiter:
             self._state.observe_response(now=self._clock(), headers=headers)
 
     def _reserve_or_delay(self) -> float:
+        """Run the reserve or delay helper."""
         with self._lock:
             return self._state.compute_delay(self._clock())
 

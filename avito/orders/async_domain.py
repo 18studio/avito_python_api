@@ -670,6 +670,7 @@ class AsyncOrderLabel(AsyncDomainObject):
         return LabelPdfResult(binary=binary)
 
     def _require_task_id(self) -> str:
+        """Validate required task id."""
         if self.task_id is None:
             raise ValidationError("Для операции требуется `task_id`.")
         return str(self.task_id)
@@ -2165,6 +2166,7 @@ class AsyncDeliveryTask(AsyncDomainObject):
         )
 
     def _require_task_id(self) -> str:
+        """Validate required task id."""
         if self.task_id is None:
             raise ValidationError("Для операции требуется `task_id`.")
         return str(self.task_id)

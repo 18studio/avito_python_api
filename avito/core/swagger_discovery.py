@@ -47,6 +47,7 @@ class DiscoveredSwaggerBinding:
 
     @property
     def sdk_method(self) -> str:
+        """Run the sdk method helper."""
         return f"{self.module}.{self.class_name}.{self.method_name}"
 
 
@@ -59,6 +60,7 @@ class SwaggerBindingDiscovery:
 
     @property
     def canonical_map(self) -> Mapping[str, DiscoveredSwaggerBinding]:
+        """Run the canonical map helper."""
         mapped = {
             binding.operation_key: binding
             for binding in self.bindings
@@ -70,6 +72,7 @@ class SwaggerBindingDiscovery:
     def canonical_map_by_variant(
         self,
     ) -> Mapping[Literal["sync", "async"], Mapping[str, DiscoveredSwaggerBinding]]:
+        """Run the canonical map by variant helper."""
         mapped: dict[Literal["sync", "async"], dict[str, DiscoveredSwaggerBinding]] = {
             "sync": {},
             "async": {},
@@ -120,6 +123,7 @@ def discover_swagger_bindings(
 
 
 def _iter_domain_modules(package: ModuleType, package_name: str) -> tuple[ModuleType, ...]:
+    """Run the iter domain modules helper."""
     package_paths = getattr(package, "__path__", None)
     if package_paths is None:
         return ()
@@ -140,6 +144,7 @@ def _discover_module_bindings(
     module: ModuleType,
     registry: SwaggerRegistry | None,
 ) -> tuple[tuple[DiscoveredSwaggerBinding, ...], tuple[str, ...]]:
+    """Run the discover module bindings helper."""
     bindings: list[DiscoveredSwaggerBinding] = []
     legacy_binding_methods: list[str] = []
     for _, cls in inspect.getmembers(module, inspect.isclass):
@@ -170,6 +175,7 @@ def _discover_module_bindings(
 
 
 def _is_discoverable_binding_class(cls: type[object]) -> bool:
+    """Return whether discoverable binding class."""
     if issubclass(cls, DomainObject) and cls is not DomainObject:
         return True
     if issubclass(cls, AsyncDomainObject) and cls is not AsyncDomainObject:
@@ -178,6 +184,7 @@ def _is_discoverable_binding_class(cls: type[object]) -> bool:
 
 
 def _method_binding(func: object) -> SwaggerOperationBinding | None:
+    """Run the method binding helper."""
     raw_binding = getattr(func, "__swagger_binding__", None)
     if isinstance(raw_binding, SwaggerOperationBinding):
         return raw_binding
@@ -192,6 +199,7 @@ def _build_effective_binding(
     binding: SwaggerOperationBinding,
     registry: SwaggerRegistry | None,
 ) -> DiscoveredSwaggerBinding:
+    """Build effective binding."""
     method = normalize_swagger_method(binding.method)
     path = normalize_swagger_path(binding.path)
     spec = binding.spec or _optional_string(getattr(cls, "__swagger_spec__", None))
@@ -225,6 +233,7 @@ def _operation_by_key(
     operations: tuple[SwaggerOperation, ...],
     operation_key: str,
 ) -> SwaggerOperation | None:
+    """Run the operation by key helper."""
     for operation in operations:
         if operation.key == operation_key:
             return operation
@@ -235,6 +244,7 @@ def _filter_factory_args_for_operation(
     factory_args: Mapping[str, str],
     operation: SwaggerOperation | None,
 ) -> Mapping[str, str]:
+    """Run the filter factory args for operation helper."""
     if operation is None or not factory_args:
         return factory_args
     parameter_names = {
@@ -257,6 +267,7 @@ def _resolve_spec(
     method: str,
     path: str,
 ) -> str | None:
+    """Resolve spec."""
     matches = [
         operation.spec
         for operation in operations
@@ -266,10 +277,12 @@ def _resolve_spec(
 
 
 def _optional_string(value: object) -> str | None:
+    """Run the optional string helper."""
     return value if isinstance(value, str) and value else None
 
 
 def _optional_mapping(value: object) -> Mapping[str, str]:
+    """Run the optional mapping helper."""
     if value is None:
         return _EMPTY_MAPPING
     if not isinstance(value, Mapping):

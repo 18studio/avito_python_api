@@ -76,6 +76,7 @@ class Transport:
         client: httpx.Client | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        """Initialize Transport."""
         self._settings = settings
         self._auth_provider = auth_provider
         self._retry_policy = settings.retry_policy
@@ -365,6 +366,7 @@ class Transport:
         )
 
     def _normalize_path(self, path: str) -> str:
+        """Normalize path."""
         stripped = path.strip()
         if not stripped:
             return "/"
@@ -380,6 +382,7 @@ class Transport:
         return normalized
 
     def _normalize_params(self, params: Mapping[str, object] | None) -> QueryParams | None:
+        """Normalize params."""
         if params is None:
             return None
         normalized: dict[str, QueryParamValue] = {}
@@ -393,16 +396,19 @@ class Transport:
         return normalized
 
     def _normalize_query_scalar(self, value: object) -> QueryScalar:
+        """Normalize query scalar."""
         if isinstance(value, str | int | float | bool):
             return value
         return str(value)
 
     def _normalize_files(self, files: Mapping[str, object] | None) -> RequestFiles | None:
+        """Normalize files."""
         if files is None:
             return None
         return {key: self._normalize_file_value(value) for key, value in files.items()}
 
     def _normalize_file_value(self, value: object) -> FileValue:
+        """Normalize file value."""
         if isinstance(value, bytes | str | BytesIO):
             return value
         if isinstance(value, tuple):
@@ -417,6 +423,7 @@ class Transport:
         idempotency_key: str | None,
         bearer_token: str | None,
     ) -> dict[str, str]:
+        """Run the merge headers helper."""
         return shared.merge_headers(
             context=context,
             headers=headers,
@@ -426,6 +433,7 @@ class Transport:
         )
 
     def _build_user_agent(self) -> str:
+        """Build user agent."""
         try:
             package_version = importlib_metadata.version("avito-py")
         except importlib_metadata.PackageNotFoundError:
@@ -448,6 +456,7 @@ class Transport:
         is_timeout: bool,
         idempotency_key: str | None,
     ) -> RetryDecision:
+        """Decide transport retry."""
         if attempt >= self._retry_policy.max_attempts:
             return RetryDecision(False)
         if not self._retry_policy.retry_on_transport_error:
@@ -473,6 +482,7 @@ class Transport:
         response: httpx.Response,
         idempotency_key: str | None,
     ) -> RetryDecision:
+        """Decide http retry."""
         if attempt >= self._retry_policy.max_attempts:
             return RetryDecision(False)
         if not self._is_retryable_request(
@@ -505,6 +515,7 @@ class Transport:
         context: RequestContext,
         idempotency_key: str | None,
     ) -> bool:
+        """Return whether retryable request."""
         if context.retry_disabled:
             return False
         normalized_method = method.upper()
@@ -528,6 +539,7 @@ class Transport:
         operation: str | None = None,
         attempt: int | None = None,
     ) -> Exception:
+        """Map http error."""
         payload = self._safe_payload(response)
         message = self._extract_message(payload) or f"HTTP {response.status_code}"
         error_code = self._extract_error_code(payload)
@@ -657,6 +669,7 @@ class Transport:
         )
 
     def _safe_payload(self, response: httpx.Response) -> object:
+        """Return a safe payload."""
         content_type = response.headers.get("content-type", "")
         if "application/json" in content_type:
             try:
@@ -666,6 +679,7 @@ class Transport:
         return response.text
 
     def _extract_message(self, payload: object) -> str | None:
+        """Extract message."""
         if isinstance(payload, dict):
             for key in ("message", "error_description", "error", "detail"):
                 value = payload.get(key)
@@ -676,12 +690,14 @@ class Transport:
         return None
 
     def _extract_error_code(self, payload: object) -> str | None:
+        """Extract error code."""
         if not isinstance(payload, dict):
             return None
         value = payload.get("code") or payload.get("error")
         return value if isinstance(value, str) else None
 
     def _extract_error_details(self, payload: object) -> object | None:
+        """Extract error details."""
         if not isinstance(payload, Mapping):
             return None
         for key in ("details", "fields", "errors", "violations"):
@@ -691,6 +707,7 @@ class Transport:
         return None
 
     def _extract_request_id(self, headers: Mapping[str, str]) -> str | None:
+        """Extract request id."""
         for key in ("x-request-id", "x-correlation-id", "x-amzn-requestid"):
             value = headers.get(key)
             if value:
@@ -698,6 +715,7 @@ class Transport:
         return None
 
     def _get_retry_after_seconds(self, headers: Mapping[str, str]) -> float:
+        """Return retry after seconds."""
         raw_value = headers.get("retry-after")
         if raw_value is None:
             return _MIN_RETRY_AFTER_SECONDS
@@ -722,6 +740,7 @@ class Transport:
         status: int | None,
         decision: RetryDecision,
     ) -> None:
+        """Log retry."""
         _LOGGER.info(
             "transport retry",
             extra={
@@ -746,6 +765,7 @@ class Transport:
         latency_ms: int,
         request_id: str | None,
     ) -> None:
+        """Log http exchange."""
         _LOGGER.debug(
             "transport http exchange",
             extra={
@@ -760,15 +780,18 @@ class Transport:
         )
 
     def _elapsed_ms(self, started_at: float) -> int:
+        """Return elapsed ms."""
         return max(int((time.perf_counter() - started_at) * 1000), 0)
 
     def _safe_endpoint(self, endpoint: str) -> str:
+        """Return a safe endpoint."""
         parsed = urlsplit(endpoint)
         if parsed.scheme or parsed.netloc:
             return parsed.path or "/"
         return endpoint
 
     def _extract_filename(self, content_disposition: str | None) -> str | None:
+        """Extract filename."""
         if content_disposition is None:
             return None
         message = Message()

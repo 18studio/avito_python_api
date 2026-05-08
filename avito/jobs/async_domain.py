@@ -632,6 +632,7 @@ class AsyncVacancy(AsyncDomainObject):
         )
 
     def _require_vacancy_id(self) -> str:
+        """Validate required vacancy id."""
         if self.vacancy_id is None:
             raise ValidationError("Для операции требуется идентификатор вакансии.")
         return str(self.vacancy_id)
@@ -975,6 +976,7 @@ class AsyncResume(AsyncDomainObject):
         )
 
     def _require_resume_id(self) -> str:
+        """Validate required resume id."""
         if self.resume_id is None:
             raise ValidationError("Для операции требуется `resume_id`.")
         return str(self.resume_id)
@@ -1211,6 +1213,7 @@ class AsyncJobDictionary(AsyncDomainObject):
         )
 
     def _require_dictionary_id(self) -> str:
+        """Validate required dictionary id."""
         if self.dictionary_id is None:
             raise ValidationError("Для операции требуется `dictionary_id`.")
         return str(self.dictionary_id)

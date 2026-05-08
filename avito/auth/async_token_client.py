@@ -86,6 +86,7 @@ class AsyncTokenClient:
         return await self._request_token(payload)
 
     async def _request_token(self, payload: dict[str, str]) -> TokenResponse:
+        """Run the request token helper."""
         from avito.core.async_transport import AsyncTransport
 
         transport = AsyncTransport(

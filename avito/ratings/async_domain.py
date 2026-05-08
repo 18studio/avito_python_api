@@ -179,6 +179,7 @@ class AsyncReviewAnswer(AsyncDomainObject):
         )
 
     def _require_answer_id(self) -> str:
+        """Validate required answer id."""
         if self.answer_id is None:
             raise ValidationError("Для операции требуется `answer_id`.")
         return str(self.answer_id)

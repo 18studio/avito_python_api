@@ -66,6 +66,7 @@ from avito.core.swagger import swagger_operation
 
 
 async def _autoteka_headers(transport: AsyncTransport) -> dict[str, str]:
+    """Run the autoteka headers helper."""
     auth_provider = transport.auth_provider
     if auth_provider is None:
         return {}
@@ -598,6 +599,7 @@ class AsyncAutotekaVehicle(AsyncDomainObject):
         )
 
     def _require_vehicle_id(self, field_name: str) -> str:
+        """Validate required vehicle id."""
         if self.vehicle_id is None:
             raise ValidationError(f"Для операции требуется `{field_name}`.")
         return str(self.vehicle_id)
@@ -896,6 +898,7 @@ class AsyncAutotekaReport(AsyncDomainObject):
         )
 
     def _require_report_id(self) -> str:
+        """Validate required report id."""
         if self.report_id is None:
             raise ValidationError("Для операции требуется `report_id`.")
         return str(self.report_id)
@@ -1174,6 +1177,7 @@ class AsyncAutotekaScoring(AsyncDomainObject):
         )
 
     def _require_scoring_id(self) -> str:
+        """Validate required scoring id."""
         if self.scoring_id is None:
             raise ValidationError("Для операции требуется `scoring_id`.")
         return str(self.scoring_id)

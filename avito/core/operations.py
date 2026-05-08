@@ -156,6 +156,7 @@ class OperationExecutor:
     """Execute operation specs through the shared transport layer."""
 
     def __init__(self, transport: OperationTransport) -> None:
+        """Initialize OperationExecutor."""
         self._transport = transport
 
     def execute(
@@ -240,6 +241,7 @@ class AsyncOperationExecutor:
     """Execute operation specs through the async transport layer."""
 
     def __init__(self, transport: AsyncOperationTransport) -> None:
+        """Initialize AsyncOperationExecutor."""
         self._transport = transport
 
     async def execute(
@@ -330,6 +332,7 @@ def _serialize_query[SpecResponseT](
     spec: OperationSpec[SpecResponseT],
     query: object | Mapping[str, object] | None,
 ) -> Mapping[str, object] | None:
+    """Serialize query."""
     if query is None:
         return None
     if isinstance(query, RequestModel):
@@ -345,6 +348,7 @@ def _serialize_request[SpecResponseT](
     spec: OperationSpec[SpecResponseT],
     request: object | Mapping[str, object] | None,
 ) -> object | None:
+    """Serialize request."""
     if request is None:
         return None
     if isinstance(request, RequestModel):
@@ -360,6 +364,7 @@ def _merge_content_type(
     headers: Mapping[str, str] | None,
     content_type: str | None,
 ) -> Mapping[str, str] | None:
+    """Run the merge content type helper."""
     if content_type is None:
         return headers
     merged = dict(headers or {})
@@ -377,6 +382,7 @@ def _request_binary[SpecResponseT](
     headers: Mapping[str, str] | None,
     idempotency_key: str | None,
 ) -> BinaryResponse:
+    """Run the request binary helper."""
     response = transport.request(
         spec.method,
         path,
@@ -404,6 +410,7 @@ async def _request_binary_async[SpecResponseT](
     headers: Mapping[str, str] | None,
     idempotency_key: str | None,
 ) -> BinaryResponse:
+    """Run the request binary async helper."""
     response = await transport.request(
         spec.method,
         path,
@@ -422,6 +429,7 @@ async def _request_binary_async[SpecResponseT](
 
 
 def _extract_filename(content_disposition: str | None) -> str | None:
+    """Extract filename."""
     if content_disposition is None:
         return None
     message = Message()

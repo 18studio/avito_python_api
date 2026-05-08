@@ -18,17 +18,21 @@ class TokenCache:
     autoteka_access_token: AccessToken | None = None
 
     def access_is_fresh(self, now: datetime) -> bool:
+        """Return whether the cached access token is still fresh."""
         return self.access_token is not None and not self.access_token.is_expired(now)
 
     def autoteka_is_fresh(self, now: datetime) -> bool:
+        """Return whether the cached Autoteka token is still fresh."""
         return self.autoteka_access_token is not None and not self.autoteka_access_token.is_expired(
             now
         )
 
     def reset_access(self) -> None:
+        """Clear the cached access token."""
         self.access_token = None
 
     def reset_autoteka(self) -> None:
+        """Clear the cached Autoteka token."""
         self.autoteka_access_token = None
 
 
