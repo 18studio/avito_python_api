@@ -9,9 +9,9 @@ import pkgutil
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType, ModuleType
-from typing import cast
+from typing import Literal, cast
 
-from avito.core.domain import DomainObject
+from avito.core.domain import AsyncDomainObject, DomainObject
 from avito.core.swagger import SwaggerOperationBinding
 from avito.core.swagger_registry import (
     SwaggerOperation,
@@ -22,7 +22,7 @@ from avito.core.swagger_registry import (
 
 _EMPTY_MAPPING: Mapping[str, str] = MappingProxyType({})
 _IGNORED_PACKAGES = frozenset({"auth", "core", "summary", "testing"})
-_NON_DOMAIN_BINDING_MODULES = ("avito.auth.provider",)
+_NON_DOMAIN_BINDING_MODULES = ("avito.auth.provider", "avito.auth.async_token_client")
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +43,7 @@ class DiscoveredSwaggerBinding:
     method_args: Mapping[str, str] = field(default_factory=lambda: _EMPTY_MAPPING)
     deprecated: bool = False
     legacy: bool = False
+    variant: Literal["sync", "async"] = "sync"
 
     @property
     def sdk_method(self) -> str:
@@ -61,9 +62,37 @@ class SwaggerBindingDiscovery:
         mapped = {
             binding.operation_key: binding
             for binding in self.bindings
-            if binding.operation_key is not None
+            if binding.operation_key is not None and binding.variant == "sync"
         }
         return MappingProxyType(mapped)
+
+    @property
+    def canonical_map_by_variant(
+        self,
+    ) -> Mapping[Literal["sync", "async"], Mapping[str, DiscoveredSwaggerBinding]]:
+        mapped: dict[Literal["sync", "async"], dict[str, DiscoveredSwaggerBinding]] = {
+            "sync": {},
+            "async": {},
+        }
+        for binding in self.bindings:
+            if binding.operation_key is not None:
+                mapped[binding.variant][binding.operation_key] = binding
+        return MappingProxyType(
+            {
+                "sync": MappingProxyType(mapped["sync"]),
+                "async": MappingProxyType(mapped["async"]),
+            }
+        )
+
+    def binding_for(
+        self,
+        operation_key: str,
+        *,
+        variant: Literal["sync", "async"] = "sync",
+    ) -> DiscoveredSwaggerBinding | None:
+        """Return discovered binding by operation key and surface variant."""
+
+        return self.canonical_map_by_variant[variant].get(operation_key)
 
 
 def discover_swagger_bindings(
@@ -99,10 +128,11 @@ def _iter_domain_modules(package: ModuleType, package_name: str) -> tuple[Module
     for module_info in pkgutil.iter_modules(package_paths):
         if not module_info.ispkg or module_info.name in _IGNORED_PACKAGES:
             continue
-        module_name = f"{package_name}.{module_info.name}.domain"
-        if importlib.util.find_spec(module_name) is None:
-            continue
-        modules.append(importlib.import_module(module_name))
+        for suffix in ("domain", "async_domain"):
+            module_name = f"{package_name}.{module_info.name}.{suffix}"
+            if importlib.util.find_spec(module_name) is None:
+                continue
+            modules.append(importlib.import_module(module_name))
     return tuple(modules)
 
 
@@ -141,6 +171,8 @@ def _discover_module_bindings(
 
 def _is_discoverable_binding_class(cls: type[object]) -> bool:
     if issubclass(cls, DomainObject) and cls is not DomainObject:
+        return True
+    if issubclass(cls, AsyncDomainObject) and cls is not AsyncDomainObject:
         return True
     return _optional_string(getattr(cls, "__swagger_domain__", None)) is not None
 
@@ -185,6 +217,7 @@ def _build_effective_binding(
         method_args=binding.method_args,
         deprecated=binding.deprecated,
         legacy=binding.legacy,
+        variant=binding.variant,
     )
 
 

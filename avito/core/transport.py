@@ -17,6 +17,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
+from avito.core import _transport_shared as shared
 from avito.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
@@ -61,12 +62,7 @@ _LOGGER = logging.getLogger("avito.transport")
 def build_httpx_timeout(timeouts: ApiTimeouts) -> httpx.Timeout:
     """Преобразует SDK-конфигурацию таймаутов в `httpx.Timeout`."""
 
-    return httpx.Timeout(
-        connect=timeouts.connect,
-        read=timeouts.read,
-        write=timeouts.write,
-        pool=timeouts.pool,
-    )
+    return shared.build_httpx_timeout(timeouts)
 
 
 class Transport:
@@ -134,10 +130,16 @@ class Transport:
         """Выполняет запрос и возвращает успешный `httpx.Response`."""
 
         normalized_path = self._normalize_path(path)
+        bearer_token = (
+            self._auth_provider.get_access_token()
+            if context.requires_auth and self._auth_provider is not None
+            else None
+        )
         request_headers = self._merge_headers(
             context=context,
             headers=headers,
             idempotency_key=idempotency_key,
+            bearer_token=bearer_token,
         )
         timeout = build_httpx_timeout(context.timeout or self._settings.timeouts)
         attempt = 0
@@ -413,19 +415,15 @@ class Transport:
         context: RequestContext,
         headers: Mapping[str, str] | None,
         idempotency_key: str | None,
+        bearer_token: str | None,
     ) -> dict[str, str]:
-        merged: dict[str, str] = {
-            "Accept": "application/json",
-            "User-Agent": self._user_agent,
-        }
-        merged.update(dict(context.headers))
-        if headers is not None:
-            merged.update(dict(headers))
-        if idempotency_key is not None:
-            merged["Idempotency-Key"] = idempotency_key
-        if context.requires_auth and self._auth_provider is not None:
-            merged["Authorization"] = f"Bearer {self._auth_provider.get_access_token()}"
-        return merged
+        return shared.merge_headers(
+            context=context,
+            headers=headers,
+            idempotency_key=idempotency_key,
+            user_agent=self._user_agent,
+            bearer_token=bearer_token,
+        )
 
     def _build_user_agent(self) -> str:
         try:

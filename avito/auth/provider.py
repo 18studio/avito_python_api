@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Protocol
 
 import httpx
 
+from avito.auth._cache import TokenCache, map_token_response
 from avito.auth.models import (
     AccessToken,
     ClientCredentialsRequest,
@@ -20,7 +21,6 @@ from avito.core.exceptions import (
     AuthenticationError,
     AvitoError,
     ConfigurationError,
-    ResponseMappingError,
 )
 from avito.core.swagger import swagger_operation
 from avito.core.transport import Transport
@@ -32,36 +32,7 @@ REFRESH_TOKEN_GRANT = "refresh_token"
 _UNSET = object()
 
 
-def _map_token_response(payload: object, *, now: datetime | None = None) -> TokenResponse:
-    if not isinstance(payload, dict):
-        raise ResponseMappingError("OAuth-ответ должен быть JSON-объектом.", payload=payload)
-
-    access_token = payload.get("access_token")
-    if not isinstance(access_token, str) or not access_token:
-        raise ResponseMappingError("В OAuth-ответе отсутствует `access_token`.", payload=payload)
-
-    raw_expires_in = payload.get("expires_in", 0)
-    if not isinstance(raw_expires_in, int | float) or isinstance(raw_expires_in, bool):
-        raise ResponseMappingError("Поле `expires_in` должно быть числом.", payload=payload)
-
-    refresh_token = payload.get("refresh_token")
-    if refresh_token is not None and not isinstance(refresh_token, str):
-        raise ResponseMappingError("Поле `refresh_token` должно быть строкой.", payload=payload)
-
-    token_type = payload.get("token_type", "Bearer")
-    if not isinstance(token_type, str):
-        raise ResponseMappingError("Поле `token_type` должно быть строкой.", payload=payload)
-
-    issued_at = now or datetime.now(UTC)
-    return TokenResponse(
-        access_token=AccessToken(
-            value=access_token,
-            expires_at=issued_at + timedelta(seconds=raw_expires_in),
-            token_type=token_type,
-        ),
-        refresh_token=refresh_token,
-        scope=payload.get("scope") if isinstance(payload.get("scope"), str) else None,
-    )
+_map_token_response = map_token_response
 
 
 class TokenFetcher(Protocol):
@@ -79,9 +50,37 @@ class AuthProvider:
     alternate_token_client: AlternateTokenClient | None = None
     autoteka_token_client: TokenClient | None = None
     token_fetcher: TokenFetcher | None = None
-    _access_token: AccessToken | None = field(default=None, init=False, repr=False)
-    _refresh_token: str | None = field(default=None, init=False, repr=False)
-    _autoteka_access_token: AccessToken | None = field(default=None, init=False, repr=False)
+    _cache: TokenCache = field(default_factory=TokenCache, init=False, repr=False)
+
+    @property
+    def _access_token(self) -> AccessToken | None:
+        """Legacy private accessor kept for existing tests."""
+
+        return self._cache.access_token
+
+    @_access_token.setter
+    def _access_token(self, value: AccessToken | None) -> None:
+        self._cache.access_token = value
+
+    @property
+    def _refresh_token(self) -> str | None:
+        """Legacy private accessor kept for existing tests."""
+
+        return self._cache.refresh_token
+
+    @_refresh_token.setter
+    def _refresh_token(self, value: str | None) -> None:
+        self._cache.refresh_token = value
+
+    @property
+    def _autoteka_access_token(self) -> AccessToken | None:
+        """Legacy private accessor kept for existing tests."""
+
+        return self._cache.autoteka_access_token
+
+    @_autoteka_access_token.setter
+    def _autoteka_access_token(self, value: AccessToken | None) -> None:
+        self._cache.autoteka_access_token = value
 
     def get_access_token(self) -> str:
         """Возвращает валидный access token, обновляя кэш при необходимости."""

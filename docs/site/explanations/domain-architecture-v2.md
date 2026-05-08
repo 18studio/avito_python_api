@@ -1,8 +1,9 @@
 # Целевая структура доменов
 
 Эта страница фиксирует архитектуру доменных пакетов SDK. Все API-домены SDK
-используют v2 layout: публичные методы находятся в `domain.py`, HTTP-контракты
-в `operations.py` или `operations/`, а модели, enum-ы и payload mapping
+используют v2 layout: публичные sync-методы находятся в `domain.py`, async-зеркало
+портированных классов находится в `async_domain.py`, HTTP-контракты в
+`operations.py` или `operations/`, а модели, enum-ы и payload mapping
 принадлежат `models.py` или `models/`.
 
 ## Основной принцип
@@ -27,6 +28,7 @@ API-доменов. Domain-level `client.py`, `mappers.py` и standalone `enums.
 avito/ratings/
   __init__.py
   domain.py
+  async_domain.py
   operations.py
   models.py
 ```
@@ -35,7 +37,8 @@ avito/ratings/
 
 | Файл | Ответственность |
 |---|---|
-| `domain.py` | Публичные `DomainObject`-классы, reference-ready docstring-и, `@swagger_operation(...)`, бизнес-валидация и сбор публичных request-моделей |
+| `domain.py` | Публичные sync `DomainObject`-классы, reference-ready docstring-и, `@swagger_operation(..., variant="sync")`, бизнес-валидация и сбор публичных request-моделей |
+| `async_domain.py` | Публичные async `AsyncDomainObject`-классы для портированных доменов; методы зеркалируют sync-сигнатуры, используют `async def` и `@swagger_operation(..., variant="async")` |
 | `operations.py` | Внутренние `OperationSpec`: HTTP method, path, operation context, retry policy и response/request model classes |
 | `models.py` | Dataclass-модели, enum-ы, `from_payload()`, `to_payload()`, `to_params()` и нормализация |
 

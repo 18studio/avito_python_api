@@ -1158,51 +1158,52 @@ Before opening PR M1 (all of this is done locally and validated before commit):
 ### M1 — Foundation (1 PR)
 
 DoD:
-- [ ] `make check` green: test, typecheck (mypy strict), lint (ruff),
+
+- [x] `make check` green: test, typecheck (mypy strict), lint (ruff),
       swagger-lint --strict, architecture-lint, async-parity-lint,
       docstring-lint, build.
-- [ ] `make docs-strict` green: M1 edits `STYLEGUIDE.md`,
+- [x] `make docs-strict` green: M1 edits `STYLEGUIDE.md`,
       `swagger-binding-subsystem.md` and `domain-architecture-v2.md` + extends
       `_gen_reference.py` (see the table "Existing, modified in M1"). Without editing
       `STYLEGUIDE.md`, the plan formally contradicts the normative sync-only text.
       Without a green docs-strict, we cannot guarantee that the reference builder in M2-PoC
       will see the first `Async<X>`. If at M1 there is not a single `Async<X>` yet — the builder
       is verified to be neutral (sync reference is generated identically to baseline).
-- [ ] Test coverage of the foundation is no lower than the sync analogs (sample check via `coverage report`).
-- [ ] Smoke test: `AsyncAvitoClient` via `AsyncFakeTransport.as_client(authenticated=True)`
+- [x] Test coverage of the foundation is no lower than the sync analogs (sample check via `coverage report`).
+- [x] Smoke test: `AsyncAvitoClient` via `AsyncFakeTransport.as_client(authenticated=True)`
       (without respx) makes one authorized request; `/token` is actually called
       via `AsyncTokenClient`; after 401 the cache is cleared and `/token` is called
       again; retry on 429 fires; `Authorization` and `Idempotency-Key`
       are propagated; `aclose()` correctly closes `httpx.AsyncClient` and
       `AsyncAuthProvider`.
-- [ ] Ownership test: `AsyncTransport.aclose()` closes the passed
+- [x] Ownership test: `AsyncTransport.aclose()` closes the passed
       `httpx.AsyncClient`, because that is the chosen mirror policy of the current sync
       `Transport.close()`. The test separately covers idempotent double-close.
-- [ ] The async auth public surface mirrors sync: `AsyncAvitoClient.auth()` returns
+- [x] The async auth public surface mirrors sync: `AsyncAvitoClient.auth()` returns
       `AsyncAuthProvider`, and `token_flow()` / `alternate_token_flow()` return
       async token clients with `variant="async"` bindings.
-- [ ] Async client diagnostic/closed contract mirrors sync: `debug_info()` returns
+- [x] Async client diagnostic/closed contract mirrors sync: `debug_info()` returns
       `TransportDebugInfo` after `__aenter__`; `auth()` and `debug_info()` fail before
       initialization with an understandable `RuntimeError`; after `aclose()` they and future factory
       methods fail with `ClientClosedError`; repeated `aclose()` is a no-op.
-- [ ] The documentation `swagger-binding-subsystem.md` reflects variant and class-gated coverage.
-- [ ] `AsyncSwaggerFakeTransport` is added and exported from `avito.testing`; the async
+- [x] The documentation `swagger-binding-subsystem.md` reflects variant and class-gated coverage.
+- [x] `AsyncSwaggerFakeTransport` is added and exported from `avito.testing`; the async
       contract suite is green for discovered async bindings (`auth` in M1, domains
       appear later).
-- [ ] Public sync surface is unchanged — formal: pass/fail statuses
+- [x] Public sync surface is unchanged — formal: pass/fail statuses
       **only of baseline nodeids from `/tmp/baseline_nodeids.txt`** are identical to
       the baseline test from `main` (see pre-flight). New async tests do not participate
       in the comparison. Any divergence on old nodeids = blocker.
-- [ ] Phase 1a (`_merge_headers` refactor) is split out as a separate commit inside the PR — for bisect-friendly history.
-- [ ] **`pyproject.toml` contains `asyncio_default_fixture_loop_scope = "function"`** in `[tool.pytest.ini_options]` next to `asyncio_mode = "strict"`. At the time of M1 `filterwarnings = error` is not configured in the project, so the absence of this option will not break pytest immediately, but `pytest-asyncio` 0.23+ will start emitting `PytestDeprecationWarning` on every async test — this accumulates in output and blocks future enabling of `filterwarnings = error`. We enable it preventively.
-- [ ] **`_validate_factory(variant="async")` is green for async auth bindings without a single domain factory on `AsyncAvitoClient`**. The class-gated predicate: factory-check is not run on an async binding whose class does not yet have `Async<X>` in the domain, and skips bindings without `factory` in the decorator. Locked in by the unit test `tests/core/test_swagger_linter.py::test_validate_factory_async_skips_unported_classes`.
-- [ ] **The resolver `_operation_specs_for_sdk_method` for `async_domain.py`**: the pre-flight smoke test is green (resolution via `__globals__` works with `from ...operations import SOME_SPEC`). If pre-flight is red — in this same M1 PR, the primary fallback (AST resolution from the source file) **or** the secondary fallback (class-level `__operation_specs__`) is applied. Any fallback is locked in `swagger_linter.py` with the test `tests/core/test_swagger_linter.py::test_resolve_specs_from_async_domain`.
-- [ ] **`AsyncOperationExecutor` retry resolution mirrors sync**: the test `tests/core/test_async_executor.py::test_executor_retry_resolution_matches_sync` is parameterized with the `(retry, spec.retry)` triple and compares the result with sync `OperationExecutor`.
-- [ ] **`AsyncAuthProvider.invalidate_token` is sync and idempotent**: the test `tests/auth/test_async_provider.py::test_invalidate_token_is_sync_and_idempotent` is green.
-- [ ] **`httpx.AsyncClient` is created with default limits** (without override). A test forbidding SDK-side tuning of limits is not needed in M1; the M-final DoD has a fan-out ≤ 6 check.
-- [ ] **`AsyncTransport.request()` calls `await self._rate_limiter.acquire()` before each httpx call and `observe_response()` after a successful response** — exact mirror of sync `Transport.request()` (lines 148, 183). Locked in by two tests: `tests/core/test_async_transport.py::test_request_acquires_rate_limiter_before_httpx_call` (5 parallel coroutines on one transport — tokens are spent one at a time, not in a batch) and `::test_request_calls_observe_response_after_success` (post-condition).
-- [ ] **`_request_binary_async` module-level helper in `avito/core/operations.py`** is an async mirror of sync `_request_binary`. Accepts `AsyncOperationTransport` Protocol, returns `BinaryResponse` with the same fields. Closed-test: `tests/core/test_async_executor.py::test_binary_branch_uses_request_binary_async_helper`.
-- [ ] **End-to-end binary-branch coverage in M1 (synthetic, before any domain port)**:
+- [x] Phase 1a (`_merge_headers` refactor) is split out as a separate commit inside the PR — for bisect-friendly history.
+- [x] **`pyproject.toml` contains `asyncio_default_fixture_loop_scope = "function"`** in `[tool.pytest.ini_options]` next to `asyncio_mode = "strict"`. At the time of M1 `filterwarnings = error` is not configured in the project, so the absence of this option will not break pytest immediately, but `pytest-asyncio` 0.23+ will start emitting `PytestDeprecationWarning` on every async test — this accumulates in output and blocks future enabling of `filterwarnings = error`. We enable it preventively.
+- [x] **`_validate_factory(variant="async")` is green for async auth bindings without a single domain factory on `AsyncAvitoClient`**. The class-gated predicate: factory-check is not run on an async binding whose class does not yet have `Async<X>` in the domain, and skips bindings without `factory` in the decorator. Locked in by the unit test `tests/core/test_swagger_linter.py::test_validate_factory_async_skips_unported_classes`.
+- [x] **The resolver `_operation_specs_for_sdk_method` for `async_domain.py`**: the pre-flight smoke test is green (resolution via `__globals__` works with `from ...operations import SOME_SPEC`). If pre-flight is red — in this same M1 PR, the primary fallback (AST resolution from the source file) **or** the secondary fallback (class-level `__operation_specs__`) is applied. Any fallback is locked in `swagger_linter.py` with the test `tests/core/test_swagger_linter.py::test_resolve_specs_from_async_domain`.
+- [x] **`AsyncOperationExecutor` retry resolution mirrors sync**: the test `tests/core/test_async_executor.py::test_executor_retry_resolution_matches_sync` is parameterized with the `(retry, spec.retry)` triple and compares the result with sync `OperationExecutor`.
+- [x] **`AsyncAuthProvider.invalidate_token` is sync and idempotent**: the test `tests/auth/test_async_provider.py::test_invalidate_token_is_sync_and_idempotent` is green.
+- [x] **`httpx.AsyncClient` is created with default limits** (without override). A test forbidding SDK-side tuning of limits is not needed in M1; the M-final DoD has a fan-out ≤ 6 check.
+- [x] **`AsyncTransport.request()` calls `await self._rate_limiter.acquire()` before each httpx call and `observe_response()` after a successful response** — exact mirror of sync `Transport.request()` (lines 148, 183). Locked in by two tests: `tests/core/test_async_transport.py::test_request_acquires_rate_limiter_before_httpx_call` (5 parallel coroutines on one transport — tokens are spent one at a time, not in a batch) and `::test_request_calls_observe_response_after_success` (post-condition).
+- [x] **`_request_binary_async` module-level helper in `avito/core/operations.py`** is an async mirror of sync `_request_binary`. Accepts `AsyncOperationTransport` Protocol, returns `BinaryResponse` with the same fields. Closed-test: `tests/core/test_async_executor.py::test_binary_branch_uses_request_binary_async_helper`.
+- [x] **End-to-end binary-branch coverage in M1 (synthetic, before any domain port)**:
       to prove the full async pipeline works for `response_kind == "binary"`
       **before** M12 `orders` lights it up via `OrderLabel.download()`, M1 adds
       one synthetic binding inside the test suite (not in production code) —
@@ -1221,9 +1222,9 @@ DoD:
       in `tests/_fixtures/synthetic_binary_domain.py` and is excluded from
       `swagger_discovery._iter_domain_modules` (its module path does not
       start with `avito.`).
-- [ ] **`AsyncRateLimiter` lives in `avito/core/_async_rate_limit.py`** (not inside `async_transport.py`). Symmetric to sync `avito/core/rate_limit.py`.
-- [ ] **`scripts/lint_async_parity.py` exports `iter_async_classes()` as a public API** — used by the M-final verification script and any external tool that needs the canonical list of `Async<X>` classes.
-- [ ] CHANGELOG `## [Unreleased]` in the root `CHANGELOG.md` is updated with:
+- [x] **`AsyncRateLimiter` lives in `avito/core/_async_rate_limit.py`** (not inside `async_transport.py`). Symmetric to sync `avito/core/rate_limit.py`.
+- [x] **`scripts/lint_async_parity.py` exports `iter_async_classes()` as a public API** — used by the M-final verification script and any external tool that needs the canonical list of `Async<X>` classes.
+- [x] CHANGELOG `## [Unreleased]` in the root `CHANGELOG.md` is updated with:
       `- Фундамент Async API: AsyncTransport,
       AsyncAuthProvider, AsyncOperationExecutor, AsyncPaginatedList,
       AsyncAvitoClient (без factory-методов доменов); RateLimitState вынесен в shared`.

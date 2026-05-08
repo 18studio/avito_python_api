@@ -359,7 +359,9 @@ def _validate_complete_bindings(
     bindings: Sequence[DiscoveredSwaggerBinding],
 ) -> tuple[SwaggerReportError, ...]:
     bound_operation_keys = {
-        binding.operation_key for binding in bindings if binding.operation_key is not None
+        binding.operation_key
+        for binding in bindings
+        if binding.operation_key is not None and binding.variant == "sync"
     }
     errors: list[SwaggerReportError] = []
     for operation in operations:
@@ -379,13 +381,13 @@ def _validate_complete_bindings(
 def _validate_duplicate_bindings(
     bindings: Sequence[DiscoveredSwaggerBinding],
 ) -> tuple[SwaggerReportError, ...]:
-    grouped: defaultdict[str, list[DiscoveredSwaggerBinding]] = defaultdict(list)
+    grouped: defaultdict[tuple[str, str], list[DiscoveredSwaggerBinding]] = defaultdict(list)
     for binding in bindings:
         if binding.operation_key is not None:
-            grouped[binding.operation_key].append(binding)
+            grouped[(binding.operation_key, binding.variant)].append(binding)
 
     errors: list[SwaggerReportError] = []
-    for operation_key, operation_bindings in sorted(grouped.items()):
+    for (operation_key, variant), operation_bindings in sorted(grouped.items()):
         if len(operation_bindings) < 2:
             continue
         methods = ", ".join(binding.sdk_method for binding in operation_bindings)
@@ -395,7 +397,7 @@ def _validate_duplicate_bindings(
                     code="SWAGGER_BINDING_DUPLICATE",
                     message=(
                         f"{operation_key}: несколько SDK binding-ов указывают на одну "
-                        f"Swagger operation: {methods}."
+                        f"Swagger operation для variant={variant}: {methods}."
                     ),
                     operation_key=operation_key,
                     sdk_method=binding.sdk_method,
@@ -533,12 +535,19 @@ def _validate_factory(binding: DiscoveredSwaggerBinding) -> tuple[SwaggerReportE
             ),
         )
 
-    factory = getattr(AvitoClient, binding.factory, None)
+    client_type: type[object]
+    if binding.variant == "async":
+        from avito.async_client import AsyncAvitoClient
+
+        client_type = AsyncAvitoClient
+    else:
+        client_type = AvitoClient
+    factory = getattr(client_type, binding.factory, None)
     if not callable(factory):
         return (
             SwaggerReportError(
                 code="SWAGGER_BINDING_FACTORY_NOT_FOUND",
-                message=f"{binding.sdk_method}: AvitoClient factory не найден: {binding.factory}.",
+                message=f"{binding.sdk_method}: client factory не найден: {binding.factory}.",
                 operation_key=binding.operation_key,
                 sdk_method=binding.sdk_method,
             ),

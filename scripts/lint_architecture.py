@@ -388,70 +388,75 @@ def _lint_public_domain_methods(
     for domain in API_DOMAINS:
         if domain in allowlisted_domains:
             continue
-        path = root / "avito" / domain / "domain.py"
-        if not path.exists():
-            continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for class_node in _public_classes(tree):
-            for method_node in _public_methods(class_node):
-                if (domain, class_node.name, method_node.name) in APPROVED_PUBLIC_WRAPPERS:
-                    continue
-                method_label = f"{class_node.name}.{method_node.name}"
-                for parameter in _optional_positional_parameters(method_node):
-                    errors.append(
-                        ArchitectureLintError(
-                            code="ARCH_PUBLIC_OPTIONAL_POSITIONAL",
-                            message=(
-                                f"Public API method `{method_label}` содержит optional "
-                                f"positional parameter `{parameter.arg}`; сделайте его keyword-only."
-                            ),
-                            path=_relative_path(path, root),
-                            line=parameter.lineno,
+        for path in (
+            root / "avito" / domain / "domain.py",
+            root / "avito" / domain / "async_domain.py",
+        ):
+            if not path.exists():
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for class_node in _public_classes(tree):
+                for method_node in _public_methods(class_node):
+                    if (domain, class_node.name, method_node.name) in APPROVED_PUBLIC_WRAPPERS:
+                        continue
+                    method_label = f"{class_node.name}.{method_node.name}"
+                    for parameter in _optional_positional_parameters(method_node):
+                        errors.append(
+                            ArchitectureLintError(
+                                code="ARCH_PUBLIC_OPTIONAL_POSITIONAL",
+                                message=(
+                                    f"Public API method `{method_label}` содержит optional "
+                                    f"positional parameter `{parameter.arg}`; сделайте его keyword-only."
+                                ),
+                                path=_relative_path(path, root),
+                                line=parameter.lineno,
+                            )
                         )
-                    )
-                for parameter in _date_like_string_parameters(method_node):
-                    errors.append(
-                        ArchitectureLintError(
-                            code="ARCH_PUBLIC_DATE_STRING_UNVALIDATED",
-                            message=(
-                                f"Public API method `{method_label}` принимает date-like string "
-                                f"parameter `{parameter.arg}` без явного validation/serialization helper."
-                            ),
-                            path=_relative_path(path, root),
-                            line=parameter.lineno,
+                    for parameter in _date_like_string_parameters(method_node):
+                        errors.append(
+                            ArchitectureLintError(
+                                code="ARCH_PUBLIC_DATE_STRING_UNVALIDATED",
+                                message=(
+                                    f"Public API method `{method_label}` принимает date-like string "
+                                    f"parameter `{parameter.arg}` без явного validation/serialization helper."
+                                ),
+                                path=_relative_path(path, root),
+                                line=parameter.lineno,
+                            )
                         )
-                    )
-                if not _has_swagger_operation(method_node):
-                    errors.append(
-                        ArchitectureLintError(
-                            code="ARCH_PUBLIC_METHOD_UNBOUND",
-                            message=f"Public API method `{method_label}` без swagger_operation.",
-                            path=_relative_path(path, root),
-                            line=method_node.lineno,
+                    if not _has_swagger_operation(method_node):
+                        errors.append(
+                            ArchitectureLintError(
+                                code="ARCH_PUBLIC_METHOD_UNBOUND",
+                                message=f"Public API method `{method_label}` без swagger_operation.",
+                                path=_relative_path(path, root),
+                                line=method_node.lineno,
+                            )
                         )
-                    )
-                if not _method_uses_operation_executor(method_node):
-                    errors.append(
-                        ArchitectureLintError(
-                            code="ARCH_PUBLIC_METHOD_NO_OPERATION_SPEC",
-                            message=f"Public API method `{method_label}` не исполняется через OperationSpec.",
-                            path=_relative_path(path, root),
-                            line=method_node.lineno,
+                    if not _method_uses_operation_executor(method_node):
+                        errors.append(
+                            ArchitectureLintError(
+                                code="ARCH_PUBLIC_METHOD_NO_OPERATION_SPEC",
+                                message=f"Public API method `{method_label}` не исполняется через OperationSpec.",
+                                path=_relative_path(path, root),
+                                line=method_node.lineno,
+                            )
                         )
-                    )
-                if _annotation_is_forbidden_public_return(method_node.returns):
-                    errors.append(
-                        ArchitectureLintError(
-                            code="ARCH_PUBLIC_RETURN_RAW",
-                            message=f"Public API method `{method_label}` возвращает dict или Any.",
-                            path=_relative_path(path, root),
-                            line=method_node.lineno,
+                    if _annotation_is_forbidden_public_return(method_node.returns):
+                        errors.append(
+                            ArchitectureLintError(
+                                code="ARCH_PUBLIC_RETURN_RAW",
+                                message=f"Public API method `{method_label}` возвращает dict или Any.",
+                                path=_relative_path(path, root),
+                                line=method_node.lineno,
+                            )
                         )
-                    )
     return tuple(errors)
 
 
-def _optional_positional_parameters(method_node: ast.FunctionDef) -> tuple[ast.arg, ...]:
+def _optional_positional_parameters(
+    method_node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[ast.arg, ...]:
     positional_args = tuple(method_node.args.posonlyargs + method_node.args.args)
     positional_args = tuple(arg for arg in positional_args if arg.arg != "self")
     default_count = len(method_node.args.defaults)
@@ -460,7 +465,9 @@ def _optional_positional_parameters(method_node: ast.FunctionDef) -> tuple[ast.a
     return positional_args[-default_count:]
 
 
-def _date_like_string_parameters(method_node: ast.FunctionDef) -> tuple[ast.arg, ...]:
+def _date_like_string_parameters(
+    method_node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[ast.arg, ...]:
     if _method_uses_date_validation_helper(method_node):
         return ()
     parameters = tuple(
@@ -473,7 +480,7 @@ def _date_like_string_parameters(method_node: ast.FunctionDef) -> tuple[ast.arg,
     return tuple(parameter for parameter in parameters if _is_unvalidated_date_string(parameter))
 
 
-def _method_uses_date_validation_helper(method_node: ast.FunctionDef) -> bool:
+def _method_uses_date_validation_helper(method_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     for node in ast.walk(method_node):
         if not isinstance(node, ast.Call):
             continue
@@ -577,7 +584,9 @@ def _collect_domain_classes(root: Path, domain: str) -> Mapping[str, ClassInfo]:
                 name=node.name,
                 bases=frozenset(_base_name(base) for base in node.bases),
                 methods=frozenset(
-                    item.name for item in node.body if isinstance(item, ast.FunctionDef)
+                    item.name
+                    for item in node.body
+                    if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
                 ),
                 path=path,
                 line=node.lineno,
@@ -600,17 +609,17 @@ def _public_classes(tree: ast.Module) -> Iterable[ast.ClassDef]:
             yield node
 
 
-def _public_methods(class_node: ast.ClassDef) -> Iterable[ast.FunctionDef]:
+def _public_methods(class_node: ast.ClassDef) -> Iterable[ast.FunctionDef | ast.AsyncFunctionDef]:
     for node in class_node.body:
-        if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and not node.name.startswith("_"):
             yield node
 
 
-def _has_swagger_operation(method_node: ast.FunctionDef) -> bool:
+def _has_swagger_operation(method_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return any(_decorator_name(decorator) == "swagger_operation" for decorator in method_node.decorator_list)
 
 
-def _method_uses_operation_executor(method_node: ast.FunctionDef) -> bool:
+def _method_uses_operation_executor(method_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     for node in ast.walk(method_node):
         if not isinstance(node, ast.Call):
             continue

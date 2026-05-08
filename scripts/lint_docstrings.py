@@ -52,11 +52,17 @@ def lint_docstrings(root: Path = Path(".")) -> tuple[DocstringLintError, ...]:
 
     normalized_root = root.resolve()
     errors: list[DocstringLintError] = []
-    for path in sorted((normalized_root / "avito").glob("*/domain.py")):
+    paths = [
+        *sorted((normalized_root / "avito").glob("*/domain.py")),
+        *sorted((normalized_root / "avito").glob("*/async_domain.py")),
+    ]
+    for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for class_node in (node for node in tree.body if isinstance(node, ast.ClassDef)):
             for function_node in (
-                node for node in class_node.body if isinstance(node, ast.FunctionDef)
+                node
+                for node in class_node.body
+                if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
             ):
                 docstring = ast.get_docstring(function_node) or ""
                 for fragment in GENERIC_DOCSTRING_FRAGMENTS:

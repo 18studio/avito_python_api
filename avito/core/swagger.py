@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import ParamSpec, TypeVar
+from typing import Literal, ParamSpec, TypeVar
 
 from avito.core.exceptions import ConfigurationError
 
@@ -55,8 +55,11 @@ class SwaggerOperationBinding:
     method_args: Mapping[str, str] = field(default_factory=lambda: _EMPTY_MAPPING)
     deprecated: bool = False
     legacy: bool = False
+    variant: Literal["sync", "async"] = "sync"
 
     def __post_init__(self) -> None:
+        if self.variant not in {"sync", "async"}:
+            raise ConfigurationError("Swagger binding variant должен быть `sync` или `async`.")
         object.__setattr__(self, "method", _normalize_method(self.method))
         object.__setattr__(self, "path", _normalize_path(self.path))
         object.__setattr__(self, "factory_args", _freeze_mapping(self.factory_args))
@@ -74,6 +77,7 @@ def swagger_operation(
     method_args: Mapping[str, str] | None = None,
     deprecated: bool = False,
     legacy: bool = False,
+    variant: Literal["sync", "async"] = "sync",
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Записывает Swagger binding metadata на публичный SDK-метод."""
 
@@ -87,6 +91,7 @@ def swagger_operation(
         method_args=_freeze_mapping(method_args),
         deprecated=deprecated,
         legacy=legacy,
+        variant=variant,
     )
 
     def decorate(func: Callable[P, R]) -> Callable[P, R]:

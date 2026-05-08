@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 import mkdocs_gen_files
 
-from avito.core.domain import DomainObject
+from avito.core.domain import AsyncDomainObject, DomainObject
 from avito.core.swagger_discovery import discover_swagger_bindings
 from avito.core.swagger_linter import lint_swagger_bindings
 from avito.core.swagger_registry import load_swagger_registry
@@ -22,7 +22,7 @@ GITHUB_API_URL = "https://github.com/p141592/avito_python_api/blob/main/docs/avi
 def public_domain_packages() -> list[str]:
     return sorted(
         path.parent.name
-        for path in PACKAGE_ROOT.glob("*/domain.py")
+        for path in (*PACKAGE_ROOT.glob("*/domain.py"), *PACKAGE_ROOT.glob("*/async_domain.py"))
         if path.parent.name not in EXCLUDED_PACKAGES
     )
 
@@ -43,18 +43,21 @@ def public_enums(package: str) -> list[type[Enum]]:
 
 
 def public_domain_classes(package: str) -> list[type[DomainObject]]:
-    module = importlib.import_module(f"avito.{package}")
-    names = getattr(module, "__all__", ())
+    modules = []
+    for suffix in ("domain", "async_domain"):
+        try:
+            modules.append(importlib.import_module(f"avito.{package}.{suffix}"))
+        except ModuleNotFoundError:
+            continue
     classes: list[type[DomainObject]] = []
-    for name in names:
-        value = getattr(module, name, None)
-        if (
-            inspect.isclass(value)
-            and issubclass(value, DomainObject)
-            and value is not DomainObject
-            and value.__module__.startswith(f"avito.{package}.")
-        ):
-            classes.append(value)
+    for module in modules:
+        for _, value in inspect.getmembers(module, inspect.isclass):
+            if value.__module__ != module.__name__:
+                continue
+            if value in {DomainObject, AsyncDomainObject}:
+                continue
+            if issubclass(value, DomainObject | AsyncDomainObject):
+                classes.append(value)
     return classes
 
 
@@ -82,7 +85,8 @@ def write_domain_pages(packages: list[str]) -> list[str]:
                 for enum_class in enums:
                     file.write(f"- [`{enum_class.__name__}`](../enums.md#{enum_class.__name__})\n")
                 file.write("\n")
-            file.write(f"::: avito.{package}\n")
+            for domain_class in public_domain_classes(package):
+                file.write(f"::: {domain_class.__module__}.{domain_class.__name__}\n\n")
         mkdocs_gen_files.set_edit_path(page, Path(f"avito/{package}/__init__.py"))
     return pages
 

@@ -30,7 +30,7 @@ from avito.testing import (
 
 _REGISTRY = load_swagger_registry()
 _DISCOVERY = discover_swagger_bindings(registry=_REGISTRY)
-_BINDINGS = _DISCOVERY.bindings
+_BINDINGS = tuple(binding for binding in _DISCOVERY.bindings if binding.variant == "sync")
 _BINDING_BY_OPERATION = _DISCOVERY.canonical_map
 _BINDING_OPERATION_BY_KEY = {operation.key: operation for operation in _REGISTRY.operations}
 
@@ -90,7 +90,11 @@ def _expected_exception_type(
 
 def _binding(registry: SwaggerRegistry, operation_key: str) -> DiscoveredSwaggerBinding:
     discovery = discover_swagger_bindings(registry=registry)
-    matches = [binding for binding in discovery.bindings if binding.operation_key == operation_key]
+    matches = [
+        binding
+        for binding in discovery.bindings
+        if binding.operation_key == operation_key and binding.variant == "sync"
+    ]
     assert len(matches) == 1
     return matches[0]
 

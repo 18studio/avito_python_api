@@ -65,6 +65,7 @@ avito/
   ratings/
     __init__.py
     domain.py
+    async_domain.py
     operations.py
     models.py
 ```
@@ -96,7 +97,8 @@ Rules:
 - Each API section lives in its own package: `ads`, `messenger`, `orders`, `autoload`, etc.
 - Only modules belonging to that section are allowed inside each section package.
 - `avito/client.py` and `avito/__init__.py` contain only the high-level entry point and public exports.
-- `domain.py` contains public `DomainObject` classes, explicit public methods, reference-ready docstrings, `@swagger_operation(...)` bindings, business validation, and construction of internal request models.
+- `domain.py` contains public sync `DomainObject` classes, explicit public methods, reference-ready docstrings, `@swagger_operation(..., variant="sync")` bindings, business validation, and construction of internal request models.
+- `async_domain.py` is the allowed async companion for ported domains. It contains `AsyncDomainObject` classes named `Async<X>` and mirrors the sync public methods with `async def`, `AsyncPaginatedList[T]` where sync returns `PaginatedList[T]`, and `@swagger_operation(..., variant="async")`.
 - `operations.py` or `operations/` contains internal `OperationSpec` definitions: HTTP method, path, operation name, retry policy, path rendering, request model class, response model class, and pagination/binary/multipart strategy when applicable.
 - `models.py` or `models/` contains public response dataclasses, internal request/query dataclasses, colocated enum types, `from_payload()`, `to_payload()`, `to_params()`, and normalization logic.
 - API domains must not introduce `client.py`, `mappers.py`, or standalone
@@ -372,8 +374,8 @@ Rules:
 
 Recommendation:
 
-- Build a high-quality sync SDK first.
-- The SDK is synchronous — this must be explicitly documented in the README and public API.
+- Build a high-quality dual-mode SDK: sync remains the default stable surface, and async is exposed through explicit `Async*` classes.
+- The SDK has separate sync and async public surfaces. Async code must not wrap sync network calls; it uses `httpx.AsyncClient`, `AsyncTransport`, `AsyncAuthProvider`, `AsyncOperationExecutor`, and async pagination primitives.
 
 ### User-Agent and Client Identification
 
@@ -883,7 +885,7 @@ Rules:
 - Swagger bindings must not duplicate the API contract. Decorators and binding metadata must not contain request/response schemas, status lists, content types, response models, request models, error models, required fields, path parameter definitions, or query parameter definitions.
 - Public domain classes that expose bound methods should declare class-level metadata (`__swagger_domain__`, `__swagger_spec__`, `__sdk_factory__`, and when needed `__sdk_factory_args__`) so discovery can resolve bindings without creating `AvitoClient`, reading required environment variables, or doing network work.
 - The canonical coverage map is generated from Swagger registry plus discovered `@swagger_operation` bindings. Markdown inventory files and hand-written coverage tables must not be used as source of truth.
-- Each Swagger operation must resolve to exactly one discovered binding in strict mode. One public SDK method must not have more than one Swagger binding. Stacked `@swagger_operation(...)` decorators and `__swagger_bindings__` metadata are forbidden.
+- Each Swagger operation must resolve to exactly one discovered binding per surface variant in strict mode: one `sync` binding and, for ported async classes, one `async` binding. One public SDK method must not have more than one Swagger binding. Stacked `@swagger_operation(...)` decorators and `__swagger_bindings__` metadata are forbidden.
 - Public method signatures, model field names and types, allowed enum values, and nullable behavior must exactly match the contract in `docs/avito/api/`.
 - When there is a discrepancy between code and the specification in `docs/avito/api/`, the specification takes priority.
 - If the upstream API adds a new endpoint or changes an existing one, a corresponding SDK change is mandatory.
