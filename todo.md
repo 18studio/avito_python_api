@@ -471,6 +471,22 @@ in the class docstring and in `docs/site/explanations/pagination-semantics.md`
 (addition in M-final). Locked in by the behavior of
 `tests/core/test_async_pagination.py::test_concurrent_aiter_raises_runtime_error`.
 
+**Lifecycle contract — behavior after transport `aclose()`.** `AsyncPaginatedList`
+captures the `fetch_page` callable at creation time, which holds a reference to
+`AsyncTransport`. If the user calls `await client.aclose()` while an
+`AsyncPaginatedList` is mid-iteration (i.e. the first page is loaded but
+subsequent pages are not), the next `__anext__` / next `aload_until` /
+`materialize()` must raise `ClientClosedError("Клиент закрыт во время итерации
+AsyncPaginatedList; пагинация прервана.")` rather than silently returning the
+partial buffer or hanging on a closed `httpx.AsyncClient`. Implementation: the
+`fetch_page` wrapper checks `transport._closed` (or the client's `_closed` flag,
+propagated via an internal hook) before each network call; if closed, raises
+`ClientClosedError`. Already-buffered items from previous pages are **not**
+flushed — the iterator simply stops on the next page boundary. The same rule
+applies to `AsyncPaginator.iter_pages()` and `collect()`. Locked in by
+`tests/core/test_async_pagination.py::test_aiter_raises_after_client_aclose` and
+`::test_materialize_raises_after_client_aclose`.
+
 `AsyncPaginator` is mandatory as an implementation helper: sync domains use
 `Paginator(...).as_list(...)` in 4 places (`avito/ads/domain.py:266,1183`,
 `avito/accounts/domain.py:170,383`). The current public surface does not return
@@ -1112,10 +1128,32 @@ Before opening PR M1 (all of this is done locally and validated before commit):
       how it resolves the factory on `AvitoClient`, what it considers an error. M1 must extend
       it with class-gated coverage (see Swagger section). Without full understanding of the current
       logic, the extension risks weakening the invariant for sync bindings.
-- [ ] **Run pre-flight locally, record results**: the pre-flight test on
-      `_operation_specs_for_sdk_method` for an async stub is actually run; the result
-      (pass/fail) and the chosen fallback (none / primary / secondary) are recorded
-      in the M1 PR description. Without an actual run, M1 is not opened.
+- [ ] **Run pre-flight locally, record results in a tracked artifact**:
+      a new file `docs/dev/preflight-async-m1.md` is created and committed in
+      a separate pre-flight commit (before opening M1) capturing **all** of the
+      following in machine-readable form:
+      (1) the actual list of `_access_token`/`_refresh_token`/`_autoteka_access_token`
+      probes in `tests/` (paths + line numbers);
+      (2) the actual `Paginator` usage sites in `avito/` (4 expected, paths
+      + line numbers);
+      (3) the actual `len(...)` / `[idx]` / `bool(...)` / slice usages on
+      `PaginatedList[T]` across `avito/` and `tests/`;
+      (4) the actual count and locations of `@deprecated_method` in
+      `avito/cpa/` and `avito/ads/` (7 expected, with line numbers);
+      (5) the existing `^async def test_` lines (expected: empty);
+      (6) the result (pass/fail) of the `_operation_specs_for_sdk_method`
+      smoke test on an async stub, and the chosen fallback (none / primary /
+      secondary) with a one-paragraph justification;
+      (7) the concrete diff baseline: `/tmp/baseline_nodeids.txt` and
+      `/tmp/baseline_main.txt` are produced and their sha256 sums are
+      recorded in the artifact (the actual files are not committed —
+      only the hashes, for later reproducibility);
+      (8) the Python interpreter version, Poetry lockfile hash, and `httpx`
+      version in use at pre-flight time.
+      Without `docs/dev/preflight-async-m1.md` in the M1 PR diff, the PR is
+      not opened. The artifact is referenced from the M1 PR description and
+      is not deleted by M-final (it remains permanent provenance for the
+      async migration).
 
 ### M1 — Foundation (1 PR)
 
@@ -1164,6 +1202,25 @@ DoD:
 - [ ] **`httpx.AsyncClient` is created with default limits** (without override). A test forbidding SDK-side tuning of limits is not needed in M1; the M-final DoD has a fan-out ≤ 6 check.
 - [ ] **`AsyncTransport.request()` calls `await self._rate_limiter.acquire()` before each httpx call and `observe_response()` after a successful response** — exact mirror of sync `Transport.request()` (lines 148, 183). Locked in by two tests: `tests/core/test_async_transport.py::test_request_acquires_rate_limiter_before_httpx_call` (5 parallel coroutines on one transport — tokens are spent one at a time, not in a batch) and `::test_request_calls_observe_response_after_success` (post-condition).
 - [ ] **`_request_binary_async` module-level helper in `avito/core/operations.py`** is an async mirror of sync `_request_binary`. Accepts `AsyncOperationTransport` Protocol, returns `BinaryResponse` with the same fields. Closed-test: `tests/core/test_async_executor.py::test_binary_branch_uses_request_binary_async_helper`.
+- [ ] **End-to-end binary-branch coverage in M1 (synthetic, before any domain port)**:
+      to prove the full async pipeline works for `response_kind == "binary"`
+      **before** M12 `orders` lights it up via `OrderLabel.download()`, M1 adds
+      one synthetic binding inside the test suite (not in production code) —
+      a `_TestBinaryDomain` with an `async def download(...)` method decorated
+      with `@swagger_operation(..., variant="async")` over a fake
+      `OperationSpec` with `response_kind == "binary"`. Test
+      `tests/core/test_async_executor.py::test_async_executor_full_binary_pipeline`
+      drives the spec end-to-end through `AsyncSwaggerFakeTransport` →
+      `AsyncOperationExecutor` → `_request_binary_async` →
+      `BinaryResponse`, and asserts that `content`, `content_type`, `filename`,
+      `status_code`, `headers` match the response body byte-for-byte. Without
+      this, M1 ships an executor whose binary branch is verified only at the
+      unit level (`test_binary_branch_uses_request_binary_async_helper`) —
+      regressions across executor + transport + fake-transport interaction
+      would only be caught in M12, weeks later. The synthetic binding lives
+      in `tests/_fixtures/synthetic_binary_domain.py` and is excluded from
+      `swagger_discovery._iter_domain_modules` (its module path does not
+      start with `avito.`).
 - [ ] **`AsyncRateLimiter` lives in `avito/core/_async_rate_limit.py`** (not inside `async_transport.py`). Symmetric to sync `avito/core/rate_limit.py`.
 - [ ] **`scripts/lint_async_parity.py` exports `iter_async_classes()` as a public API** — used by the M-final verification script and any external tool that needs the canonical list of `Async<X>` classes.
 - [ ] CHANGELOG `## [Unreleased]` in the root `CHANGELOG.md` is updated with:
@@ -1344,31 +1401,97 @@ Contents of each M3…M12:
 - [ ] **No work "later"**: reopening a PR with the phrase "I'll finish it in the next PR"
       is forbidden. If scope does not close — the PR is split or expanded, but
       no partial domain is left in main.
-- [ ] **CHANGELOG is updated**: in the root `CHANGELOG.md` (section `## [Unreleased]`)
-      a line is added of the form `- Async-поддержка домена <domain>: Async<X>, Async<Y>
-      (#<PR-номер>)` **strictly in the section `## [Unreleased]`**, not in `## [2.1.0]`
-      (the 2.1.0 section does not yet exist on these PRs). Entry template per M3…M12 PR:
+- [ ] **Per-class split escape hatch (M11/M12 only, by explicit decision)**: for
+      `M11 ads` (3 classes: `Ad`/`AutoloadProfile`/`AutoloadReport`, 28 ops) and
+      `M12 orders` (45 ops, the largest domain) the «no partial domain» rule is
+      **softened by exception**: it is allowed to split the domain into a sequence of
+      per-class PRs (`M11a Ad`, `M11b AutoloadProfile`, `M11c AutoloadReport`;
+      `M12a–M12N` partitioned by `OperationSpec` group), provided that **each
+      sub-PR is itself class-complete**: every method of the included class has
+      an async double, swagger-lint per-class is 1:1, async-parity-lint is green
+      for the included class. Class-gated coverage in `swagger_linter.py`
+      already supports this (see Swagger section). Constraints:
+      (1) the split must be declared in the M11/M12 design comment **before** the
+      first sub-PR is opened, with the full list of sub-PRs and their order;
+      (2) the cumulative parity invariant still applies — each sub-PR leaves
+      `make swagger-lint --strict` green for all already ported classes;
+      (3) the `M11`/`M12` row in the sequencing table is replaced with the
+      sub-PR list, and `M-final` waits for the **last** sub-PR.
+      For all other domains (M3…M10) the «no partial domain» rule is hard:
+      one PR closes one whole domain at 100%. The exception exists strictly to
+      keep code-review tractable on `ads` and `orders`; it must not be invoked
+      retroactively to «rescue» a stuck PR on other domains.
+- [ ] **CHANGELOG is updated via per-PR fragments**: each M3…M12 PR adds **one
+      file** under `CHANGELOG.d/<PR-номер>-async-<domain>.md` with the content:
       ```markdown
-      ## [Unreleased]
       ### Added
       - Async-поддержка домена <domain>: Async<X>, Async<Y> (#<PR-номер>)
       ```
-      M-final aggregates the accumulated `Unreleased` lines into release 2.1.0, adding only
-      the entry about convenience methods and `AsyncAvitoClient` aggregators. Without this,
-      history readers will not see in which PR the domain became async, and 2.1.0 release notes
-      cannot be assembled mechanically.
+      The root `CHANGELOG.md` is **not** edited per-PR. M-final aggregates all
+      `CHANGELOG.d/*.md` fragments into one `## [2.1.0] - YYYY-MM-DD` section,
+      then deletes the fragments. Rationale: 12 parallel PRs editing a single
+      `## [Unreleased]` block are guaranteed to merge-conflict on every rebase;
+      separate fragment files have no shared lines and merge cleanly.
+      Implementation:
+      (1) M1 PR creates `CHANGELOG.d/.gitkeep` and `CHANGELOG.d/README.md`
+      describing the format;
+      (2) `make check` (via a new `scripts/check_changelog_fragments.py`)
+      verifies each fragment matches the schema (one `### Added`/`### Changed`/
+      `### Fixed` block, no `## [...]` headings, valid markdown);
+      (3) M-final concatenates fragments in PR-number order, prepends
+      `## [2.1.0] - YYYY-MM-DD`, appends to `CHANGELOG.md`, and `git rm
+      CHANGELOG.d/*.md` (keeping `.gitkeep` and `README.md`).
+      M1 itself does **not** use a fragment — its CHANGELOG line («Фундамент
+      Async API») is added directly to `## [Unreleased]` of the root file
+      (single PR, no conflict risk), and M-final moves it into `## [2.1.0]`
+      together with the fragment aggregate.
 
 ### Definition of done for M-final — release 2.1.0
 
 "Final hardening" is defined verifiably:
 
 - [ ] **Convenience methods are implemented per the classification table** (aggregator / alias / leaf / CPU-only). Code review verifies: `asyncio.TaskGroup` is placed only in branches with actually independent network calls (`account_health`, `listing_health`, `review_summary`, `promotion_summary` when `item_ids` is given); in `business_summary` — `return await self.account_health(...)` without `TaskGroup`; `chat_summary` and `order_summary` are sequential; `capabilities` does not make network probe requests and does not use `TaskGroup`. Any violation = blocker.
+- [ ] **Fan-out ≤ 6 is enforced by a real test, not just code review**: `tests/test_async_client_aggregators.py::test_account_health_fanout_does_not_exceed_six`
+      drives `AsyncAvitoClient.account_health(...)` through `AsyncFakeTransport`
+      with an instrumented `_handle` that records the **maximum number of
+      simultaneously in-flight requests** observed during the call (counter
+      incremented at the start of `_handle`, decremented after the response is
+      returned, peak captured under `_handle_lock`). The assertion is
+      `assert peak <= 6`. The same instrumentation is applied to
+      `listing_health`, `review_summary` (peak ≤ 1 — sequential),
+      `promotion_summary(item_ids=[...])` (peak ≤ 2), and
+      `business_summary` (delegates to `account_health`, peak ≤ 6). A single
+      shared `FanoutPeakRecorder` helper in `avito/testing/async_fake_transport.py`
+      provides the counter; aggregator tests opt in via
+      `AsyncFakeTransport(fanout_recorder=recorder)`. This locks the contract
+      against future drift: if a domain in the future adds a new branch and
+      pushes peak past 6, the test fails before the PR is merged.
 - [ ] **`_safe_summary_async` lives in the same module as sync `_safe_summary`** — `avito/client.py` (extraction into a shared `avito/summary/_helpers.py` is allowed, but requires simultaneous moving of sync `_safe_summary`; partial extraction is forbidden, so as not to split symmetric helpers across different files). The import in `avito/async_client.py` is explicit (`from avito.client import _safe_summary, _safe_summary_async`). Circularity does not arise: `avito/client.py` does not import `avito/async_client.py`, so the import graph remains acyclic; verified by the command `python -c "import avito.async_client"` without errors and `python -c "import avito.client"` without errors.
 - [ ] **The package version is bumped to 2.1.0**: `poetry version 2.1.0`, the change in `pyproject.toml` is recorded in the M-final PR. CHANGELOG `## [Unreleased]` → `## [2.1.0] - YYYY-MM-DD`, the accumulated lines M1…M12 + the entry about convenience methods and `AsyncAvitoClient` aggregators are aggregated into one section. `git tag v2.1.0` is set after merging M-final.
 - [ ] **`AsyncSwaggerFakeTransport` contract suite is complete**: `tests/contracts/test_async_swagger_contracts.py`
       calls all async bindings (204 Swagger operations, including auth bindings)
       and checks success/error/request-body schema, like the sync contract suite.
-- [ ] **`docs/site/how-to/async.md` is written**: lifecycle contract (`async with` is mandatory), an example with `AsyncFakeTransport`, a migration guide "how to rewrite a sync call to async", limitations (`AsyncPaginatedList` not list-API, full-buffer download, no streaming). Links from `docs/site/index.md` and `docs/site/how-to/index.md`.
+- [ ] **`docs/site/how-to/async.md` is written**: lifecycle contract (`async with` is mandatory), an example with `AsyncFakeTransport`, a migration guide "how to rewrite a sync call to async", limitations (`AsyncPaginatedList` not list-API, full-buffer download, no streaming). Links from `docs/site/index.md` and `docs/site/how-to/index.md`. **Mandatory dedicated section "Использование под ASGI (FastAPI / aiohttp / Starlette)"** with concrete recipes:
+      (1) **FastAPI lifespan pattern** — `AsyncAvitoClient` is created and
+      `__aenter__`'d inside `@asynccontextmanager async def lifespan(app)`,
+      stored on `app.state.avito`, and `aclose()`'d on shutdown. The client
+      lives one event loop = the app's main loop; FastAPI dependencies access
+      it via `Depends(lambda req: req.app.state.avito)`. Code example
+      ≥ 15 lines, runnable.
+      (2) **aiohttp `cleanup_ctx`** — analog with `aiohttp.web.AppKey` and
+      `app.cleanup_ctx.append(avito_client_ctx)`.
+      (3) **Per-worker isolation under Gunicorn/Uvicorn** — one
+      `AsyncAvitoClient` per worker process (each worker has its own loop);
+      forbidden to share across processes via fork-after-init.
+      (4) **Forbidden pattern** — calling `AsyncAvitoClient.from_env()` at
+      module import time and `__aenter__`'ing it in a request handler: this
+      attaches `httpx.AsyncClient` to whichever loop touched it first, and any
+      subsequent loop change (test client, background scheduler) gives
+      cross-loop UB. Section explicitly shows the broken pattern with a `# ❌`
+      comment and explains the failure mode.
+      (5) **Background tasks (`asyncio.create_task`, `BackgroundTasks`)** —
+      same loop as the request → safe to reuse the app-level client; a
+      separate process-pool worker → not safe, must build its own client.
 - [ ] **README/site wording is updated**: `README.md`, `mkdocs.yml`, `docs/site/index.md`,
       `docs/site/reference/client.md`, `docs/site/reference/pagination.md`,
       `docs/site/reference/testing.md` no longer call the SDK only synchronous.
@@ -1471,6 +1594,13 @@ poetry run pytest                                          # full set
 poetry version 2.1.0                                       # bump to 2.1.0
 grep -E "^## \[2\.1\.0\]" CHANGELOG.md                     # the 2.1.0 section exists
 grep -E "^## \[Unreleased\]" CHANGELOG.md                  # Unreleased is empty or contains only the heading
+
+# CHANGELOG.d/ fragments are aggregated and removed (only .gitkeep + README.md remain)
+ls CHANGELOG.d/ | grep -vE "^(\.gitkeep|README\.md)$" \
+  && echo "FAIL: leftover changelog fragments" || echo "OK: fragments aggregated"
+
+# Fan-out ≤ 6 enforced for all aggregator convenience methods
+poetry run pytest tests/test_async_client_aggregators.py -k "fanout"
 
 # After build, the reference contains both surfaces in each domain.
 # We get the list of Async<X> classes dynamically from the parity linter (the same source
