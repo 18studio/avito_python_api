@@ -6,7 +6,7 @@ MKDOCS_ENV=DISABLE_MKDOCS_2_WARNING=true NO_MKDOCS_2_WARNING=1
 
 check: test quality
 
-quality: typecheck lint swagger-lint architecture-lint async-parity-lint docstring-lint build
+quality: typecheck lint python-guidelines-lint swagger-lint architecture-lint async-parity-lint docstring-lint build
 
 build: clean
 	poetry build
@@ -31,6 +31,9 @@ fmt:
 
 lint:
 	poetry run ruff check .
+
+python-guidelines-lint:
+	poetry run python scripts/lint_python_guidelines.py
 
 swagger-update:
 	poetry run python scripts/download_avito_api_specs.py --clean

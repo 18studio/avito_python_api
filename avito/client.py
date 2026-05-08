@@ -11,6 +11,7 @@ from avito.accounts import Account, AccountHierarchy
 from avito.ads import Ad, AdPromotion, AdStats, AutoloadArchive, AutoloadProfile, AutoloadReport
 from avito.ads.models import CallStats, ListingStats, ListingStatus, SpendingRecord
 from avito.auth import AlternateTokenClient, AuthProvider, TokenClient
+from avito.auth.settings import AuthSettings
 from avito.autoteka import (
     AutotekaMonitoring,
     AutotekaReport,
@@ -136,8 +137,6 @@ class AvitoClient:
     ) -> None:
         """Initialize AvitoClient."""
         if client_id is not None or client_secret is not None:
-            from avito.auth.settings import AuthSettings
-
             auth = AuthSettings(client_id=client_id, client_secret=client_secret)
             settings = AvitoSettings(auth=auth)
         self._closed = False

@@ -11,6 +11,7 @@ from avito.auth.models import ClientCredentialsRequest, RefreshTokenRequest, Tok
 from avito.auth.provider import CLIENT_CREDENTIALS_GRANT, REFRESH_TOKEN_GRANT
 from avito.auth.settings import AuthSettings
 from avito.config import AvitoSettings
+from avito.core.async_transport import AsyncTransport
 from avito.core.exceptions import AuthenticationError, AvitoError
 from avito.core.swagger import swagger_operation
 from avito.core.types import RequestContext
@@ -87,8 +88,6 @@ class AsyncTokenClient:
 
     async def _request_token(self, payload: dict[str, str]) -> TokenResponse:
         """Run the request token helper."""
-        from avito.core.async_transport import AsyncTransport
-
         transport = AsyncTransport(
             self.sdk_settings or AvitoSettings(auth=self.settings),
             auth_provider=None,

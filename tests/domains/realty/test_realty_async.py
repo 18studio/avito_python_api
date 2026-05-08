@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from avito.async_client import AsyncAvitoClient
@@ -197,6 +198,4 @@ def test_async_client_realty_factories_require_entered_client() -> None:
 
 
 def _success_response():
-    import httpx
-
     return httpx.Response(200, json={"result": "success"})

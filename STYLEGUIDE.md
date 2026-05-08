@@ -32,6 +32,37 @@ Principles are listed in descending priority order when they conflict.
 - **IDE-first design**: autocomplete, go-to-definition, and type inference are the primary discovery surfaces. The public API must be useful without reading the source code.
 - **Backward compatibility is a feature**: breaking changes are deliberate, preceded by a deprecation period, and documented in `CHANGELOG.md`. Users must not be forced to change working code to upgrade a minor version.
 
+## Python Guidelines Compliance
+
+`.ai/python-guidelines.md` is a mandatory companion standard for all Python code
+in this repository. Every new Python file and every changed Python block must
+strictly satisfy those rules unless this `STYLEGUIDE.md` explicitly defines a
+more specific SDK rule.
+
+Rules:
+
+- Imports must stay at module top level. Runtime imports inside functions,
+  methods, or classes are forbidden unless the exception is required and
+  documented next to the import.
+- Code must fail fast. Do not swallow exceptions, do not use bare `except`, and
+  do not catch broad `Exception` unless the handler re-raises.
+- Known typed objects must use direct attribute access instead of defensive
+  `getattr(..., default)`.
+- Mutable default arguments, leaked file handles, builtin-name shadowing,
+  singleton comparisons with `==` / `!=`, runtime validation through `assert`,
+  collection mutation while iterating, string concatenation in loops, and
+  late-binding closures in loops are forbidden.
+- Public API model fields that intentionally mirror upstream names such as `id`
+  or `type` are allowed only when they are part of a documented Avito contract.
+  Do not introduce local variables, helper parameters, or internal DTO fields
+  with builtin-shadowing names.
+- The automated gate for these rules is `make python-guidelines-lint`; it is
+  included in `make quality` and therefore in `make check`.
+
+If a Python guideline rule cannot be encoded in Ruff, mypy, or an existing
+project linter, add or extend a dedicated static lint script. Do not enforce
+style-only rules through pytest.
+
 ## Target Package Architecture
 
 Avito API sections are organized as packages. The target architecture for new and

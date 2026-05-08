@@ -195,12 +195,8 @@ def test_operation_executor_resolves_retry_override_precedence(
 class FakeTransportResponse:
     @staticmethod
     def empty() -> object:
-        import httpx
-
         return httpx.Response(204)
 
     @staticmethod
     def binary(content: bytes, *, content_type: str) -> object:
-        import httpx
-
         return httpx.Response(200, content=content, headers={"content-type": content_type})

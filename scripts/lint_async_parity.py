@@ -7,6 +7,7 @@ import inspect
 import pkgutil
 from collections.abc import Iterator
 
+import avito
 from avito.core.domain import AsyncDomainObject
 
 EXCLUDED_PACKAGES = {"auth", "core", "summary", "testing"}
@@ -14,8 +15,6 @@ EXCLUDED_PACKAGES = {"auth", "core", "summary", "testing"}
 
 def iter_async_classes() -> Iterator[type[AsyncDomainObject]]:
     """Yield all public async domain classes in stable order."""
-
-    import avito
 
     package_paths = getattr(avito, "__path__", ())
     classes: list[type[AsyncDomainObject]] = []
