@@ -1,5 +1,13 @@
 """Пакет ads."""
 
+from avito.ads.async_domain import (
+    AsyncAd,
+    AsyncAdPromotion,
+    AsyncAdStats,
+    AsyncAutoloadArchive,
+    AsyncAutoloadProfile,
+    AsyncAutoloadReport,
+)
 from avito.ads.domain import (
     Ad,
     AdPromotion,
@@ -57,6 +65,12 @@ __all__ = (
     "AdsActionStatus",
     "AdPromotion",
     "AdStats",
+    "AsyncAd",
+    "AsyncAdPromotion",
+    "AsyncAdStats",
+    "AsyncAutoloadArchive",
+    "AsyncAutoloadProfile",
+    "AsyncAutoloadReport",
     "AutoloadArchive",
     "AutoloadAvitoStatus",
     "AutoloadFieldType",

@@ -7,6 +7,14 @@ from pathlib import Path
 import httpx
 
 from avito.accounts import AsyncAccount, AsyncAccountHierarchy
+from avito.ads import (
+    AsyncAd,
+    AsyncAdPromotion,
+    AsyncAdStats,
+    AsyncAutoloadArchive,
+    AsyncAutoloadProfile,
+    AsyncAutoloadReport,
+)
 from avito.auth.async_provider import AsyncAuthProvider
 from avito.auth.async_token_client import AsyncAlternateTokenClient, AsyncTokenClient
 from avito.auth.settings import AuthSettings
@@ -165,6 +173,44 @@ class AsyncAvitoClient:
         """Создает async-доменный объект иерархии аккаунта."""
 
         return AsyncAccountHierarchy(self._require_transport(), user_id=user_id)
+
+    def ad(self, item_id: int | str | None = None, user_id: int | str | None = None) -> AsyncAd:
+        """Создает async-доменный объект объявления."""
+
+        return AsyncAd(self._require_transport(), item_id=item_id, user_id=user_id)
+
+    def ad_stats(
+        self, item_id: int | str | None = None, user_id: int | str | None = None
+    ) -> AsyncAdStats:
+        """Создает async-доменный объект статистики объявления."""
+
+        return AsyncAdStats(self._require_transport(), item_id=item_id, user_id=user_id)
+
+    def ad_promotion(
+        self, item_id: int | str | None = None, user_id: int | str | None = None
+    ) -> AsyncAdPromotion:
+        """Создает async-доменный объект продвижения объявления."""
+
+        return AsyncAdPromotion(self._require_transport(), item_id=item_id, user_id=user_id)
+
+    def autoload_profile(self, user_id: int | str | None = None) -> AsyncAutoloadProfile:
+        """Создает async-доменный объект профиля автозагрузки."""
+
+        return AsyncAutoloadProfile(self._require_transport(), user_id=user_id)
+
+    def autoload_report(
+        self, report_id: int | str | None = None
+    ) -> AsyncAutoloadReport:
+        """Создает async-доменный объект отчета автозагрузки."""
+
+        return AsyncAutoloadReport(self._require_transport(), report_id=report_id)
+
+    def autoload_archive(
+        self, report_id: int | str | None = None
+    ) -> AsyncAutoloadArchive:
+        """Создает async-доменный объект архивных операций автозагрузки."""
+
+        return AsyncAutoloadArchive(self._require_transport(), report_id=report_id)
 
     def cpa_lead(self) -> AsyncCpaLead:
         """Создает async-доменный объект CPA-лида."""

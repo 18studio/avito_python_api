@@ -11,12 +11,18 @@ def test_async_swagger_bindings_are_discoverable_for_ported_domains() -> None:
     assert {binding.class_name for binding in async_bindings} == {
         "AsyncAccount",
         "AsyncAccountHierarchy",
+        "AsyncAd",
+        "AsyncAdPromotion",
+        "AsyncAdStats",
         "AsyncAlternateTokenClient",
         "AsyncAutotekaMonitoring",
         "AsyncAutotekaReport",
         "AsyncAutotekaScoring",
         "AsyncAutotekaValuation",
         "AsyncAutotekaVehicle",
+        "AsyncAutoloadArchive",
+        "AsyncAutoloadProfile",
+        "AsyncAutoloadReport",
         "AsyncCallTrackingCall",
         "AsyncChat",
         "AsyncChatMedia",
@@ -48,4 +54,4 @@ def test_async_swagger_bindings_are_discoverable_for_ported_domains() -> None:
         "AsyncTokenClient",
         "AsyncTrxPromotion",
     }
-    assert len(async_bindings) == 131
+    assert len(async_bindings) == 159
