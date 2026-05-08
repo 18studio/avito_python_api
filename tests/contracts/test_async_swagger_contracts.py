@@ -13,6 +13,10 @@ def test_async_swagger_bindings_are_discoverable_for_ported_domains() -> None:
         "AsyncAccountHierarchy",
         "AsyncAlternateTokenClient",
         "AsyncCallTrackingCall",
+        "AsyncChat",
+        "AsyncChatMedia",
+        "AsyncChatMessage",
+        "AsyncChatWebhook",
         "AsyncCpaArchive",
         "AsyncCpaCall",
         "AsyncCpaChat",
@@ -24,7 +28,8 @@ def test_async_swagger_bindings_are_discoverable_for_ported_domains() -> None:
         "AsyncRealtyPricing",
         "AsyncReview",
         "AsyncReviewAnswer",
+        "AsyncSpecialOfferCampaign",
         "AsyncTariff",
         "AsyncTokenClient",
     }
-    assert len(async_bindings) == 38
+    assert len(async_bindings) == 56

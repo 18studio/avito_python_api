@@ -21,6 +21,13 @@ from avito.cpa import (
     AsyncCpaChat,
     AsyncCpaLead,
 )
+from avito.messenger import (
+    AsyncChat,
+    AsyncChatMedia,
+    AsyncChatMessage,
+    AsyncChatWebhook,
+    AsyncSpecialOfferCampaign,
+)
 from avito.ratings import AsyncRatingProfile, AsyncReview, AsyncReviewAnswer
 from avito.realty import (
     AsyncRealtyAnalyticsReport,
@@ -225,6 +232,46 @@ class AsyncAvitoClient:
             item_id=item_id,
             user_id=user_id,
         )
+
+    def chat(
+        self, chat_id: int | str | None = None, *, user_id: int | str | None = None
+    ) -> AsyncChat:
+        """Создает async-доменный объект чата."""
+
+        return AsyncChat(self._require_transport(), chat_id=chat_id, user_id=user_id)
+
+    def chat_message(
+        self,
+        message_id: int | str | None = None,
+        *,
+        chat_id: int | str | None = None,
+        user_id: int | str | None = None,
+    ) -> AsyncChatMessage:
+        """Создает async-доменный объект сообщения чата."""
+
+        return AsyncChatMessage(
+            self._require_transport(),
+            chat_id=chat_id,
+            message_id=message_id,
+            user_id=user_id,
+        )
+
+    def chat_webhook(self) -> AsyncChatWebhook:
+        """Создает async-доменный объект webhook мессенджера."""
+
+        return AsyncChatWebhook(self._require_transport())
+
+    def chat_media(self, *, user_id: int | str | None = None) -> AsyncChatMedia:
+        """Создает async-доменный объект медиа мессенджера."""
+
+        return AsyncChatMedia(self._require_transport(), user_id=user_id)
+
+    def special_offer_campaign(
+        self, campaign_id: int | str | None = None
+    ) -> AsyncSpecialOfferCampaign:
+        """Создает async-доменный объект рассылки спецпредложений."""
+
+        return AsyncSpecialOfferCampaign(self._require_transport(), campaign_id=campaign_id)
 
     async def aclose(self) -> None:
         """Закрывает transport и auth-provider; повторный вызов безопасен."""
