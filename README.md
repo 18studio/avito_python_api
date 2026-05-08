@@ -85,6 +85,19 @@ with AvitoClient(settings) as avito:
 
 Все опциональные параметры конструктора — keyword-only. `AvitoClient` иммутабелен: `base_url`, таймауты, retry-политика и `auth` не меняются у живого клиента — вместо этого создаётся новый клиент.
 
+Async-поверхность использует те же доменные методы и модели, но требует `async with`:
+
+```python
+from avito import AsyncAvitoClient
+
+async with AsyncAvitoClient.from_env() as avito:
+    profile = await avito.account().get_self()
+    listings = await (await avito.ad(user_id=123).list(limit=20)).materialize()
+```
+
+Подробный контракт async lifecycle, ASGI-рецепты и ограничения описаны в
+[async how-to](https://p141592.github.io/avito_python_api/how-to/async/).
+
 ### Переменные окружения
 
 | Переменная | Обязательная | Описание |
