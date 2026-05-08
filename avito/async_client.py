@@ -6,6 +6,7 @@ from pathlib import Path
 
 import httpx
 
+from avito.accounts import AsyncAccount, AsyncAccountHierarchy
 from avito.auth.async_provider import AsyncAuthProvider
 from avito.auth.async_token_client import AsyncAlternateTokenClient, AsyncTokenClient
 from avito.auth.settings import AuthSettings
@@ -13,6 +14,7 @@ from avito.config import AvitoSettings
 from avito.core.async_transport import AsyncTransport
 from avito.core.exceptions import ClientClosedError
 from avito.core.types import TransportDebugInfo
+from avito.ratings import AsyncRatingProfile, AsyncReview, AsyncReviewAnswer
 from avito.tariffs import AsyncTariff
 
 
@@ -112,10 +114,35 @@ class AsyncAvitoClient:
 
         return self._require_transport().debug_info()
 
+    def account(self, user_id: int | str | None = None) -> AsyncAccount:
+        """Создает async-доменный объект аккаунта."""
+
+        return AsyncAccount(self._require_transport(), user_id=user_id)
+
+    def account_hierarchy(self, user_id: int | str | None = None) -> AsyncAccountHierarchy:
+        """Создает async-доменный объект иерархии аккаунта."""
+
+        return AsyncAccountHierarchy(self._require_transport(), user_id=user_id)
+
     def tariff(self, tariff_id: int | str | None = None) -> AsyncTariff:
         """Создает async-доменный объект тарифа."""
 
         return AsyncTariff(self._require_transport(), tariff_id=tariff_id)
+
+    def review(self) -> AsyncReview:
+        """Создает async-доменный объект отзыва."""
+
+        return AsyncReview(self._require_transport())
+
+    def review_answer(self, answer_id: int | str | None = None) -> AsyncReviewAnswer:
+        """Создает async-доменный объект ответа на отзыв."""
+
+        return AsyncReviewAnswer(self._require_transport(), answer_id=answer_id)
+
+    def rating_profile(self) -> AsyncRatingProfile:
+        """Создает async-доменный объект рейтингового профиля."""
+
+        return AsyncRatingProfile(self._require_transport())
 
     async def aclose(self) -> None:
         """Закрывает transport и auth-provider; повторный вызов безопасен."""

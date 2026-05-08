@@ -1,5 +1,6 @@
 """Пакет ratings."""
 
+from avito.ratings.async_domain import AsyncRatingProfile, AsyncReview, AsyncReviewAnswer
 from avito.ratings.domain import RatingProfile, Review, ReviewAnswer
 from avito.ratings.models import (
     RatingProfileInfo,
@@ -11,6 +12,9 @@ from avito.ratings.models import (
 )
 
 __all__ = (
+    "AsyncRatingProfile",
+    "AsyncReview",
+    "AsyncReviewAnswer",
     "RatingProfile",
     "RatingProfileInfo",
     "Review",
