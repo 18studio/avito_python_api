@@ -89,7 +89,7 @@ Before completing an API-surface change, run `make check`. If generated docs, do
 
 ## STYLEGUIDE.md — strict compliance is mandatory
 
-`STYLEGUIDE.md` is a normative document. All code changes **must** comply with it. When there is a conflict between any consideration and the STYLEGUIDE, the STYLEGUIDE takes priority.
+`.ai/STYLEGUIDE.md` is a normative document. All code changes **must** comply with it. When there is a conflict between any consideration and the STYLEGUIDE, the STYLEGUIDE takes priority.
 
 The most critical prohibitions that must never be violated:
 
