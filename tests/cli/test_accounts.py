@@ -114,6 +114,52 @@ def test_account_add_no_input_without_secret_fails_without_prompt(tmp_path: Path
     assert "AUTH_REQUIRED" in result.stderr
 
 
+def test_account_add_prompts_for_missing_client_id(tmp_path: Path) -> None:
+    result = _runner(tmp_path).invoke(
+        app,
+        ["account", "add", "main", "--client-secret", "client-secret"],
+        input="prompt-client-id\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Client ID" in result.output
+    assert "prompt-client-id" in result.output
+
+
+def test_account_add_prompts_for_missing_account_name(tmp_path: Path) -> None:
+    result = _runner(tmp_path).invoke(
+        app,
+        ["account", "add", "--client-id", "client-id", "--client-secret", "client-secret"],
+        input="main\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Имя учетной записи" in result.output
+    assert "Учетная запись добавлена: main" in result.output
+
+
+def test_account_add_no_input_without_client_id_fails_without_prompt(tmp_path: Path) -> None:
+    result = _runner(tmp_path).invoke(
+        app,
+        ["--no-input", "account", "add", "main", "--client-secret", "client-secret"],
+    )
+
+    assert result.exit_code == 4
+    assert "AUTH_REQUIRED" in result.stderr
+    assert "интерактивный ввод отключен" in result.stderr
+
+
+def test_account_add_no_input_without_account_name_fails_without_prompt(tmp_path: Path) -> None:
+    result = _runner(tmp_path).invoke(
+        app,
+        ["--no-input", "account", "add", "--client-id", "client-id", "--client-secret", "client-secret"],
+    )
+
+    assert result.exit_code == 2
+    assert "CLI_USAGE_ERROR" in result.stderr
+    assert "Интерактивный ввод отключен" in result.stderr
+
+
 def test_account_add_accepts_ticket_aliases_api_key_and_endpoint(tmp_path: Path) -> None:
     runner = _runner(tmp_path)
 

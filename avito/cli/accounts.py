@@ -8,6 +8,7 @@ from dataclasses import replace
 
 import click
 
+from avito.cli.click_params import RequiredPromptArgument, RequiredPromptOption
 from avito.cli.config import (
     AccountsDocument,
     AccountStore,
@@ -33,9 +34,32 @@ def account_group() -> None:
     """Управлять локальными учетными записями."""
 
 
+class _AuthRequiredPromptOption(RequiredPromptOption):
+    """Обязательный option с учетом глобального запрета интерактивного ввода."""
+
+    def _missing_value_error(self) -> click.ClickException:
+        """Создать auth-ошибку отсутствующего значения для non-interactive режима."""
+
+        return CliAuthRequiredError(
+            f"{self.human_readable_name} не передан, а интерактивный ввод отключен.",
+        )
+
+
 @account_group.command("add")
-@click.argument("account_name", metavar="ACCOUNT-NAME")
-@click.option("--client-id", required=True, metavar="CLIENT-ID", help="Client ID учетной записи.")
+@click.argument(
+    "account_name",
+    cls=RequiredPromptArgument,
+    prompt="Имя учетной записи",
+    metavar="ACCOUNT-NAME",
+)
+@click.option(
+    "--client-id",
+    cls=_AuthRequiredPromptOption,
+    required=True,
+    prompt="Client ID",
+    metavar="CLIENT-ID",
+    help="Client ID учетной записи.",
+)
 @click.option(
     "--client-secret",
     metavar="CLIENT-SECRET",
@@ -144,7 +168,12 @@ def list_accounts(ctx: CliContext) -> None:
 
 
 @account_group.command("use")
-@click.argument("account_name", metavar="ACCOUNT-NAME")
+@click.argument(
+    "account_name",
+    cls=RequiredPromptArgument,
+    prompt="Имя учетной записи",
+    metavar="ACCOUNT-NAME",
+)
 @click.pass_obj
 def use_account(ctx: CliContext, account_name: str) -> None:
     """Сделать учетную запись активной."""
@@ -203,7 +232,12 @@ def current_account(ctx: CliContext) -> None:
 
 
 @account_group.command("delete")
-@click.argument("account_name", metavar="ACCOUNT-NAME")
+@click.argument(
+    "account_name",
+    cls=RequiredPromptArgument,
+    prompt="Имя учетной записи",
+    metavar="ACCOUNT-NAME",
+)
 @click.option("--yes", is_flag=True, help="Удалить без интерактивного подтверждения.")
 @click.option("--confirm", metavar="ACCOUNT-NAME", help="Подтвердить имя удаляемой учетной записи.")
 @click.pass_obj

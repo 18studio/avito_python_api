@@ -52,5 +52,25 @@ def test_config_rejects_unknown_key(tmp_path: Path) -> None:
     assert "не поддерживается" in result.stderr
 
 
+def test_config_set_prompts_for_missing_required_arguments(tmp_path: Path) -> None:
+    runner = _runner(tmp_path)
+
+    set_result = runner.invoke(app, ["config", "set"], input="active-profile\nmain\n")
+    get_result = runner.invoke(app, ["config", "get", "active-profile"])
+
+    assert set_result.exit_code == 0
+    assert "Ключ" in set_result.output
+    assert "Значение" in set_result.output
+    assert get_result.stdout.strip() == "main"
+
+
+def test_config_get_no_input_without_key_fails_without_prompt(tmp_path: Path) -> None:
+    result = _runner(tmp_path).invoke(app, ["--no-input", "config", "get"])
+
+    assert result.exit_code == 2
+    assert "CLI_USAGE_ERROR" in result.stderr
+    assert "Интерактивный ввод отключен" in result.stderr
+
+
 def _runner(tmp_path: Path) -> CliRunner:
     return CliRunner(env={"AVITO_PY_HOME": str(tmp_path / "home")})

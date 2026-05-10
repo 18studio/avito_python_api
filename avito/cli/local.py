@@ -10,6 +10,7 @@ from typing import Literal
 
 import click
 
+from avito.cli.click_params import RequiredPromptArgument
 from avito.cli.config import (
     AccountStore,
     CliConfigDocument,
@@ -34,7 +35,7 @@ def config_group() -> None:
 
 
 @config_group.command("get")
-@click.argument("key", metavar="KEY")
+@click.argument("key", cls=RequiredPromptArgument, prompt="Ключ", metavar="KEY")
 @click.option("--show-source", is_flag=True, help="Показать источник значения.")
 @click.pass_obj
 def config_get(ctx: CliContext, key: str, show_source: bool) -> None:
@@ -52,8 +53,8 @@ def config_get(ctx: CliContext, key: str, show_source: bool) -> None:
 
 
 @config_group.command("set")
-@click.argument("key", metavar="KEY")
-@click.argument("value", metavar="VALUE")
+@click.argument("key", cls=RequiredPromptArgument, prompt="Ключ", metavar="KEY")
+@click.argument("value", cls=RequiredPromptArgument, prompt="Значение", metavar="VALUE")
 @click.pass_obj
 def config_set(ctx: CliContext, key: str, value: str) -> None:
     """Сохранить значение локальной конфигурации."""
@@ -73,7 +74,7 @@ def config_set(ctx: CliContext, key: str, value: str) -> None:
 
 
 @config_group.command("unset")
-@click.argument("key", metavar="KEY")
+@click.argument("key", cls=RequiredPromptArgument, prompt="Ключ", metavar="KEY")
 @click.pass_obj
 def config_unset(ctx: CliContext, key: str) -> None:
     """Удалить значение локальной конфигурации."""

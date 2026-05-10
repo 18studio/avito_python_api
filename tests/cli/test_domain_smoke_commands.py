@@ -83,6 +83,53 @@ def test_every_read_factory_has_at_least_one_smoke_command() -> None:
     assert smoked_factories == read_factories
 
 
+def test_api_command_prompts_for_missing_required_option(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    command = _api_command("account.get-operations-history")
+    fake = SwaggerFakeTransport(registry=load_swagger_registry())
+    fake.add_success_operation(command.operation_key)
+    _install_fake_client(monkeypatch, fake)
+    _write_account(tmp_path)
+    args = [
+        "--profile",
+        "main",
+        command.resource,
+        command.action,
+        *_cli_args_except(command, "date_from"),
+    ]
+
+    result = CliRunner(env={"AVITO_PY_HOME": str(tmp_path)}).invoke(
+        app,
+        args,
+        input="2026-05-01T00:00:00+00:00\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "date from" in result.output
+    assert fake.count() >= 1
+
+
+def test_api_command_no_input_without_required_option_fails_without_prompt(tmp_path: Path) -> None:
+    command = _api_command("account.get-operations-history")
+    _write_account(tmp_path)
+    args = [
+        "--profile",
+        "main",
+        "--no-input",
+        command.resource,
+        command.action,
+        *_cli_args_except(command, "date_from"),
+    ]
+
+    result = CliRunner(env={"AVITO_PY_HOME": str(tmp_path)}).invoke(app, args)
+
+    assert result.exit_code == 7
+    assert "VALIDATION_FAILED" in result.stderr
+    assert "Интерактивный ввод отключен" in result.stderr
+
+
 @pytest.mark.parametrize("command", _WRITE_COMMANDS, ids=lambda command: command.command_id)
 def test_write_api_command_is_registered_and_renders_help(
     command: ApiCommandRecord,
@@ -170,6 +217,22 @@ def _cli_args(command: ApiCommandRecord) -> tuple[str, ...]:
     for parameter in command.parameters:
         args.extend((parameter.flag, _value_for_parameter(parameter)))
     return tuple(args)
+
+
+def _cli_args_except(command: ApiCommandRecord, skipped_parameter: str) -> tuple[str, ...]:
+    args: list[str] = []
+    for parameter in command.parameters:
+        if parameter.name != skipped_parameter:
+            args.extend((parameter.flag, _value_for_parameter(parameter)))
+    return tuple(args)
+
+
+def _api_command(command_id: str) -> ApiCommandRecord:
+    matches = tuple(
+        command for command in build_cli_registry().api_commands if command.command_id == command_id
+    )
+    assert len(matches) == 1
+    return matches[0]
 
 
 def _value_for_parameter(parameter: CliParameterSchema) -> str:

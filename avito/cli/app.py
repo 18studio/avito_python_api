@@ -10,6 +10,7 @@ import click
 
 from avito.cli import commands as api_commands
 from avito.cli.accounts import account_group
+from avito.cli.click_params import RequiredPromptOption
 from avito.cli.context import CliContext
 from avito.cli.errors import CliUsageError, InvalidFlagCombinationError
 from avito.cli.help import render_registry_help
@@ -274,10 +275,11 @@ def _parameter_click_options(
     """Преобразовать registry parameter records в Click options."""
 
     return [
-        click.Option(
+        RequiredPromptOption(
             param_decls=(parameter.flag,),
             multiple=parameter.multiple,
-            required=False,
+            required=parameter.required,
+            prompt=_prompt_label(parameter.name) if parameter.required else False,
             metavar="VALUE",
             help=f"Параметр SDK `{parameter.name}`.",
         )
@@ -334,6 +336,12 @@ def _optional_string(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _prompt_label(name: str) -> str:
+    """Вернуть человекочитаемую подпись prompt для CLI-параметра."""
+
+    return name.replace("_", " ")
 
 
 def _raw_values_from_click(raw_options: dict[str, object]) -> dict[str, tuple[str, ...]]:
