@@ -715,7 +715,7 @@ Stage policy:
 
 - Each stage must leave the branch in a releasable state.
 - Every behavior stage includes tests in the same change.
-- After Stage 4, CLI coverage report changes must be intentional in every CLI metadata change.
+- After Stage 4C, CLI coverage report changes must be intentional in every CLI metadata change.
 - After Stage 10C, `scripts/lint_cli_coverage.py --strict` is a required gate for all CLI changes.
 - Do not broaden command coverage before the previous stage's verification passes.
 - Keep each stage small enough for review. If a stage needs more than roughly 300-500 lines of production code or touches more than three production modules, split it into lettered sub-stages in this file before implementing.
@@ -734,7 +734,7 @@ Stage policy:
 
 Coverage linter phase policy:
 
-- Stage 4 introduces `scripts/lint_cli_coverage.py` in report/partial mode. It must validate registry invariants that exist at that stage, but it must not require full all-domain command coverage yet.
+- Stage 4C introduces `scripts/lint_cli_coverage.py` in report/partial mode. It must validate registry invariants that exist at that stage, but it must not require full all-domain command coverage yet.
 - Stages 8-9 use the linter in read-coverage mode.
 - Stage 10C switches the linter to strict mode and adds `make cli-lint` to `make check`.
 - Strict mode fails on every missing sync Swagger-bound command unless there is a documented intentional exclusion.
@@ -994,41 +994,150 @@ Stage checklist:
 
 ### Stage 4: CLI Registry From SDK Metadata
 
+Split Stage 4 into three reviewable sub-stages. The goal is to introduce the
+registry foundation, then help/alias behavior, then static coverage and
+architecture enforcement. Do not start generic input coercion in Stage 5 until
+all Stage 4 sub-stages pass.
+
+#### Stage 4A: Typed Registry and Discovery Report
+
 Deliverables:
 
 - Build `avito/cli/registry.py`.
-- Convert sync discovered Swagger bindings into canonical resource/action records.
-- Preserve factory name, factory args, method name, method args, operation key, and domain.
-- Add nested help support for registry-backed resources and actions:
-  - `avito help <resource>`;
-  - `avito help <resource> <action>`;
-  - generated help must use registry metadata and must not instantiate `AvitoClient`.
-- Register local commands and public non-Swagger helpers in separate categories.
-- Add alias support separate from canonical command records.
-- Add deterministic collision detection for `resource action`.
-- Add exclusion record type.
-- Add registry/coverage JSON report command or hidden internal report.
-- Extend `scripts/lint_architecture.py` with CLI import-boundary checks that forbid production `avito/cli/` imports from `tests`, `avito.testing`, domain operation modules, transport implementations, auth provider internals, and `avito.core.operations`. Add a dedicated CLI architecture linter only if the existing script becomes materially unsuitable.
+- Convert sync discovered Swagger bindings into canonical API command records.
+- Preserve factory name, factory args, method name, method args, operation key,
+  spec, path, HTTP method, domain, deprecated flag, and legacy flag.
+- Derive canonical resource/action names from factory and method names using
+  lowercase kebab-case.
+- Register local commands and public non-Swagger helpers in separate categories,
+  but do not implement nested registry-backed help yet.
+- Add exclusion record types for API bindings, helper workflows, and execution
+  smoke coverage.
+- Add deterministic registry JSON/report data that can be produced without
+  constructing `AvitoClient`, reading account files, or touching the network.
+- Keep adapter references as stable string ids only; do not import adapter
+  implementation modules during registry construction.
 
 Tests:
 
-- registry can be built without constructing `AvitoClient`, reading account files, or touching the network;
-- local helper command metadata is visible to help/registration code separately from API command metadata;
-- aliases delegate to canonical command records at runtime and do not produce duplicate callbacks.
-- `avito help <resource>` and `avito help <resource> <action>` render registry-backed help without constructing `AvitoClient`.
-
-Static lint responsibilities introduced in this stage:
-
-- `scripts/lint_cli_coverage.py --phase registry` verifies that the registry includes all sync discovered bindings in report mode;
-- the same phase verifies kebab-case resource/action names, duplicate canonical commands, one-to-one binding ownership, alias policy, local/API collisions, forbidden `resource-id`, and required exclusion metadata;
-- the same phase verifies that adapter references, if present, point to an
-  explicit adapter registry entry rather than ad hoc callback names;
-- `scripts/lint_architecture.py` verifies CLI production import boundaries.
+- registry can be built without constructing `AvitoClient`, reading account
+  files, or touching the network;
+- sync discovered Swagger bindings are represented in report mode as command
+  candidates or explicit exclusions;
+- API, helper, local, alias placeholder, and exclusion records are separate typed
+  categories;
+- registry report output is deterministic.
 
 Verification:
 
 ```bash
 poetry run pytest tests/cli/test_registry.py
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
+poetry run mypy avito
+poetry run ruff check avito/cli tests/cli
+```
+
+Exit criteria:
+
+- Registry records are typed, deterministic, and serializable.
+- Registry builds without creating `AvitoClient`.
+- Registry pytest tests cover runtime behavior only.
+- Full missing-command failures are deferred to later coverage-linter phases, not
+  silently skipped.
+
+Stage checklist:
+
+- [ ] `avito/cli/registry.py` exists with typed API, helper, local, alias, and exclusion records.
+- [ ] Sync Swagger bindings are converted into deterministic command candidates.
+- [ ] Factory/method metadata and Swagger binding identifiers are preserved.
+- [ ] Registry construction has no network, config, account-file, or `AvitoClient` side effects.
+- [ ] Registry records can reference named adapters without importing adapter implementation modules.
+- [ ] Stage 4A verification commands pass.
+
+#### Stage 4B: Registry Help, Aliases, and Collisions
+
+Deliverables:
+
+- Add nested help support for registry-backed resources and actions:
+  - `avito help <resource>`;
+  - `avito help <resource> <action>`;
+  - generated help must use registry metadata and must not instantiate
+    `AvitoClient`.
+- Add alias support separate from canonical command records.
+- Ensure aliases delegate to canonical records and never count as command
+  coverage.
+- Add deterministic collision detection for `resource action` across local,
+  helper, generated API, and alias records.
+- Add local/API collision errors before command registration.
+- Add help metadata fields needed by later generated commands: examples, related
+  commands, safety summary, output hint, and adapter id.
+
+Tests:
+
+- `avito help <resource>` and `avito help <resource> <action>` render
+  registry-backed help without constructing `AvitoClient`;
+- local helper command metadata is visible to help/registration code separately
+  from API command metadata;
+- aliases delegate to canonical command records at runtime and do not produce
+  duplicate callbacks;
+- local/API command collisions fail during registry construction.
+
+Verification:
+
+```bash
+poetry run pytest tests/cli/test_registry.py tests/cli/test_app.py
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
+poetry run mypy avito
+poetry run ruff check avito/cli tests/cli
+```
+
+Exit criteria:
+
+- Registry-backed help works for resources and actions.
+- Alias behavior is deterministic and does not create duplicate canonical
+  commands.
+- Local/API command collisions fail before runtime command registration.
+
+Stage checklist:
+
+- [ ] Registry-backed `avito help <resource>` and `avito help <resource> <action>` are implemented and tested.
+- [ ] API, helper, local, alias, and exclusion records remain separate categories.
+- [ ] Compatibility aliases delegate to canonical commands and do not count as coverage.
+- [ ] Local/API command collisions fail during registry construction.
+- [ ] Stage 4B verification commands pass.
+
+#### Stage 4C: CLI Coverage and Architecture Lint
+
+Deliverables:
+
+- Add `scripts/lint_cli_coverage.py`.
+- Implement `scripts/lint_cli_coverage.py --phase registry`.
+- In registry phase, verify that the registry includes all sync discovered
+  bindings in report mode without requiring full all-domain command coverage yet.
+- Verify lowercase kebab-case resource/action names, duplicate canonical
+  commands, one-to-one binding ownership for records present at this stage,
+  alias policy, local/API collisions, forbidden `resource-id`, and required
+  exclusion metadata.
+- Verify that adapter references, if present, point to an explicit adapter
+  registry entry rather than ad hoc callback names.
+- Extend `scripts/lint_architecture.py` with CLI import-boundary checks that
+  forbid production `avito/cli/` imports from `tests`, `avito.testing`, domain
+  operation modules, transport implementations, auth provider internals, and
+  `avito.core.operations`. Add a dedicated CLI architecture linter only if the
+  existing script becomes materially unsuitable.
+
+Tests:
+
+- runtime registry tests from Stage 4A and Stage 4B still pass;
+- linter verification is performed by running the linter against the real
+  repository, not by adding synthetic policy-only pytest cases.
+
+Verification:
+
+```bash
+poetry run pytest tests/cli/test_registry.py tests/cli/test_app.py
 poetry run python scripts/lint_cli_coverage.py --phase registry
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
@@ -1039,22 +1148,20 @@ poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 
 Exit criteria:
 
-- Registry builds without creating `AvitoClient`.
-- Registry pytest tests cover runtime behavior only.
-- CLI coverage and architecture linters fail on duplicate records, invalid names, local/API collisions, forbidden imports, or missing required exclusion metadata.
-- Full missing-command failures are deferred to read/full coverage phases, not silently skipped.
+- CLI coverage linter fails on duplicate records, invalid names, local/API
+  collisions, forbidden `resource-id`, invalid adapter references, or missing
+  required exclusion metadata.
+- Architecture lint statically enforces CLI production import boundaries.
+- Full missing-command failures are deferred to read/full coverage phases, not
+  silently skipped.
 
 Stage checklist:
 
-- [ ] Registry records are typed and deterministic.
-- [ ] Registry-backed `avito help <resource>` and `avito help <resource> <action>` are implemented and tested.
-- [ ] API, helper, local, alias, and exclusion records are separate categories.
-- [ ] Canonical API commands map one-to-one to sync Swagger bindings.
-- [ ] Local/API command collisions fail during registry construction.
-- [ ] `scripts/lint_cli_coverage.py` exists and exercises the registry.
-- [ ] Registry records can reference named adapters without importing adapter implementation modules during discovery.
+- [ ] `scripts/lint_cli_coverage.py` exists and exercises the registry in `--phase registry`.
+- [ ] Canonical API commands present at this stage map one-to-one to sync Swagger bindings.
+- [ ] CLI coverage linter checks kebab-case names, alias policy, local/API collisions, forbidden `resource-id`, and exclusion metadata.
 - [ ] Existing `scripts/lint_architecture.py` statically checks CLI production import boundaries, unless a documented dedicated-linter exception exists.
-- [ ] Stage verification commands pass.
+- [ ] Stage 4C verification commands pass.
 
 ### Stage 5: Generic Input Coercion
 
