@@ -29,6 +29,10 @@ and this project adheres to Semantic Versioning.
   публичный `model_dump()` / `to_dict()`, секреты маскируются после
   сериализации, а `PaginatedList` по умолчанию выгружает только ограниченный
   набор страниц.
+- Подключен первый registry-backed API slice CLI: `avito account get-self` и
+  `avito account get-balance --user-id ...` вызывают публичный `AvitoClient`,
+  проходят через общий слой приведения аргументов, сериализации и безопасного
+  JSON/human-вывода.
 
 ## [2.1.0] - 2026-05-08
 

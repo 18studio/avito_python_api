@@ -24,6 +24,7 @@ SafetyKind = Literal["read", "write", "destructive", "expensive", "local"]
 
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+_IMPLEMENTED_API_COMMAND_IDS = frozenset({"account.get-balance", "account.get-self"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,8 +337,9 @@ def _build_api_command_record(
         raise ValueError("API-команда требует operation_key, spec и factory.")
     resource = kebab_case(binding.factory)
     action = kebab_case(binding.method_name)
+    command_id = f"{resource}.{action}"
     return ApiCommandRecord(
-        command_id=f"{resource}.{action}",
+        command_id=command_id,
         resource=resource,
         action=action,
         operation_key=binding.operation_key,
@@ -356,13 +358,13 @@ def _build_api_command_record(
         domain=binding.domain,
         deprecated=binding.deprecated or operation.deprecated,
         legacy=binding.legacy,
-        implemented=False,
+        implemented=command_id in _IMPLEMENTED_API_COMMAND_IDS,
         description=_api_description(binding, operation),
         examples=_api_examples(resource, action, binding),
         related_commands=(),
         safety=_safety_for_method(operation.method),
         safety_summary=_safety_summary_for_method(operation.method),
-        output_hint="unknown",
+        output_hint=_output_hint_for_command(command_id),
     )
 
 
@@ -592,6 +594,12 @@ def _safety_summary_for_method(method: str) -> str:
     if method in {"GET", "HEAD"}:
         return "Команда только читает данные Avito API."
     return "Команда может изменить состояние или запустить действие в Avito API."
+
+
+def _output_hint_for_command(command_id: str) -> OutputHint:
+    if command_id in _IMPLEMENTED_API_COMMAND_IDS:
+        return "object"
+    return "unknown"
 
 
 __all__ = (

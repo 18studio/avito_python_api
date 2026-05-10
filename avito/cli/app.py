@@ -8,10 +8,13 @@ from pathlib import Path
 
 import click
 
+from avito.cli import commands as api_commands
 from avito.cli.accounts import account_group
 from avito.cli.context import CliContext
 from avito.cli.errors import CliUsageError, InvalidFlagCombinationError
 from avito.cli.help import render_registry_help
+from avito.cli.registry import ApiCommandRecord, build_cli_registry
+from avito.cli.serialization import emit_cli_result
 from avito.cli.ui import emit_stdout
 
 PACKAGE_NAME = "avito-py"
@@ -162,6 +165,74 @@ def _resolve_help_topic(parent: click.Context, topic: tuple[str, ...]) -> click.
 
 
 app.add_command(account_group)
+
+
+def _register_api_commands(root: click.Group) -> None:
+    registry = build_cli_registry()
+    for command in registry.api_commands:
+        if not command.implemented:
+            continue
+        group = _resource_group(root, command.resource)
+        group.add_command(_build_api_click_command(command))
+
+
+def _resource_group(root: click.Group, resource: str) -> click.Group:
+    existing = root.get_command(click.Context(root), resource)
+    if isinstance(existing, click.Group):
+        return existing
+    if existing is not None:
+        raise CliUsageError(
+            "Команда API конфликтует с существующей CLI-командой.",
+            details={"resource": resource},
+        )
+    group = click.Group(name=resource, help=f"Команды ресурса {resource}.")
+    root.add_command(group)
+    return group
+
+
+def _build_api_click_command(command: ApiCommandRecord) -> click.Command:
+    params: list[click.Parameter] = [
+        click.Option(
+            param_decls=(parameter.flag,),
+            multiple=parameter.multiple,
+            required=False,
+            metavar="VALUE",
+            help=f"Параметр SDK `{parameter.name}`.",
+        )
+        for parameter in command.parameters
+    ]
+
+    @click.pass_context
+    def callback(click_context: click.Context, /, **raw_options: object) -> None:
+        ctx = click_context.find_object(CliContext)
+        if ctx is None:
+            raise CliUsageError("Контекст CLI не найден.")
+        raw_values = _raw_values_from_click(raw_options)
+        result = api_commands.invoke_api_command(ctx, command, raw_values)
+        emit_cli_result(ctx, result)
+
+    return click.Command(
+        name=command.action,
+        params=params,
+        callback=callback,
+        help=command.description,
+    )
+
+
+def _raw_values_from_click(raw_options: dict[str, object]) -> dict[str, tuple[str, ...]]:
+    values: dict[str, tuple[str, ...]] = {}
+    for name, value in raw_options.items():
+        if value is None:
+            continue
+        if isinstance(value, tuple):
+            if value:
+                values[name] = tuple(str(item) for item in value)
+            continue
+        values[name] = (str(value),)
+    return values
+
+
+_register_api_commands(app)
 
 
 def main() -> None:

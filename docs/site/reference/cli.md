@@ -1,9 +1,8 @@
 # CLI
 
 `avito` is the command-line entry point for `avito-py`. The current CLI surface
-exposes the shell, global flags, account/profile commands, version commands, and
-registry-backed help for planned API commands. API-calling commands are not
-implemented yet.
+exposes the shell, global flags, account/profile commands, version commands,
+registry-backed help, and the first account API commands.
 
 ## Commands
 
@@ -16,6 +15,8 @@ implemented yet.
 | `avito --version` | Prints the installed package version. |
 | `avito version` | Prints the installed package version. With `--json`, prints `{"version": "..."}`. |
 | `python -m avito --help` | Uses the same CLI application as `avito --help`. |
+| `avito account get-self` | Calls `AvitoClient.account().get_self()` through the public SDK and prints the authorized profile. |
+| `avito account get-balance --user-id USER_ID` | Calls `AvitoClient.account(user_id=...).get_balance()` through the public SDK and prints the account balance. |
 
 Compatibility aliases are documented separately from canonical commands. For
 example, `avito account remove` delegates to `avito account delete` and does not
@@ -32,8 +33,8 @@ avito --profile main --config ./config.json --timeout 3.5 version
 
 | Flag | Current behavior |
 |---|---|
-| `--profile NAME` | Accepted and stored in the typed CLI context. Account loading is not implemented yet. |
-| `--config PATH` | Accepted and stored in the typed CLI context. Config loading is not implemented yet. |
+| `--profile NAME` | Selects the local account profile used for API commands. |
+| `--config PATH` | Selects an alternate config file for local profile resolution. |
 | `--json` | Selects JSON output for commands and JSON error rendering. |
 | `--plain` | Accepted as an output mode selector. |
 | `--table` | Accepted as an output mode selector. |
@@ -43,12 +44,26 @@ avito --profile main --config ./config.json --timeout 3.5 version
 | `--no-color` | Disables colored human diagnostics. |
 | `--verbose` | Accepted for future diagnostic output. |
 | `--debug` | Adds sanitized debug details to CLI errors. Secrets are redacted. |
-| `--timeout SECONDS` | Accepted and stored in the typed CLI context. API calls are not implemented yet. |
+| `--timeout SECONDS` | Passed to API commands whose public SDK method accepts a timeout override. |
 
 `--json`, `--plain`, `--table`, and `--wide` are mutually exclusive. Combining
 more than one exits with code `2`.
 
 The `NO_COLOR=1` environment variable also disables colored human diagnostics.
+
+## Implemented API Commands
+
+API commands are registry-backed and call only public SDK factories and public
+domain methods. The first vertical slice includes:
+
+```bash
+avito --profile main account get-self
+avito --json --profile main account get-balance --user-id 123
+```
+
+The command output uses the same result renderer as local commands. Human output
+uses grouped key/value lines for single SDK models, and `--json` emits the
+serialized public SDK model without extra prose.
 
 ## Output Contract
 

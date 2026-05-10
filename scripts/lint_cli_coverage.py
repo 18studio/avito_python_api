@@ -22,7 +22,7 @@ from avito.cli.registry import (
 from avito.core.swagger_discovery import discover_swagger_bindings
 from avito.core.swagger_registry import load_swagger_registry
 
-Phase = Literal["registry"]
+Phase = Literal["registry", "read"]
 CommandRecord = ApiCommandRecord | HelperCommandRecord | LocalCommandRecord
 
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -51,7 +51,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Проверить coverage registry CLI.")
     parser.add_argument(
         "--phase",
-        choices=("registry",),
+        choices=("registry", "read"),
         default="registry",
         help="Фаза проверки CLI coverage.",
     )
@@ -86,15 +86,6 @@ def lint_cli_coverage(
                 item=normalized_root.as_posix(),
             ),
         )
-    if phase != "registry":
-        return (
-            CliCoverageLintError(
-                code="CLI_PHASE_UNSUPPORTED",
-                message=f"Фаза CLI coverage не поддерживается: {phase}.",
-                item="phase",
-            ),
-        )
-
     try:
         swagger_registry = load_swagger_registry()
         discovery = discover_swagger_bindings(registry=swagger_registry)
@@ -119,6 +110,8 @@ def lint_cli_coverage(
     errors.extend(_lint_exclusions(registry))
     errors.extend(_lint_parameters(registry))
     errors.extend(_lint_deprecated_policy(registry))
+    if phase == "read":
+        errors.extend(_lint_read_phase(registry))
     errors.extend(lint_cli_registry_adapters(registry, get_command_adapter_registry()))
     return tuple(sorted(errors, key=lambda error: (error.item, error.code, error.message)))
 
@@ -459,6 +452,35 @@ def _lint_deprecated_policy(registry: CliRegistry) -> tuple[CliCoverageLintError
                         "Deprecated/compatibility binding должен иметь warning/help metadata "
                         "или intentional exclusion."
                     ),
+                    item=record.command_id,
+                )
+            )
+    return tuple(errors)
+
+
+def _lint_read_phase(registry: CliRegistry) -> tuple[CliCoverageLintError, ...]:
+    implemented_read_commands = [
+        record
+        for record in registry.api_commands
+        if record.implemented and record.http_method in {"GET", "HEAD"}
+    ]
+    implemented_ids = {record.command_id for record in implemented_read_commands}
+    errors: list[CliCoverageLintError] = []
+    required_stage8_ids = {"account.get-balance", "account.get-self"}
+    for command_id in sorted(required_stage8_ids - implemented_ids):
+        errors.append(
+            CliCoverageLintError(
+                code="CLI_READ_SLICE_MISSING",
+                message="Stage 8 read slice должен быть реализован.",
+                item=command_id,
+            )
+        )
+    for record in implemented_read_commands:
+        if record.safety != "read":
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_READ_SAFETY_INVALID",
+                    message="Read-команда должна иметь safety=read.",
                     item=record.command_id,
                 )
             )

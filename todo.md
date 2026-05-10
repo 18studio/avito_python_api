@@ -1616,12 +1616,27 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] `account get-self` runs through registry, coercion, invocation, serialization, and UI layers.
-- [ ] `account get-balance` runs through the same generic path.
-- [ ] At least one list/paginated command is covered if an account-domain candidate exists.
-- [ ] Tests use fake transport only and make no real network calls.
-- [ ] Human output and `--json` output are both covered.
-- [ ] Stage verification commands pass.
+- [x] `account get-self` runs through registry, coercion, invocation, serialization, and UI layers.
+- [x] `account get-balance` runs through the same generic path.
+- [x] At least one list/paginated command is covered if an account-domain candidate exists.
+      No account-domain read-only list/paginated candidate exists in the current sync binding set.
+- [x] Tests use fake transport only and make no real network calls.
+- [x] Human output and `--json` output are both covered.
+- [x] Stage verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli/test_account_api_commands.py: 4 passed
+poetry run pytest tests/contracts/test_swagger_contracts.py: 1911 passed
+poetry run python scripts/lint_cli_coverage.py --phase read: errors=0
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run mypy scripts/lint_cli_coverage.py: Success
+poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py: All checks passed
+```
 
 ### Stage 9: Read-Only All-Domain API Coverage
 
