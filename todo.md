@@ -92,6 +92,7 @@ Hard constraints:
 - Keep SDK core/domain/transport/auth layers free of Typer and CLI behavior.
 - Production CLI code must not import domain `operations.py`, transport implementations, auth provider internals, or testing fake transports.
 - Production CLI code must not import from `tests`, `avito.testing`, `tests/fake_transport.py`, or `avito.core.operations`.
+- Production CLI code must not import private SDK modules or private names unless the import is explicitly documented as a CLI-only compatibility exception in this plan and covered by an architecture lint rule.
 - API commands must not call `OperationSpec`, `OperationExecutor`, `Transport`, or `AuthProvider` directly.
 - API commands must not instantiate domain objects directly.
 - Do not duplicate Swagger contract data in CLI metadata. CLI metadata may store command names, examples, aliases, safety policy, output hints, and documented exclusions only.
@@ -99,6 +100,8 @@ Hard constraints:
 - Human-facing CLI text is Russian only: help descriptions, prompts, warnings, errors, and success output. Stable error codes remain uppercase English identifiers.
 - No `setattr`, `globals()`, monkey-patching, generated Python source, or dynamic SDK method injection. Deterministic Typer registration from typed registry records is allowed.
 - No dead code, unused aliases, unused `TypeVar`s, broad `Any`, or layer mixing.
+- No dynamic imports for optional CLI dependencies. Runtime dependency failures must fail at import/install time and be fixed in `pyproject.toml`.
+- No broad `except Exception` in CLI command flow unless the handler sanitizes output and immediately re-raises or converts to a typed `CliError`.
 
 Non-goals for the first complete release:
 
@@ -204,6 +207,18 @@ Navigation updates required:
 - Add `cli.md` to `docs/site/reference/.pages`.
 - Add `cli-architecture.md` to `docs/site/explanations/.pages`.
 - If README/index/tutorial links are added before the CLI is usable, mark them clearly as planned only. Prefer adding public-facing docs after Stage 12 when commands exist.
+
+## Plan Review Findings
+
+Additional findings from reviewing this plan against `.ai/STYLEGUIDE.md`, `.ai/cli-guidelines.md`, and `.ai/python-guidelines.md`:
+
+- The plan must treat CLI commands as public contracts. Renames, output schema changes, exit-code changes, and flag removals need deprecation, not silent replacement.
+- The CLI must have static architecture enforcement, not only review discipline. Import boundaries for `avito/cli/` must be covered by `scripts/lint_architecture.py` or a dedicated CLI architecture linter before broad command generation starts.
+- Python guideline compliance must be part of every stage that changes Python code. `ruff` and `mypy` are necessary but not sufficient.
+- The write-command rollout is too large as a single stage. It is split into safety primitives, domain coverage waves, and strict coverage gate so each increment remains reviewable and testable.
+- Coverage must distinguish three statuses: implemented canonical command, documented temporary exclusion, and documented intentional permanent exclusion. Temporary exclusions require an owner/follow-up and must fail after the configured target stage if still present.
+- Generated command registration must be deterministic and snapshot-testable without constructing `AvitoClient`, reading account files, or touching the network.
+- Public docs must only describe implemented commands. Future commands stay in this plan until the implementation exists.
 
 ## CLI Architecture
 
@@ -583,17 +598,22 @@ Stage policy:
 - Each stage must leave the branch in a releasable state.
 - Every behavior stage includes tests in the same change.
 - After Stage 4, CLI coverage report changes must be intentional in every CLI metadata change.
-- After Stage 10, `scripts/lint_cli_coverage.py` is a required gate for all CLI changes.
+- After Stage 10C, `scripts/lint_cli_coverage.py --strict` is a required gate for all CLI changes.
 - Do not broaden command coverage before the previous stage's verification passes.
 - Keep each stage small enough for review. If a stage needs more than roughly 300-500 lines of production code or touches more than three production modules, split it into lettered sub-stages in this file before implementing.
 - A sub-stage has its own deliverables, tests, verification commands, and checked-off exit criteria.
 - Do not mark a checklist item complete from inspection alone when a command or test can verify it.
+- Every stage that changes Python code must run `poetry run python scripts/lint_python_guidelines.py`.
+- Every stage that adds or changes CLI production imports must run `poetry run python scripts/lint_architecture.py` or the dedicated CLI architecture lint command introduced by that stage.
+- Every stage that changes command metadata must run the current `scripts/lint_cli_coverage.py` phase, even before strict mode is enabled.
+- Every stage that changes persisted config/account JSON shape must include migration/backward-compatibility tests or explicitly state why no existing persisted shape exists yet.
+- Every stage that changes user-visible CLI text, flags, output fields, or exit codes must update `docs/site/reference/cli.md` once that reference page exists.
 
 Coverage linter phase policy:
 
 - Stage 4 introduces `scripts/lint_cli_coverage.py` in report/partial mode. It must validate registry invariants that exist at that stage, but it must not require full all-domain command coverage yet.
 - Stages 8-9 use the linter in read-coverage mode.
-- Stage 10 switches the linter to strict mode and adds `make cli-lint` to `make check`.
+- Stage 10C switches the linter to strict mode and adds `make cli-lint` to `make check`.
 - Strict mode fails on every missing sync Swagger-bound command unless there is a documented intentional exclusion.
 - Linter output must be deterministic and sanitized so it can be committed as an audit artifact when needed.
 
@@ -779,6 +799,7 @@ Deliverables:
 - Add deterministic collision detection for `resource action`.
 - Add exclusion record type.
 - Add registry/coverage JSON report command or hidden internal report.
+- Extend `scripts/lint_architecture.py` or add a dedicated CLI architecture lint rule that forbids production `avito/cli/` imports from `tests`, `avito.testing`, domain operation modules, transport implementations, auth provider internals, and `avito.core.operations`.
 
 Tests:
 
@@ -795,6 +816,8 @@ Verification:
 ```bash
 poetry run pytest tests/cli/test_registry.py
 poetry run python scripts/lint_cli_coverage.py --phase registry
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
@@ -812,6 +835,7 @@ Stage checklist:
 - [ ] Canonical API commands map one-to-one to sync Swagger bindings.
 - [ ] Local/API command collisions fail during registry construction.
 - [ ] `scripts/lint_cli_coverage.py` exists and exercises the registry.
+- [ ] CLI production import boundaries are statically checked.
 - [ ] Stage verification commands pass.
 
 ### Stage 5: Generic Input Coercion
@@ -1034,7 +1058,7 @@ Stage checklist:
 - [ ] Coverage linter distinguishes read coverage from pending write coverage.
 - [ ] Stage verification commands pass.
 
-### Stage 10: Write Commands, Safety, and Dry Run
+### Stage 10A: Write Safety Primitives
 
 Deliverables:
 
@@ -1043,8 +1067,8 @@ Deliverables:
 - Support `--dry-run` only when the SDK public method already supports `dry_run` or when CLI can safely preview without changing SDK behavior.
 - Do not fake dry-run for SDK methods that would still execute transport.
 - Ensure write commands build the same SDK call in dry-run and apply modes where `dry_run` exists.
-- Register generated commands for remaining write sync Swagger-bound methods.
-- Eliminate or document every unsupported sync binding.
+- Add write/destructive command metadata fields without broadening all-domain write coverage yet.
+- Add safety help text and examples for commands that can modify state or trigger expensive operations.
 
 Tests:
 
@@ -1053,16 +1077,103 @@ Tests:
 - `--yes` and `--confirm` behave deterministically;
 - dry-run methods do not call transport when SDK contract says they should not;
 - non-dry-run write commands call transport exactly once;
-- one write smoke invocation per write-capable domain with fake transport;
-- coverage test fails on missing write commands.
+- safety metadata cannot be absent for write/destructive/expensive records.
 
 Verification:
 
 ```bash
 poetry run pytest tests/cli/test_write_safety.py
+poetry run python scripts/lint_cli_coverage.py --phase write-safety
+poetry run python scripts/lint_python_guidelines.py
+poetry run mypy avito
+poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
+```
+
+Exit criteria:
+
+- No destructive command can run accidentally in non-interactive mode.
+- `--dry-run` is exposed only where the SDK method can actually avoid transport or apply mode can be proven equivalent by tests.
+
+Stage checklist:
+
+- [ ] Write/destructive/expensive classification is deterministic and tested.
+- [ ] Destructive commands require prompt, `--yes`, or exact `--confirm`.
+- [ ] `--no-input` never hangs and fails safely when confirmation is required.
+- [ ] `--dry-run` is exposed only for SDK methods that safely support it.
+- [ ] Safety behavior is reflected in command help.
+- [ ] Stage verification commands pass.
+
+### Stage 10B: Write Command Coverage by Domain Waves
+
+Deliverables:
+
+- Register generated commands for remaining write sync Swagger-bound methods in small domain waves.
+- Use these waves unless actual binding counts show a better split:
+  - Wave 1: low-count domains and isolated writes: `ratings`, `realty`, `tariffs`, `accounts`.
+  - Wave 2: medium domains: `ads`, `cpa`, `jobs`, `messenger`.
+  - Wave 3: large/high-risk domains: `orders`, `promotion`, `autoteka`.
+- Each wave must update command metadata, smoke tests, exclusions, and coverage report together.
+- Eliminate or document every unsupported sync binding in the wave before moving to the next wave.
+- Temporary exclusions are allowed only inside a wave and must include owner, reason, target stage, and follow-up.
+
+Tests:
+
+- one write smoke invocation per write-capable domain in the current wave with fake transport;
+- coverage test fails on missing write commands for completed waves;
+- command metadata assertions cover every write sync binding in completed waves;
+- safety tests run for at least one destructive or expensive command when the wave contains one.
+
+Verification for each wave:
+
+```bash
+poetry run pytest tests/cli/test_write_safety.py
 poetry run pytest tests/cli/test_all_domains_metadata.py tests/cli/test_domain_smoke_commands.py
-poetry run pytest tests/domains/promotion tests/domains/orders
+poetry run python scripts/lint_cli_coverage.py --phase write --domain <domain-or-wave>
+poetry run python scripts/lint_python_guidelines.py
+poetry run mypy avito
+poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
+```
+
+Exit criteria:
+
+- Every write sync binding in completed waves has a canonical command or explicit temporary/intentional exclusion.
+- Domain smoke tests use fake transport only and make no real network calls.
+- No broad write coverage change lands without matching tests.
+
+Stage checklist:
+
+- [ ] Wave 1 write commands are covered or explicitly excluded.
+- [ ] Wave 2 write commands are covered or explicitly excluded.
+- [ ] Wave 3 write commands are covered or explicitly excluded.
+- [ ] Every completed wave has fake-transport smoke tests.
+- [ ] Temporary exclusions have owner, reason, target stage, and follow-up.
+- [ ] Stage verification commands pass for each wave.
+
+### Stage 10C: Strict CLI Coverage Gate
+
+Deliverables:
+
+- Switch `scripts/lint_cli_coverage.py --strict` to fail on every missing sync Swagger-bound command unless it has a documented intentional exclusion.
+- Fail strict mode on expired temporary exclusions.
+- Add `make cli-lint` and include it in `quality` after `swagger-lint` and before `architecture-lint`.
+- Ensure the strict report is deterministic, sanitized, and suitable for CI output.
+
+Tests:
+
+- strict linter fails on a missing binding;
+- strict linter fails on duplicate canonical commands for one binding;
+- strict linter fails on a canonical API command without a binding;
+- strict linter fails on expired temporary exclusions;
+- strict linter passes with only implemented commands and intentional exclusions.
+
+Verification:
+
+```bash
+poetry run pytest tests/cli/test_all_domains_metadata.py tests/cli/test_domain_smoke_commands.py
 poetry run python scripts/lint_cli_coverage.py --strict
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
+make cli-lint
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
@@ -1070,21 +1181,16 @@ poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 Exit criteria:
 
 - Every sync discovered Swagger binding has exactly one canonical CLI command or documented intentional exclusion.
-- No destructive command can run accidentally in non-interactive mode.
-- `make cli-lint` can now be added to `make check`.
+- `make cli-lint` is part of `make check` through `quality`.
 
 Makefile integration:
 
 - Add `cli-lint` as `poetry run python scripts/lint_cli_coverage.py --strict`.
 - Include `cli-lint` in `quality` after `swagger-lint` and before `architecture-lint`.
-- Do not add strict `cli-lint` to `make check` before Stage 10; earlier stages use explicit phase commands only.
+- Do not add strict `cli-lint` to `make check` before Stage 10C; earlier stages use explicit phase commands only.
 
 Stage checklist:
 
-- [ ] Write/destructive classification is deterministic and tested.
-- [ ] Destructive commands require prompt, `--yes`, or exact `--confirm`.
-- [ ] `--no-input` never hangs and fails safely when confirmation is required.
-- [ ] `--dry-run` is exposed only for SDK methods that safely support it.
 - [ ] Remaining sync Swagger bindings are covered or intentionally excluded.
 - [ ] `make cli-lint` is added to `make check`.
 - [ ] Stage verification commands pass.
