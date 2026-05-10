@@ -91,12 +91,34 @@ Baseline exit codes:
 1   general error
 2   invalid usage
 3   not found
+4   permission denied
 5   authentication/config required
 6   conflict
 7   validation failed
+8   external dependency unavailable
 ```
 
 Every CLI error should include a stable error code such as `CONFIG_INVALID`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_EXISTS`, `AUTH_REQUIRED`, or `VALIDATION_FAILED`.
+User-facing CLI error messages must be written in Russian only, matching the SDK styleguide. Do not mix Russian and English in one error message. Stable error codes remain uppercase English identifiers.
+
+Global flags must have deterministic precedence and conflict behavior:
+
+- `--json` makes successful command output and CLI errors machine-readable JSON.
+- `--quiet` suppresses non-essential success output; when combined with `--json`, JSON output remains the contract for commands that return data.
+- `--debug` may include diagnostic details for human errors, but must not leak secrets; in `--json` mode diagnostics must be placed in stable JSON fields.
+- `--verbose` is user-facing detail and must not override `--quiet`.
+- `--no-color` and `NO_COLOR=1` disable color everywhere.
+- Global options should work consistently at the root command level and for subcommands through shared CLI context.
+
+The root CLI must support help in both common forms:
+
+```bash
+avito --help
+avito account --help
+avito help account
+```
+
+If Typer's built-in help behavior makes `avito help account` impractical, document the explicit exception and cover `--help` behavior instead.
 
 ## Data Model
 
@@ -178,7 +200,13 @@ Secret fields must be omitted or masked in JSON output; do not emit raw stored c
    - Keep this logic independent from Typer so tests can call it directly.
    - Create directories lazily when saving data, not on import.
    - Create directories with `0700` and config files with `0600`.
-   - Persist JSON atomically.
+   - Persist JSON atomically:
+     - create the temporary file in the same directory as the target file;
+     - ensure the temporary file is not world-readable;
+     - write and flush the full JSON document before replacement;
+     - replace the target with `os.replace`;
+     - remove leftover temporary files on write failures where practical.
+   - Map permission failures to CLI errors with exit code `4` and stable error code `PERMISSION_DENIED`.
 
 4. Add account storage layer
    - Use frozen dataclasses for CLI account records where practical.
@@ -232,12 +260,15 @@ Secret fields must be omitted or masked in JSON output; do not emit raw stored c
    - Avoid raw `print()` in command modules.
    - Use stdout for command results and stderr for errors/warnings.
    - Support `--no-color` and `NO_COLOR=1`.
+   - Centralize global CLI state in a typed context object so command modules do not parse flags independently.
 
 8. Add CLI error handling
    - Map CLI-specific errors to documented exit codes.
    - Hide stack traces unless `--debug` is enabled.
    - Emit stable error codes in human and JSON output.
-   - Keep user-facing SDK/CLI error text in one language; prefer Russian to match repository conventions.
+   - Keep user-facing SDK/CLI error text in Russian only; do not mix languages.
+   - Ensure `--json` errors are valid JSON and still go to stderr.
+   - Ensure `--debug` never exposes `client_secret`, `api_key`, refresh tokens, access tokens, authorization headers, or token-like values.
 
 9. Register console command
    - Add Poetry script entry:
@@ -281,6 +312,7 @@ Secret fields must be omitted or masked in JSON output; do not emit raw stored c
    - Cover CLI command surface with Typer's `CliRunner`:
      - `avito --help`;
      - `avito account --help`;
+     - `avito help account` or the documented exception if this form is intentionally unsupported;
      - `avito --version`;
      - `python -m avito --help` behavior through the module entry point;
      - non-interactive `account add --name dev --client-id ... --client-secret ... --endpoint ...`;
@@ -290,6 +322,10 @@ Secret fields must be omitted or masked in JSON output; do not emit raw stored c
      - `account remove --yes` only if the compatibility alias is implemented;
      - `--json` output is valid JSON and contains no raw secrets;
      - `--quiet` suppresses non-essential success output.
+     - `--json` errors are valid JSON on stderr;
+     - `--debug` does not reveal secrets;
+     - `--verbose` does not override `--quiet`;
+     - `--no-color` and `NO_COLOR=1` disable color output.
    - Prefer direct tests of the config/account storage layer for persistence edge cases.
 
 11. Update documentation
@@ -305,7 +341,7 @@ Secret fields must be omitted or masked in JSON output; do not emit raw stored c
       ```
 
     - Document `MY_SDK_HOME` and `AVITO_PY_HOME`.
-    - Mention that secrets are stored locally and masked in output.
+    - Mention that secrets are stored locally in plaintext JSON files protected with `0600` permissions and masked in output.
     - Document `--json`, `--quiet`, `--no-input`, `--no-color`, `--version`, and public exit codes.
     - Add or update a docs how-to page if CLI is considered part of public user workflow, not just README examples.
 
