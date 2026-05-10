@@ -314,6 +314,7 @@ def write_summary(domain_pages: list[str]) -> None:
         file.write("* [Покрытие API](coverage.md)\n")
         file.write("* [Отчёт покрытия API](api-report.md)\n")
         file.write("* [AvitoClient](client.md)\n")
+        file.write("* [CLI](cli.md)\n")
         file.write("* [Конфигурация](config.md)\n")
         file.write("* [Операции API](operations.md)\n")
         file.write("* Домены\n")

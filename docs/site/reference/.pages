@@ -3,6 +3,7 @@ nav:
   - coverage.md
   - api-report.md
   - client.md
+  - cli.md
   - config.md
   - operations.md
   - domains

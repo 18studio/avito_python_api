@@ -8,7 +8,58 @@ and this project adheres to Semantic Versioning.
 ## [Unreleased]
 
 ### Added
-- Нет изменений.
+- Добавлена базовая CLI-оболочка: `avito --help`, `avito --version`, `avito version`,
+  `avito help` и единый вход через `python -m avito`.
+- Задокументирован первый CLI-контракт: глобальные флаги, режимы вывода,
+  разделение stdout/stderr, безопасный JSON/human-рендеринг ошибок и стабильные
+  exit codes.
+- Добавлены локальные CLI-команды учетных записей: `avito account add`,
+  `avito account list`, `avito account use`, `avito account current`,
+  `avito account delete` и alias `avito account remove`.
+- CLI хранит учетные записи в локальных JSON-файлах с правами доступа к файлам и
+  маскирует секреты во всех режимах вывода; первая версия использует plaintext
+  storage без OS keychain.
+- Для безопасного ввода `client_secret` добавлены скрытый интерактивный prompt и
+  `--client-secret-stdin`; `--client-secret` и совместимый `--api-key` оставлены
+  для явной автоматизации с учетом риска попадания значения в историю shell.
+- Добавлена registry-backed справка `avito help <resource>` и
+  `avito help <resource> <action>` для локальных команд, helper workflows,
+  aliases и API command candidates без создания `AvitoClient`.
+- Добавлена основа сериализации результатов CLI: SDK-модели выводятся через
+  публичный `model_dump()` / `to_dict()`, секреты маскируются после
+  сериализации, а `PaginatedList` по умолчанию выгружает только ограниченный
+  набор страниц.
+- Подключен первый registry-backed API slice CLI: `avito account get-self` и
+  `avito account get-balance --user-id ...` вызывают публичный `AvitoClient`,
+  проходят через общий слой приведения аргументов, сериализации и безопасного
+  JSON/human-вывода.
+- Расширено read-only CLI-покрытие API: все поддержанные sync Swagger-bound
+  GET/HEAD-команды регистрируются через CLI registry, проходят fake-transport
+  smoke coverage и проверяются фазой `scripts/lint_cli_coverage.py --phase read`;
+  read-bindings без достаточных factory/method аргументов оформлены как
+  временные исключения до Stage 10C.
+- Добавлены CLI safety primitives для будущих write/destructive API-команд:
+  registry хранит проверенную safety policy, destructive/expensive команды
+  требуют prompt, `--yes` или точный `--confirm`, а `--dry-run` публикуется
+  только для SDK-методов с публичным `dry_run`.
+- Расширено write CLI-покрытие API: generic-safe sync Swagger-bound write-команды
+  регистрируются через CLI registry, проходят fake-transport smoke coverage и
+  проверяются фазой `scripts/lint_cli_coverage.py --phase write`; write-bindings,
+  которым нужен CLI adapter или уточнение binding metadata, оформлены как
+  временные исключения до Stage 10C.
+- Добавлены публичные CLI helper workflows: `account-health show`,
+  `listing-health show`, `chat-summary show`, `order-summary show`,
+  `review-summary show`, `promotion-summary show` и `capabilities show`;
+  команды вызывают только публичные методы `AvitoClient`, поддерживают JSON/human
+  вывод и не входят в Swagger one-to-one coverage.
+- Добавлены локальные CLI-команды конфигурации и диагностики: `avito config get`,
+  `avito config set`, `avito config unset`, `avito config list --show-source`,
+  `avito status`, `avito doctor` и `avito completion bash|zsh|fish`; команды
+  работают без сетевых вызовов и не раскрывают секреты.
+- Добавлена публичная CLI-документация: quickstart в README, how-to для
+  профилей и ежедневных workflows, стабильный reference контракт, объяснение
+  архитектуры registry/coverage и ссылки из разделов security, auth/config и
+  API coverage.
 
 ## [2.1.0] - 2026-05-08
 

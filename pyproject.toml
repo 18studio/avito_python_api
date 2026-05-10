@@ -27,6 +27,10 @@ classifiers=[
 [tool.poetry.dependencies]
 python = ">=3.12,<4.0"
 httpx = "^0.28.1"
+click = "^8.3.3"
+
+[tool.poetry.scripts]
+avito = "avito.cli.app:main"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=9.0.3,<10.0.0"
@@ -54,6 +58,7 @@ pydocstyle = { version = ">=6.3", extras = ["toml"] }
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["scripts"]
+addopts = ["--import-mode=importlib"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 markers = [

@@ -62,11 +62,31 @@ python main.py
 
 Вы увидите имя и email вашего аккаунта Avito.
 
+## Альтернатива: первый вызов из CLI
+
+Если вам нужен терминальный режим, сохраните локальный профиль и выполните тот
+же read-only запрос без Python-скрипта:
+
+```bash
+avito account add main --client-id client-id --user-id 123
+avito --profile main account get-self
+```
+
+При добавлении профиля CLI спросит `Client Secret` скрытым prompt. Для
+автоматизации используйте `--json --no-input`:
+
+```bash
+avito --json --no-input --profile main account get-self
+```
+
+Полный практический рецепт: [CLI](../how-to/cli.md).
+
 ---
 
 ## Что дальше
 
 - [Авторизация и конфигурация](../how-to/auth-and-config.md) — все способы создания клиента, env-переменные, `AvitoSettings`.
+- [CLI](../how-to/cli.md) — локальные профили, JSON-вывод, status, doctor и completion.
 - [Работа с объявлениями](../how-to/index.md) — получение, фильтрация, статистика.
 - [Reference: AvitoClient](../reference/client.md) — полный список фабричных методов.
 
