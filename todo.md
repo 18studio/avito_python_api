@@ -2036,12 +2036,23 @@ poetry run ruff check avito/cli tests/cli
 
 Stage checklist:
 
-- [ ] `config get/set/unset/list/list --show-source` work and are tested.
-- [ ] Config source precedence is visible in debug/source output.
-- [ ] `status` reports local readiness without leaking secrets.
-- [ ] `doctor` reports malformed config and permission problems.
-- [ ] Completion commands exist for bash, zsh, and fish.
-- [ ] Stage verification commands pass.
+- [x] `config get/set/unset/list/list --show-source` work and are tested.
+- [x] Config source precedence is visible in debug/source output.
+- [x] `status` reports local readiness without leaking secrets.
+- [x] `doctor` reports malformed config and permission problems.
+- [x] Completion commands exist for bash, zsh, and fish.
+- [x] Stage verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli/test_config_commands.py tests/cli/test_status_doctor.py tests/cli/test_completion.py: 9 passed
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run ruff check avito/cli tests/cli: All checks passed
+```
 
 ### Stage 13: Documentation
 

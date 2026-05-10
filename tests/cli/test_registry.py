@@ -38,7 +38,7 @@ def test_registry_builds_without_account_files_or_client_construction(
         "api_exclusions": 42,
         "helper_command_candidates": 7,
         "helper_exclusions": 1,
-        "local_commands": 7,
+        "local_commands": 16,
         "aliases": 1,
         "execution_smoke_exclusions": 0,
     }

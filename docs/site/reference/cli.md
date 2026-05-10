@@ -19,6 +19,13 @@ for supported sync Swagger-bound GET/HEAD methods.
 | `avito <resource> <read-action> [flags]` | Calls a supported sync Swagger-bound GET/HEAD SDK method through `AvitoClient` and public domain methods. |
 | `avito account get-self` | Calls `AvitoClient.account().get_self()` through the public SDK and prints the authorized profile. |
 | `avito account get-balance --user-id USER_ID` | Calls `AvitoClient.account(user_id=...).get_balance()` through the public SDK and prints the account balance. |
+| `avito config get active-profile` | Prints the effective active profile. |
+| `avito config set active-profile NAME` | Stores the active profile in the local config file. |
+| `avito config unset active-profile` | Clears the stored active profile. |
+| `avito config list --show-source` | Prints supported config keys with their value sources. |
+| `avito status` | Checks local profile/account readiness without touching the network. |
+| `avito doctor` | Checks local CLI files and reports malformed JSON or permission problems. |
+| `avito completion bash\|zsh\|fish` | Prints shell-specific completion setup instructions. |
 
 Compatibility aliases are documented separately from canonical commands. For
 example, `avito account remove` delegates to `avito account delete` and does not
@@ -52,6 +59,40 @@ avito --profile main --config ./config.json --timeout 3.5 version
 more than one exits with code `2`.
 
 The `NO_COLOR=1` environment variable also disables colored human diagnostics.
+
+## Local Config and Diagnostics
+
+The first CLI release stores one local config key: `active-profile`. The
+effective value follows the documented precedence: the root `--profile` flag
+wins over the value stored in `config.json`; if neither exists, the value is
+empty.
+
+```bash
+avito config set active-profile main
+avito config get active-profile
+avito config list --show-source
+avito config unset active-profile
+```
+
+With `--json`, config commands emit a stable `config` object. `--show-source`
+adds the source name (`cli`, `config`, or `default`) and the local config path
+when the value came from a file.
+
+`avito status` is a local readiness check. It loads the selected profile and
+account store, reports whether the CLI can construct SDK settings, and records
+`network_checked: false` because it never calls Avito API.
+
+`avito doctor` validates the local config and account files. It reports
+malformed JSON and permission failures as sanitized diagnostics; if errors are
+found, the command prints the diagnostic report and exits with `CONFIG_INVALID`.
+
+Shell completion commands print setup instructions:
+
+```bash
+avito completion bash
+avito completion zsh
+avito completion fish
+```
 
 ## Safety Flags
 

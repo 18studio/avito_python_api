@@ -13,6 +13,7 @@ from avito.cli.accounts import account_group
 from avito.cli.context import CliContext
 from avito.cli.errors import CliUsageError, InvalidFlagCombinationError
 from avito.cli.help import render_registry_help
+from avito.cli.local import completion_group, config_group, doctor_command, status_command
 from avito.cli.registry import ApiCommandRecord, HelperCommandRecord, build_cli_registry
 from avito.cli.safety import SafetyOptions
 from avito.cli.serialization import emit_cli_result
@@ -166,6 +167,10 @@ def _resolve_help_topic(parent: click.Context, topic: tuple[str, ...]) -> click.
 
 
 app.add_command(account_group)
+app.add_command(config_group)
+app.add_command(status_command)
+app.add_command(doctor_command)
+app.add_command(completion_group)
 
 
 def _register_api_commands(root: click.Group) -> None:

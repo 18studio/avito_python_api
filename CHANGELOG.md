@@ -52,6 +52,10 @@ and this project adheres to Semantic Versioning.
   `review-summary show`, `promotion-summary show` и `capabilities show`;
   команды вызывают только публичные методы `AvitoClient`, поддерживают JSON/human
   вывод и не входят в Swagger one-to-one coverage.
+- Добавлены локальные CLI-команды конфигурации и диагностики: `avito config get`,
+  `avito config set`, `avito config unset`, `avito config list --show-source`,
+  `avito status`, `avito doctor` и `avito completion bash|zsh|fish`; команды
+  работают без сетевых вызовов и не раскрывают секреты.
 
 ## [2.1.0] - 2026-05-08
 
