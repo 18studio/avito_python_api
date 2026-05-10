@@ -1,12 +1,6 @@
-"""Точка входа модуля для локальной smoke-проверки."""
+"""Точка входа `python -m avito`."""
 
-from avito.client import AvitoClient
-
-
-def main() -> None:
-    """Создает фасад, чтобы `python -m avito` работал как smoke-проверка."""
-
-    AvitoClient()
+from avito.cli.app import main
 
 
 if __name__ == "__main__":

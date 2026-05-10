@@ -8,7 +8,8 @@ and this project adheres to Semantic Versioning.
 ## [Unreleased]
 
 ### Added
-- Нет изменений.
+- Добавлена базовая CLI-оболочка: `avito --help`, `avito --version`, `avito version`,
+  `avito help` и единый вход через `python -m avito`.
 
 ## [2.1.0] - 2026-05-08
 

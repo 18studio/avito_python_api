@@ -27,6 +27,10 @@ classifiers=[
 [tool.poetry.dependencies]
 python = ">=3.12,<4.0"
 httpx = "^0.28.1"
+click = "^8.3.3"
+
+[tool.poetry.scripts]
+avito = "avito.cli.app:main"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=9.0.3,<10.0.0"

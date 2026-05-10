@@ -909,15 +909,28 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] `click` is added as a runtime dependency.
-- [ ] `poetry.lock` is updated and lock consistency is verified.
-- [ ] `avito/cli/` package exists with only the minimal shell files.
-- [ ] `avito --help`, `avito help`, `avito --version`, `avito version`, and `python -m avito --help` work.
-- [ ] Poetry script points to `avito.cli.app:main`, not directly to the Click command/group object.
-- [ ] Canonical root-level global option syntax is covered by tests.
-- [ ] No config directory or account file is created by help/version commands.
-- [ ] `tests/cli/test_app.py` covers the shell behavior.
-- [ ] Stage verification commands pass.
+- [x] `click` is added as a runtime dependency.
+- [x] `poetry.lock` is updated and lock consistency is verified.
+- [x] `avito/cli/` package exists with only the minimal shell files.
+- [x] `avito --help`, `avito help`, `avito --version`, `avito version`, and `python -m avito --help` work.
+- [x] Poetry script points to `avito.cli.app:main`, not directly to the Click command/group object.
+- [x] Canonical root-level global option syntax is covered by tests.
+- [x] No config directory or account file is created by help/version commands.
+- [x] `tests/cli/test_app.py` covers the shell behavior.
+- [x] Stage verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli/test_app.py: 8 passed
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run ruff check avito/cli tests/cli: All checks passed
+poetry check --lock: passed with existing Poetry deprecation warnings
+poetry build: built sdist and wheel
+```
 
 ### Stage 2: Errors, UI, and Safe Output
 
