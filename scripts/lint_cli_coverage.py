@@ -22,13 +22,82 @@ from avito.cli.registry import (
 from avito.core.swagger_discovery import discover_swagger_bindings
 from avito.core.swagger_registry import load_swagger_registry
 
-Phase = Literal["registry", "read", "write-safety"]
+Phase = Literal["registry", "read", "write-safety", "write"]
 CommandRecord = ApiCommandRecord | HelperCommandRecord | LocalCommandRecord
 
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _CONTROL_METHOD_FLAGS = frozenset({"--timeout", "--retry"})
 _CONTROL_METHOD_NAMES = frozenset({"timeout", "retry"})
 _DEPRECATION_POLICY_MARKERS = frozenset({"устаревшая", "совместимая", "исключ"})
+_WRITE_WAVES: dict[str, frozenset[str]] = {
+    "wave-1": frozenset(
+        {
+            "rating_profile",
+            "review",
+            "review_answer",
+            "realty_analytics_report",
+            "realty_booking",
+            "realty_listing",
+            "realty_pricing",
+            "tariff",
+            "account",
+            "account_hierarchy",
+        }
+    ),
+    "wave-2": frozenset(
+        {
+            "ad",
+            "ad_promotion",
+            "ad_stats",
+            "cpa_archive",
+            "cpa_auction",
+            "cpa_call",
+            "cpa_chat",
+            "cpa_lead",
+            "chat",
+            "chat_media",
+            "chat_message",
+            "chat_webhook",
+            "special_offer_campaign",
+        }
+    ),
+    "wave-3": frozenset(
+        {
+            "application",
+            "resume",
+            "vacancy",
+            "job_dictionary",
+            "job_webhook",
+            "autoload_archive",
+            "autoload_profile",
+            "autoload_report",
+        }
+    ),
+    "wave-4": frozenset(
+        {
+            "order",
+            "order_label",
+            "delivery_order",
+            "delivery_task",
+            "sandbox_delivery",
+            "stock",
+            "promotion_order",
+            "autostrategy_campaign",
+            "bbip_promotion",
+            "trx_promotion",
+            "target_action_pricing",
+        }
+    ),
+    "wave-5": frozenset(
+        {
+            "autoteka_vehicle",
+            "autoteka_report",
+            "autoteka_monitoring",
+            "autoteka_scoring",
+            "autoteka_valuation",
+        }
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,9 +120,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Проверить coverage registry CLI.")
     parser.add_argument(
         "--phase",
-        choices=("registry", "read", "write-safety"),
+        choices=("registry", "read", "write-safety", "write"),
         default="registry",
         help="Фаза проверки CLI coverage.",
+    )
+    parser.add_argument(
+        "--domain",
+        action="append",
+        default=None,
+        help="Factory/domain для ограничения write-проверки; можно передать несколько раз.",
     )
     parser.add_argument(
         "--root",
@@ -64,7 +139,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     phase = cast(Phase, args.phase)
-    errors = lint_cli_coverage(root=args.root, phase=phase)
+    domains = tuple(args.domain or ())
+    errors = lint_cli_coverage(root=args.root, phase=phase, domains=domains)
     report = render_text_report(errors, phase=phase)
     print(report, end="")
     return 1 if errors else 0
@@ -74,6 +150,7 @@ def lint_cli_coverage(
     *,
     root: Path = Path("."),
     phase: Phase = "registry",
+    domains: Sequence[str] = (),
 ) -> tuple[CliCoverageLintError, ...]:
     """Return CLI coverage lint violations for the real repository registry."""
 
@@ -110,10 +187,12 @@ def lint_cli_coverage(
     errors.extend(_lint_exclusions(registry))
     errors.extend(_lint_parameters(registry))
     errors.extend(_lint_deprecated_policy(registry))
-    if phase in {"read", "write-safety"}:
+    if phase in {"read", "write-safety", "write"}:
         errors.extend(_lint_read_phase(registry))
-    if phase == "write-safety":
+    if phase in {"write-safety", "write"}:
         errors.extend(_lint_write_safety_phase(registry))
+    if phase == "write":
+        errors.extend(_lint_write_phase(registry, domains=domains))
     errors.extend(lint_cli_registry_adapters(registry, get_command_adapter_registry()))
     return tuple(sorted(errors, key=lambda error: (error.item, error.code, error.message)))
 
@@ -541,6 +620,72 @@ def _lint_write_safety_phase(registry: CliRegistry) -> tuple[CliCoverageLintErro
                 )
             )
     return tuple(errors)
+
+
+def _lint_write_phase(
+    registry: CliRegistry,
+    *,
+    domains: Sequence[str],
+) -> tuple[CliCoverageLintError, ...]:
+    selected_domains = _expand_write_domains(domains)
+    write_commands = [
+        record
+        for record in registry.api_commands
+        if record.http_method not in {"GET", "HEAD"}
+        and (not selected_domains or record.factory in selected_domains)
+    ]
+    write_exclusions = [
+        exclusion
+        for exclusion in registry.exclusions
+        if exclusion.category == "api"
+        and exclusion.command_id is not None
+        and (not selected_domains or _resource_to_factory(exclusion.command_id) in selected_domains)
+    ]
+    errors: list[CliCoverageLintError] = []
+    for record in write_commands:
+        if not record.implemented:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_WRITE_COMMAND_NOT_IMPLEMENTED",
+                    message="Write sync binding должен иметь canonical CLI-команду.",
+                    item=record.command_id,
+                )
+            )
+        if record.safety not in {"write", "destructive", "expensive"}:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_WRITE_SAFETY_INVALID",
+                    message="Write-команда должна иметь write/destructive/expensive safety.",
+                    item=record.command_id,
+                )
+            )
+    for exclusion in write_exclusions:
+        if exclusion.status == "temporary" and not exclusion.target_stage:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_WRITE_EXCLUSION_TARGET_STAGE_MISSING",
+                    message="Temporary write exclusion должен содержать target_stage.",
+                    item=exclusion.exclusion_id,
+                )
+            )
+    return tuple(errors)
+
+
+def _resource_to_factory(command_id: str) -> str:
+    resource = command_id.split(".", maxsplit=1)[0]
+    return resource.replace("-", "_")
+
+
+def _expand_write_domains(domains: Sequence[str]) -> frozenset[str]:
+    expanded: set[str] = set()
+    for domain in domains:
+        normalized = domain.replace("_", "-").lower()
+        wave = _WRITE_WAVES.get(normalized)
+        if wave is None:
+            expanded.add(domain.replace("-", "_"))
+            continue
+        expanded.update(wave)
+    return frozenset(expanded)
 
 
 def _lint_adapters(

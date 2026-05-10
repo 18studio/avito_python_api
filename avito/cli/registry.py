@@ -29,6 +29,41 @@ _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 _IMPLEMENTED_API_COMMAND_IDS = frozenset({"account.get-balance", "account.get-self"})
 _READ_METHODS = frozenset({"GET", "HEAD"})
+_TEMPORARY_WRITE_EXCLUSION_COMMAND_IDS = frozenset(
+    {
+        "application.update",
+        "autostrategy-campaign.get-stat",
+        "bbip-promotion.create-order",
+        "bbip-promotion.get-forecasts",
+        "bbip-promotion.get-suggests",
+        "call-tracking-call.get",
+        "chat-media.upload-images",
+        "cpa-auction.create-item-bids",
+        "promotion-order.get-order-status",
+        "realty-analytics-report.get-report-for-classified",
+        "realty-listing.get-intervals",
+        "realty-pricing.update-realty-prices",
+        "sandbox-delivery.add-areas",
+        "sandbox-delivery.add-sorting-center",
+        "sandbox-delivery.add-tags-to-sorting-center",
+        "sandbox-delivery.add-tariff",
+        "sandbox-delivery.add-terminals",
+        "sandbox-delivery.cancel-sandbox-announcement",
+        "sandbox-delivery.create-sandbox-announcement",
+        "sandbox-delivery.set-order-properties",
+        "sandbox-delivery.set-order-real-address",
+        "sandbox-delivery.update-custom-area-schedule",
+        "sandbox-delivery.update-terms",
+        "stock.update",
+        "target-action-pricing.delete",
+        "target-action-pricing.get-promotions-by-item-ids",
+        "target-action-pricing.update-auto",
+        "target-action-pricing.update-manual",
+        "trx-promotion.apply",
+        "vacancy.update",
+        "vacancy.update-auto-renewal",
+    }
+)
 _TEMPORARY_READ_EXCLUSION_COMMAND_IDS = frozenset(
     {
         "autoteka-vehicle.get-preview",
@@ -312,6 +347,9 @@ def build_cli_registry(
         if command_record.command_id in _TEMPORARY_READ_EXCLUSION_COMMAND_IDS:
             exclusions.append(_build_temporary_read_exclusion(command_record))
             continue
+        if command_record.command_id in _TEMPORARY_WRITE_EXCLUSION_COMMAND_IDS:
+            exclusions.append(_build_temporary_write_exclusion(command_record))
+            continue
         api_commands.append(command_record)
 
     helper_commands, helper_exclusions = _build_helper_records()
@@ -383,14 +421,14 @@ def _build_api_command_record(
         domain=binding.domain,
         deprecated=binding.deprecated or operation.deprecated,
         legacy=binding.legacy,
-        implemented=_is_implemented_api_command(command_id, operation.method),
+        implemented=True,
         description=_api_description(binding, operation),
         examples=_api_examples(resource, action, binding),
         related_commands=(),
         safety=_safety_for_method(operation.method),
         safety_summary=_safety_summary_for_method(operation.method),
         safety_policy=_api_safety_policy(binding, operation),
-        output_hint=_output_hint_for_command(command_id),
+        output_hint=_output_hint_for_command(command_id, operation.method),
     )
 
 
@@ -425,6 +463,28 @@ def _build_temporary_read_exclusion(command: ApiCommandRecord) -> ExclusionRecor
         follow_up=(
             "Уточнить Swagger binding metadata или добавить CLI adapter, чтобы команда "
             "могла принять обязательный идентификатор без обхода публичного SDK."
+        ),
+        owner="cli",
+        operation_key=command.operation_key,
+        sdk_method=command.sdk_method,
+        command_id=command.command_id,
+        target_stage="10C",
+    )
+
+
+def _build_temporary_write_exclusion(command: ApiCommandRecord) -> ExclusionRecord:
+    return ExclusionRecord(
+        exclusion_id=f"api.{command.operation_key}",
+        category="api",
+        status="temporary",
+        reason=(
+            "Write binding требует CLI adapter или уточнения binding metadata: "
+            "generic flags не могут безопасно построить обязательный публичный input "
+            "model, file/stdin payload или отсутствующий идентификатор доменного объекта."
+        ),
+        follow_up=(
+            "Добавить typed CLI adapter или исправить factory_args/method_args metadata, "
+            "затем включить команду в strict write coverage."
         ),
         owner="cli",
         operation_key=command.operation_key,
@@ -693,13 +753,11 @@ def _sdk_method_accepts(binding: DiscoveredSwaggerBinding, parameter_name: str) 
     return parameter_name in inspect.signature(method).parameters
 
 
-def _is_implemented_api_command(command_id: str, method: str) -> bool:
-    return method in _READ_METHODS or command_id in _IMPLEMENTED_API_COMMAND_IDS
-
-
-def _output_hint_for_command(command_id: str) -> OutputHint:
+def _output_hint_for_command(command_id: str, method: str) -> OutputHint:
     if command_id in _IMPLEMENTED_API_COMMAND_IDS:
         return "object"
+    if method not in _READ_METHODS:
+        return "mutation"
     return "unknown"
 
 

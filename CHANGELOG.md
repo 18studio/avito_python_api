@@ -42,6 +42,11 @@ and this project adheres to Semantic Versioning.
   registry хранит проверенную safety policy, destructive/expensive команды
   требуют prompt, `--yes` или точный `--confirm`, а `--dry-run` публикуется
   только для SDK-методов с публичным `dry_run`.
+- Расширено write CLI-покрытие API: generic-safe sync Swagger-bound write-команды
+  регистрируются через CLI registry, проходят fake-transport smoke coverage и
+  проверяются фазой `scripts/lint_cli_coverage.py --phase write`; write-bindings,
+  которым нужен CLI adapter или уточнение binding metadata, оформлены как
+  временные исключения до Stage 10C.
 
 ## [2.1.0] - 2026-05-08
 

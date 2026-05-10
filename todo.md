@@ -1847,15 +1847,32 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] Wave 1 write commands are covered or explicitly excluded.
-- [ ] Wave 2 write commands are covered or explicitly excluded.
-- [ ] Wave 3 write commands are covered or explicitly excluded.
-- [ ] Wave 4 write commands are covered or explicitly excluded.
-- [ ] Wave 5 write commands are covered or explicitly excluded.
-- [ ] Every completed wave has fake-transport smoke tests.
-- [ ] Every canonical write command in completed waves has registration/help coverage and execution coverage or a documented temporary execution-smoke exclusion.
-- [ ] Temporary exclusions have owner, reason, target stage, and follow-up.
-- [ ] Stage verification commands pass for each wave.
+- [x] Wave 1 write commands are covered or explicitly excluded.
+- [x] Wave 2 write commands are covered or explicitly excluded.
+- [x] Wave 3 write commands are covered or explicitly excluded.
+- [x] Wave 4 write commands are covered or explicitly excluded.
+- [x] Wave 5 write commands are covered or explicitly excluded.
+- [x] Every completed wave has fake-transport smoke tests.
+- [x] Every canonical write command in completed waves has registration/help coverage and execution coverage or a documented temporary execution-smoke exclusion.
+- [x] Temporary exclusions have owner, reason, target stage, and follow-up.
+- [x] Stage verification commands pass for each wave.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+Generic-safe write coverage: 109 canonical write API commands.
+Temporary write/API exclusions requiring adapters or binding metadata fixes: 31.
+poetry run pytest tests/cli/test_write_safety.py tests/cli/test_domain_smoke_commands.py: passed
+poetry run python scripts/lint_cli_coverage.py --phase write: errors=0
+poetry run python scripts/lint_cli_coverage.py --phase write --domain wave-1: errors=0
+poetry run python scripts/lint_cli_coverage.py --phase write --domain wave-2 --domain wave-3 --domain wave-4 --domain wave-5: errors=0
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run mypy scripts/lint_cli_coverage.py: Success
+poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py: All checks passed
+```
 
 ### Stage 10C: Strict CLI Coverage Gate
 
