@@ -2,55 +2,57 @@
 
 ## Developer Context and Execution Instructions
 
-Этот план рассчитан на разработчика, который впервые открыл задачу и должен довести CLI-режим до стабильного, покрытого тестами состояния без нарушения архитектуры SDK.
+This plan is intended for a developer who opens the task for the first time and must bring CLI mode to a stable, tested state without violating the SDK architecture.
 
-Главная идея: CLI является тонкой оболочкой над публичным SDK. Он не знает, как устроены HTTP-запросы, авторизация, retry, Swagger operation specs, transport, response mapping и pagination internals. Для Avito API-команд CLI всегда идет через `AvitoClient` -> public factory -> public domain method -> public SDK model serialization.
+Core idea: the CLI is a thin wrapper over the public SDK. It does not know how HTTP requests, authorization, retries, Swagger operation specs, transport, response mapping, or pagination internals work. For Avito API commands, the CLI always goes through `AvitoClient` -> public factory -> public domain method -> public SDK model serialization.
 
-Как работать с планом:
+How to work with this plan:
 
-1. Перед любыми изменениями прочитать этот раздел, `Goal`, `Normative Rules`, `Current Baseline Findings`, `CLI Architecture`, `SDK Reuse Strategy`, `Registry and Coverage`.
-2. Затем прочитать обязательные документы:
+1. Before making any changes, read this section, `Goal`, `Normative Rules`, `Current Baseline Findings`, `CLI Architecture`, `SDK Reuse Strategy`, and `Registry and Coverage`.
+2. Then read the required documents:
    - `.ai/STYLEGUIDE.md`
    - `.ai/cli-guidelines.md`
    - `.ai/python-guidelines.md`
    - `docs/site/explanations/domain-architecture-v2.md`
    - `docs/site/explanations/swagger-binding-subsystem.md`
-3. Выполнять этапы строго по порядку. Не начинать следующий stage, пока текущий stage не прошел свои tests, verification commands и stage checklist.
-4. Делать маленькие изменения. Один stage должен быть отдельным reviewable increment: новая минимальная функциональность, тесты, проверки, обновленный checklist.
-5. Если stage оказался слишком крупным, разделить его на подэтапы внутри того же stage, но не перепрыгивать к следующей архитектурной области.
-6. После каждого stage оставлять репозиторий в рабочем состоянии: тесты stage проходят, mypy/ruff из verification проходят, нет временных обходов и мертвого кода.
-7. При конфликте между удобством реализации и гайдами выбирать гайды. Если гайд мешает выполнить задачу, сначала зафиксировать архитектурное решение в плане или документации, а не обходить правило молча.
+3. Execute stages strictly in order. Do not start the next stage until the current stage has passed its tests, verification commands, and stage checklist.
+4. Make small changes. One stage should be a separate reviewable increment: minimal new functionality, tests, checks, and an updated checklist.
+5. If a stage is too large, split it into sub-stages inside the same stage, but do not skip ahead to the next architectural area.
+6. After each stage, leave the repository in a working state: stage tests pass, mypy/ruff verification passes, and there are no temporary workarounds or dead code.
+7. When implementation convenience conflicts with the guides, follow the guides. If a guide blocks the task, first record the architectural decision in the plan or documentation instead of silently bypassing the rule.
 
-Что обязательно проанализировать перед началом Stage 0:
+The preliminary baseline audit has already been completed and recorded in
+`Completed Pre-Coding Audit`. Before starting Stage 1, the developer must use
+these results as the initial state:
 
-- Текущий `AvitoClient`: какие public factory methods существуют, какие являются helper/workflow methods, какие не должны становиться API-командами.
-- Текущий Swagger discovery: количество sync bindings, наличие `factory`, `factory_args`, `method_args`, `operation_key`.
-- Public domain methods: какие методы sync, какие async, какие legacy/deprecated, какие helper methods без Swagger binding.
-- Текущие модели сериализации: где есть `model_dump()` / `to_dict()`, как устроены `PaginatedList`, enums, dates/datetimes.
-- Текущие fake transport/testing helpers: что можно использовать в tests и что запрещено импортировать в production CLI.
-- Текущий `Makefile` и scripts linters: куда должен встроиться `cli-lint`, какие команды уже входят в `make check`.
-- Текущий `avito/__main__.py`: его smoke-поведение должно быть заменено на CLI handoff на Stage 1.
+- Current `AvitoClient`: which public factory methods exist, which ones are helper/workflow methods, and which ones must not become API commands.
+- Current Swagger discovery: sync binding count and presence of `factory`, `factory_args`, `method_args`, and `operation_key`.
+- Public domain methods: which methods are sync, async, legacy/deprecated, and helper methods without a Swagger binding.
+- Current serialization models: where `model_dump()` / `to_dict()` exist, and how `PaginatedList`, enums, dates, and datetimes work.
+- Current fake transport/testing helpers: what tests may use and what production CLI code must not import.
+- Current `Makefile` and script linters: where `cli-lint` must be integrated and which commands already run in `make check`.
+- Current `avito/__main__.py`: its smoke behavior must be replaced with CLI handoff in Stage 1.
 
-Правила выполнения stage:
+Stage execution rules:
 
-- Каждый stage должен иметь production code только в нужных файлах, тесты для новой логики и прохождение verification.
-- Каждый stage checklist заполняется только после фактической проверки, а не заранее.
-- Если verification command не проходит по причине, не связанной с изменением stage, это фиксируется рядом с результатом stage с точной командой и ошибкой.
-- Если нужно добавить exclusion, он должен содержать причину, область влияния и follow-up. Silent exclusions запрещены.
-- Если появляется новый public command, он должен иметь kebab-case имя, стабильные flags, Russian help/error text, JSON behavior, secret masking и тесты.
-- Если команда может изменить состояние или вызвать дорогую операцию, сначала классифицировать safety policy, затем добавлять `--dry-run`, `--yes`, `--confirm` только по правилам этого плана.
+- Each stage must put production code only in the required files, include tests for new logic, and pass verification.
+- Each stage checklist must be filled only after actual verification, not in advance.
+- If a verification command fails for a reason unrelated to the stage change, record it next to the stage result with the exact command and error.
+- If an exclusion is needed, it must include a reason, impact area, and follow-up. Silent exclusions are forbidden.
+- If a new public command appears, it must have a kebab-case name, stable flags, localized help/error text according to the styleguide, JSON behavior, secret masking, and tests.
+- If a command can modify state or trigger an expensive operation, classify the safety policy first, then add `--dry-run`, `--yes`, and `--confirm` only according to this plan.
 
 Definition of done for the whole plan:
 
-- Все stage checklists выполнены.
-- `avito` и `python -m avito` работают через один CLI app.
-- Все sync Swagger-bound domain methods покрыты canonical CLI command или явным documented exclusion.
-- Под "100% CLI coverage" в этом плане понимается: каждый sync Swagger-bound domain method имеет ровно одну canonical CLI command, а каждый не-доменный Swagger binding, deprecated/compatibility path или unsupported helper имеет documented exclusion с причиной. Прямое покрытие auth-token internals через CLI не входит в первый релиз и не считается дефектом покрытия.
-- Все supported helper workflows покрыты command или documented exclusion.
-- Coverage linter проходит и включен в `make check`.
-- CLI не дублирует SDK contracts и не обходит public `AvitoClient` surface.
-- Секреты не появляются ни в одном output mode.
-- Финальный gate из Stage 14 проходит.
+- All stage checklists are complete.
+- `avito` and `python -m avito` work through one CLI app.
+- All sync Swagger-bound domain methods are covered by a canonical CLI command or an explicit documented exclusion.
+- In this plan, "100% CLI coverage" means that each sync Swagger-bound domain method has exactly one canonical CLI command, and each non-domain Swagger binding, deprecated/compatibility path, or unsupported helper has a documented exclusion with a reason. Direct coverage of auth-token internals through the CLI is outside the first release and is not a coverage defect.
+- All supported helper workflows are covered by a command or documented exclusion.
+- The coverage linter passes and is included in `make check`.
+- The CLI does not duplicate SDK contracts and does not bypass the public `AvitoClient` surface.
+- Secrets do not appear in any output mode.
+- The final gate from Stage 14 passes.
 
 ## Goal
 
@@ -91,7 +93,7 @@ Repository contracts:
 Hard constraints:
 
 - CLI code belongs under `avito/cli/`.
-- Keep SDK core/domain/transport/auth layers free of Typer and CLI behavior.
+- Keep SDK core/domain/transport/auth layers free of Click and CLI behavior.
 - Production CLI code must not import domain `operations.py`, transport implementations, auth provider internals, or testing fake transports.
 - Production CLI code must not import from `tests`, `avito.testing`, `tests/fake_transport.py`, or `avito.core.operations`.
 - Production CLI code must not import private SDK modules or private names unless the import is explicitly documented as a CLI-only compatibility exception in this plan and covered by an architecture lint rule.
@@ -100,7 +102,7 @@ Hard constraints:
 - Do not duplicate Swagger contract data in CLI metadata. CLI metadata may store command names, examples, aliases, safety policy, output hints, and documented exclusions only.
 - Do not add or change public Avito API SDK methods as part of CLI work unless the normal SDK rules are followed: typed model, operation spec, docstring, and `@swagger_operation(...)`.
 - Human-facing CLI text is Russian only: help descriptions, prompts, warnings, errors, and success output. Stable error codes remain uppercase English identifiers.
-- No `setattr`, `globals()`, monkey-patching, generated Python source, or dynamic SDK method injection. Deterministic Typer registration from typed registry records is allowed.
+- No `setattr`, `globals()`, monkey-patching, generated Python source, or dynamic SDK method injection. Deterministic Click command registration from typed registry records is allowed.
 - No dead code, unused aliases, unused `TypeVar`s, broad `Any`, or layer mixing.
 - No dynamic imports for optional CLI dependencies. Runtime dependency failures must fail at import/install time and be fixed in `pyproject.toml`.
 - No broad `except Exception` in CLI command flow unless the handler sanitizes output and immediately re-raises or converts to a typed `CliError`.
@@ -234,7 +236,7 @@ Initial helper policy:
 Current documentation uses MkDocs Material with `docs_dir: docs/site`.
 Navigation is controlled by `awesome-pages` through `.pages` files:
 
-- `docs/site/.pages` is the top-level nav: `Главная`, `Tutorials`, `How-to`, `Reference`, `Explanations`, `Changelog`.
+- `docs/site/.pages` is the top-level nav: Home, `Tutorials`, `How-to`, `Reference`, `Explanations`, `Changelog`.
 - `docs/site/tutorials/.pages` contains onboarding tutorials.
 - `docs/site/how-to/.pages` contains task-oriented recipes.
 - `docs/site/reference/.pages` contains stable public contracts and generated reference pages.
@@ -279,15 +281,15 @@ Additional findings from reviewing this plan against `.ai/STYLEGUIDE.md`, `.ai/c
 - Coverage must distinguish three statuses: implemented canonical command, documented temporary exclusion, and documented intentional permanent exclusion. Temporary exclusions require an owner/follow-up and must fail after the configured target stage if still present.
 - Generated command registration must be deterministic and inspectable by the CLI coverage linter without constructing `AvitoClient`, reading account files, or touching the network.
 - Public docs must only describe implemented commands. Future commands stay in this plan until the implementation exists.
-- The console entry point must be a stable callable, not the Typer application object itself. Use `avito.cli.app:main` for packaging and keep `app` as the reusable Typer application instance for tests and `python -m avito`.
-- Root-level global options are the canonical syntax for the first release: `avito --profile main account get-self`. Supporting trailing global options such as `avito account get-self --profile main` is optional and must be implemented deliberately, not assumed from Typer/Click behavior.
-- The generated API command layer should prefer deterministic Click command objects attached to the Typer root app when runtime-built parameters become too rigid for Typer's signature model. This keeps registration inspectable without generating Python source.
-- If production code imports `click` directly, add `click` as an explicit runtime dependency instead of relying on Typer's transitive dependency. If `click` is used only through Typer testing utilities, keep it out of production imports.
+- The console entry point must be a stable callable, not a Click command object itself. Use `avito.cli.app:main` for packaging and keep `app` as the reusable Click root command/group for tests and `python -m avito`.
+- Root-level global options are the canonical syntax for the first release: `avito --profile main account get-self`. Supporting trailing global options such as `avito account get-self --profile main` is optional and must be implemented deliberately, not assumed from Click behavior.
+- The generated API command layer must use deterministic Click command objects attached to the Click root group. This keeps registration inspectable without generating Python source.
+- `click` is the CLI framework for every stage and must be an explicit runtime dependency from Stage 1.
 - Safety classification cannot rely on HTTP method alone. HTTP method may provide a default, but final command safety must come from explicit registry metadata and reviewed overrides for write, destructive, expensive, and local commands.
 - CLI import-boundary checks should extend the existing `scripts/lint_architecture.py` unless there is a concrete reason to split them into a dedicated script. Avoid two overlapping architecture linters.
 - The stable CLI contract should be documented as soon as the corresponding surface exists. Create or update `docs/site/reference/cli.md` from the first stage that introduces user-visible flags, output fields, exit codes, or command names; Stage 13 remains the full documentation pass.
 - Every stage that adds or changes user-visible CLI behavior must update `CHANGELOG.md`. The SDK styleguide treats CLI commands, flags, output fields, and exit codes as public contracts.
-- Dependency stages must update both `pyproject.toml` and `poetry.lock`. Verification must include a lock consistency check after adding `typer` or direct `click` usage.
+- Dependency stages must update both `pyproject.toml` and `poetry.lock`. Verification must include a lock consistency check after adding `click` or changing CLI runtime dependencies.
 - Representative smoke tests by factory are not enough for the final "all methods" claim. Before strict coverage, every canonical CLI command must be registered, render help, and execute at least once through a fake client or `SwaggerFakeTransport` when safe synthetic arguments exist. Commands that cannot be executed generically need a documented exclusion or a custom adapter with tests.
 - Secret input must not force users to put `client_secret` in shell history. `--client-secret` remains supported for explicit automation, but `account add` must also support a hidden TTY prompt and at least one non-interactive alternative such as `--client-secret-stdin` or documented environment/config input.
 - Some Swagger-bound methods may need command-specific adapters for file input, multipart data, binary responses, or complex public input models. These adapters are allowed only inside `avito/cli/` and must still call public `AvitoClient` factories and public domain methods.
@@ -329,14 +331,14 @@ Use a small hand-written CLI shell plus registry/discovery-driven API commands:
 avito/
   cli/
     __init__.py
-    app.py              # root Typer app and global context
+    app.py              # root Click group and global context
     accounts.py         # local account/profile commands only
     client.py           # CLI-only AvitoClient construction
     commands.py         # generic invocation engine for SDK methods
     config.py           # CLI home, JSON persistence, account/config store
     coverage.py         # CLI coverage report and linter helpers
     errors.py           # CLI errors, exit-code mapping, secret sanitization
-    help.py             # help command compatibility if Typer is insufficient
+    help.py             # help command compatibility when Click defaults are insufficient
     registry.py         # command registry built from SDK metadata
     schemas.py          # CLI input coercion from signatures/type hints
     serialization.py    # model/pagination result serialization
@@ -347,9 +349,9 @@ Do not add domain-specific CLI modules for every API package unless a command ne
 
 Command registration approach:
 
-- Use Typer for the root app, global options, local workflow commands, and help/version/status/doctor/config/account commands.
+- Use Click for the root group, global options, local workflow commands, and help/version/status/doctor/config/account commands.
 - Register generated API commands deterministically from registry records.
-- For generated API commands, prefer typed `click.Command` objects attached to the Typer app when registry-built parameters are required. This is allowed because it is deterministic command registration, not SDK method injection.
+- Generated API commands are typed `click.Command` objects attached to Click groups from registry metadata. This is deterministic command registration, not SDK method injection.
 - Do not generate Python source files for commands.
 - Do not use `setattr`, `globals()`, monkey-patching, or modifying SDK/domain classes to create commands.
 - Generated command callbacks must all delegate to one invocation engine; command-specific behavior belongs in registry metadata only when the generic path cannot infer it safely.
@@ -695,9 +697,9 @@ Help must include:
 
 Implementation requirement:
 
-- `avito help` is a public compatibility command, not a private Typer behavior assumption.
+- `avito help` is a public compatibility command, not a private Click behavior assumption.
 - `avito help <resource>` and `avito help <resource> <action>` must be tested no later than the stage that introduces nested generated commands.
-- If Typer's default help cannot provide this shape, implement a small `help.py` adapter that reads the same command registry metadata used for command registration.
+- If Click's default help cannot provide this shape, implement a small `help.py` adapter that reads the same command registry metadata used for command registration.
 
 Completion commands:
 
@@ -709,17 +711,71 @@ avito completion fish
 
 Completion can start with static command/flag completion and later add profile/account names.
 
+## Completed Pre-Coding Audit
+
+Baseline audit was completed before CLI implementation on 2026-05-10. This is
+recorded here as pre-work, not as an implementation stage.
+
+Verified repository state:
+
+```text
+sync Swagger canonical map entries: 204
+sync Swagger bindings without factory metadata: 4
+sync Swagger bindings: 204
+sync binding factories with factory metadata: 48
+AvitoClient public callable methods, excluding close/from_env/auth/debug_info: 56
+python -m avito behavior: silent smoke entry point that constructs AvitoClient
+CLI package/dependency state: no avito/cli package, no click dependency, no console script
+Makefile state: no cli-lint target; quality currently runs typecheck, lint,
+  python-guidelines-lint, swagger-lint, architecture-lint, async-parity-lint,
+  docstring-lint, build
+```
+
+Verification commands run:
+
+```bash
+poetry run python -c "from avito.core.swagger_discovery import discover_swagger_bindings; print(len(discover_swagger_bindings().canonical_map))"
+poetry run python -c "from avito.core.swagger_discovery import discover_swagger_bindings; d=discover_swagger_bindings(); print(len([b for b in d.bindings if b.variant == 'sync' and b.operation_key is not None and b.factory is None]))"
+poetry run python -m avito
+poetry run pytest tests/core/test_swagger_linter.py tests/contracts/test_swagger_contracts.py
+```
+
+Verification result:
+
+```text
+canonical map entries: 204
+sync bindings without factory metadata: 4
+python -m avito: exited 0 with no output
+tests/core/test_swagger_linter.py tests/contracts/test_swagger_contracts.py:
+1913 passed in 8.67s
+```
+
+The 4 bindings without factory metadata remain the planned first-release
+auth-token exclusions:
+
+- `avito.auth.provider.AlternateTokenClient.request_client_credentials_token`
+- `avito.auth.provider.AlternateTokenClient.request_refresh_token`
+- `avito.auth.provider.TokenClient.request_autoteka_client_credentials_token`
+- `avito.auth.provider.TokenClient.request_client_credentials_token`
+
 ## Implementation Stages
 
 Stage policy:
 
 - Each stage must leave the branch in a releasable state.
 - Every behavior stage includes tests in the same change.
+- Stage deliverables are additive to this policy section. If a stage changes
+  public CLI behavior but does not repeat `CHANGELOG.md` or CLI reference docs
+  in its own deliverables, the policy here still requires those updates.
 - After Stage 4C, CLI coverage report changes must be intentional in every CLI metadata change.
 - After Stage 10C, `scripts/lint_cli_coverage.py --strict` is a required gate for all CLI changes.
 - Do not broaden command coverage before the previous stage's verification passes.
 - Keep each stage small enough for review. If a stage needs more than roughly 300-500 lines of production code or touches more than three production modules, split it into lettered sub-stages in this file before implementing.
 - A sub-stage has its own deliverables, tests, verification commands, and checked-off exit criteria.
+- If a coverage wave contains methods with file input, multipart payloads,
+  binary responses, complex public input models, destructive operations, or
+  expensive side effects, split that wave before coding. Do not absorb that
+  complexity into a broad generated-command change.
 - Do not mark a checklist item complete from inspection alone when a command or test can verify it.
 - Every stage that changes Python code must run `poetry run python scripts/lint_python_guidelines.py`.
 - Every stage that adds or changes CLI production imports must run `poetry run python scripts/lint_architecture.py` or the dedicated CLI architecture lint command introduced by that stage.
@@ -740,54 +796,31 @@ Coverage linter phase policy:
 - Strict mode fails on every missing sync Swagger-bound command unless there is a documented intentional exclusion.
 - Linter output must be deterministic and sanitized so it can be committed as an audit artifact when needed.
 
-### Stage 0: Baseline Audit
+Execution coverage policy:
 
-Deliverables:
-
-- Record current sync Swagger binding count.
-- Record current `AvitoClient` public callable count and sync binding factory metadata count.
-- Confirm which factory names exist in `AvitoClient` but not in bindings.
-- Confirm whether every sync binding has `factory` metadata.
-- Record sync binding counts grouped by discovered `factory`; do not use localized Swagger tags as the canonical CLI coverage grouping.
-- Record public non-Swagger helpers and decide command vs exclusion.
-- Record current `python -m avito` behavior and mark it for replacement.
-- Record existing `Makefile` gates that CLI work must integrate with.
-
-Verification:
-
-```bash
-poetry run python -c "from avito.core.swagger_discovery import discover_swagger_bindings; print(len(discover_swagger_bindings().canonical_map))"
-poetry run python -c "from avito.core.swagger_discovery import discover_swagger_bindings; d=discover_swagger_bindings(); print(len([b for b in d.bindings if b.variant == 'sync' and b.operation_key is not None and b.factory is None]))"
-poetry run pytest tests/core/test_swagger_linter.py tests/contracts/test_swagger_contracts.py
-```
-
-Exit criteria:
-
-- Audit note includes exact counts and reproducible commands.
-- Missing factory metadata is tracked before CLI generation starts.
-
-Stage checklist:
-
-- [ ] Baseline command output is pasted into this plan or a linked implementation note.
-- [ ] Sync binding count, public callable count, sync binding factory count, and missing factory metadata list are recorded.
-- [ ] Factory-grouped binding counts are recorded and selected as the coverage wave planning basis.
-- [ ] The 4 auth-token bindings have an explicit planned treatment: exclusion, auth workflow, or SDK change.
-- [ ] Stage verification commands pass.
+- A command being registered and help-renderable is not enough for final
+  coverage. Every canonical command must execute at least once through a fake
+  client or fake transport unless it has a documented execution-smoke exclusion.
+- Execution-smoke exclusions are separate from API coverage exclusions. They
+  must include reason, owner, follow-up, and whether the command is still
+  user-supported.
+- Commands needing file input, stdin, binary output, multipart handling, or
+  complex public input models should receive explicit CLI adapters rather than
+  weakening the generic invocation path.
 
 ### Stage 1: CLI Dependency and Shell
 
 Deliverables:
 
-- Add `typer` dependency.
-- Add `click` as an explicit runtime dependency only if Stage 1 production code imports `click` directly. If Stage 1 uses Click only through Typer test utilities, do not add a separate direct dependency yet; revisit this when generated API commands start using `click.Command`.
+- Add `click` as an explicit runtime dependency.
 - Update `poetry.lock` after dependency changes.
-- Use Typer/Click test utilities only in tests; do not add a custom subprocess harness unless behavior specifically requires `python -m avito`.
+- Use Click test utilities only in tests; do not add a custom subprocess harness unless behavior specifically requires `python -m avito`.
 - Add `avito/cli/` package skeleton.
-- Add root `avito` app with typed global context.
+- Add root `avito` Click group with typed global context.
 - Add `avito --help`, `avito --version`, `avito version`.
 - Add `avito help` as the user-facing help entry point. At Stage 1 it may delegate to root help only; nested help such as `avito help account get-self` becomes mandatory once nested commands exist.
 - Route `python -m avito` to the same CLI app.
-- Register Poetry script as `avito = "avito.cli.app:main"`; keep `app` as the reusable Typer application object.
+- Register Poetry script as `avito = "avito.cli.app:main"`; keep `app` as the reusable Click command/group object.
 - Use Russian help text from the beginning.
 - Add a `CHANGELOG.md` entry for the new CLI shell and public entry points.
 
@@ -819,12 +852,11 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] `typer` is added as a runtime dependency.
-- [ ] `click` is either not imported by production code, or is added as an explicit runtime dependency.
+- [ ] `click` is added as a runtime dependency.
 - [ ] `poetry.lock` is updated and lock consistency is verified.
 - [ ] `avito/cli/` package exists with only the minimal shell files.
 - [ ] `avito --help`, `avito help`, `avito --version`, `avito version`, and `python -m avito --help` work.
-- [ ] Poetry script points to `avito.cli.app:main`, not directly to the Typer app object.
+- [ ] Poetry script points to `avito.cli.app:main`, not directly to the Click command/group object.
 - [ ] Canonical root-level global option syntax is covered by tests.
 - [ ] No config directory or account file is created by help/version commands.
 - [ ] `tests/cli/test_app.py` covers the shell behavior.
@@ -1203,7 +1235,7 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] CLI parameter metadata is typed and independent from Typer internals where practical.
+- [ ] CLI parameter metadata is typed and independent from Click internals where practical.
 - [ ] Primitive, bool, date, datetime, enum, optional, and list coercion are tested.
 - [ ] Repeated flags and documented comma-separated values behave consistently.
 - [ ] Invalid values produce Russian `VALIDATION_FAILED` errors.
@@ -1411,6 +1443,10 @@ Deliverables:
 - Add generated examples where safe and meaningful.
 - Add command metadata for methods needing custom list/file/enum parsing.
 - Document every temporarily unsupported read-only sync binding.
+- Before registering a whole factory group, classify each read-only method as
+  generic, adapter-backed, or excluded. Methods requiring file/stdin/binary
+  handling or complex public input models must not be forced through the generic
+  path just to satisfy coverage.
 
 Required coverage groups:
 
@@ -1518,6 +1554,10 @@ Stage checklist:
 Deliverables:
 
 - Register generated commands for remaining write sync Swagger-bound methods in small domain waves.
+- Treat the suggested waves as planning defaults, not mandatory commit size. If
+  a wave exceeds the stage size policy, split it into smaller sub-waves in this
+  file before implementation and give each sub-wave its own tests,
+  verification, and checklist.
 - Use discovered `factory` names as the wave unit. Suggested waves, based on the 2026-05-10 baseline:
   - Wave 1: low-count/low-risk factories: `rating_profile`, `review`, `review_answer`, `realty_analytics_report`, `realty_booking`, `realty_listing`, `realty_pricing`, `tariff`, `account`, `account_hierarchy`.
   - Wave 2: medium factories: `ad`, `ad_promotion`, `ad_stats`, `cpa_archive`, `cpa_auction`, `cpa_call`, `cpa_chat`, `cpa_lead`, `chat`, `chat_media`, `chat_message`, `chat_webhook`, `special_offer_campaign`.
@@ -1527,6 +1567,9 @@ Deliverables:
 - Each wave must update command metadata, smoke tests, exclusions, and coverage report together.
 - Eliminate or document every unsupported sync binding in the wave before moving to the next wave.
 - Temporary exclusions are allowed only inside a wave and must include owner, reason, target stage, and follow-up.
+- Before exposing a write command, record its safety classification explicitly
+  in registry metadata. HTTP method defaults can propose a classification, but
+  reviewed metadata is required before the command becomes public.
 
 Tests:
 
@@ -1817,7 +1860,7 @@ Stage checklist:
 
 ## Acceptance Checklist
 
-- [ ] `typer` dependency added.
+- [ ] `click` dependency added.
 - [ ] `avito/cli/` exists and is isolated from SDK core/domain/transport/auth layers.
 - [ ] Console command `avito` is registered in `pyproject.toml`.
 - [ ] Console command entry point is `avito.cli.app:main`.
@@ -1862,3 +1905,9 @@ Stage checklist:
 - Paginated commands default to bounded output: first page only or the SDK/default page size when applicable. Full materialization requires explicit `--all`.
 - Generated API commands use named flags only in the first release. Positional primary IDs can be added later as additive aliases after command stability is proven.
 - The 4 auth-token Swagger bindings are documented intentional exclusions for the first release and are represented by local account/status/doctor workflows instead of direct token-client commands.
+- Click is the only planned CLI framework for the first release and is an
+  explicit runtime dependency from Stage 1.
+- Command coverage and execution-smoke coverage are separate gates: a command
+  may satisfy Swagger coverage only when it is canonical and registered, but it
+  still needs execution-smoke coverage or a documented execution exclusion
+  before the final strict gate.
