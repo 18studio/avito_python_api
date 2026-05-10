@@ -24,7 +24,7 @@ from avito.cli.errors import (
     CliUsageError,
     CliValidationError,
 )
-from avito.cli.registry import ApiCommandRecord
+from avito.cli.registry import ApiCommandRecord, HelperCommandRecord
 from avito.cli.safety import SafetyOptions, validate_safety_options
 from avito.cli.schemas import coerce_cli_values
 from avito.client import AvitoClient
@@ -68,6 +68,37 @@ def invoke_api_command(
         safety_options=safety_options,
         client_factory=client_factory,
     )
+
+
+def invoke_helper_command(
+    ctx: CliContext,
+    command: HelperCommandRecord,
+    raw_values: Mapping[str, Sequence[str]],
+    *,
+    client_factory: ClientFactory | None = None,
+) -> object:
+    """Invoke one public helper workflow through `AvitoClient`."""
+
+    values = coerce_cli_values(command.parameters, raw_values, no_input=ctx.no_input)
+    settings = resolve_avito_settings(ctx)
+    resolved_factory = client_factory or _default_client_factory
+
+    try:
+        with resolved_factory(settings) as client:
+            method = getattr(client, command.sdk_method_name, None)
+            if not callable(method):
+                raise CliSdkMethodError(
+                    "Публичный helper-метод SDK для команды не найден.",
+                    details={
+                        "method": command.sdk_method_name,
+                        "command_id": command.command_id,
+                    },
+                )
+            return method(**values)
+    except CliError:
+        raise
+    except AvitoError as exc:
+        raise map_sdk_error(exc, command=command) from exc
 
 
 def _invoke_api_command_generic(
@@ -123,7 +154,11 @@ def resolve_avito_settings(ctx: CliContext) -> AvitoSettings:
     return account.to_avito_settings()
 
 
-def map_sdk_error(error: AvitoError, *, command: ApiCommandRecord) -> CliError:
+def map_sdk_error(
+    error: AvitoError,
+    *,
+    command: ApiCommandRecord | HelperCommandRecord,
+) -> CliError:
     """Convert SDK exceptions into documented CLI errors."""
 
     details = _sdk_error_details(error, command=command)
@@ -235,10 +270,13 @@ def _find_account(accounts: Sequence[StoredAccount], profile: str) -> StoredAcco
     return None
 
 
-def _sdk_error_details(error: AvitoError, *, command: ApiCommandRecord) -> dict[str, object]:
-    return {
+def _sdk_error_details(
+    error: AvitoError,
+    *,
+    command: ApiCommandRecord | HelperCommandRecord,
+) -> dict[str, object]:
+    details: dict[str, object] = {
         "command_id": command.command_id,
-        "operation_key": command.operation_key,
         "sdk_method": command.sdk_method,
         "status_code": error.status_code,
         "error_code": error.error_code,
@@ -249,12 +287,16 @@ def _sdk_error_details(error: AvitoError, *, command: ApiCommandRecord) -> dict[
         "metadata": dict(error.metadata),
         "details": error.details,
     }
+    if isinstance(command, ApiCommandRecord):
+        details["operation_key"] = command.operation_key
+    return details
 
 
 __all__ = (
     "ClientContext",
     "ClientFactory",
     "SafetyOptions",
+    "invoke_helper_command",
     "invoke_api_command",
     "map_sdk_error",
     "resolve_avito_settings",

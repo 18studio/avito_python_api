@@ -203,6 +203,7 @@ def lint_cli_coverage(
         errors.extend(_lint_write_phase(registry, domains=domains))
     if phase == "strict":
         errors.extend(_lint_strict_phase(registry))
+        errors.extend(_lint_helper_phase(registry))
     errors.extend(lint_cli_registry_adapters(registry, get_command_adapter_registry()))
     return tuple(sorted(errors, key=lambda error: (error.item, error.code, error.message)))
 
@@ -713,6 +714,34 @@ def _lint_strict_phase(registry: CliRegistry) -> tuple[CliCoverageLintError, ...
     return tuple(errors)
 
 
+def _lint_helper_phase(registry: CliRegistry) -> tuple[CliCoverageLintError, ...]:
+    helper_exclusion_methods = {
+        exclusion.sdk_method
+        for exclusion in registry.exclusions
+        if exclusion.category == "helper" and exclusion.sdk_method is not None
+    }
+    errors: list[CliCoverageLintError] = []
+    for record in registry.helper_commands:
+        if not record.implemented:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_HELPER_COMMAND_NOT_IMPLEMENTED",
+                    message="Helper workflow должен иметь CLI-команду или exclusion.",
+                    item=record.command_id,
+                )
+            )
+        if record.sdk_method in helper_exclusion_methods:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_HELPER_DUPLICATE_POLICY",
+                    message="Helper workflow одновременно реализован и исключен.",
+                    item=record.command_id,
+                )
+            )
+    errors.extend(_lint_registered_helper_commands(registry))
+    return tuple(errors)
+
+
 def _lint_registered_api_commands(registry: CliRegistry) -> tuple[CliCoverageLintError, ...]:
     root_context = click.Context(app)
     errors: list[CliCoverageLintError] = []
@@ -733,6 +762,32 @@ def _lint_registered_api_commands(registry: CliRegistry) -> tuple[CliCoverageLin
                 CliCoverageLintError(
                     code="CLI_API_ACTION_NOT_REGISTERED",
                     message="Action canonical API command не зарегистрирован.",
+                    item=record.command_id,
+                )
+            )
+    return tuple(errors)
+
+
+def _lint_registered_helper_commands(registry: CliRegistry) -> tuple[CliCoverageLintError, ...]:
+    root_context = click.Context(app)
+    errors: list[CliCoverageLintError] = []
+    for record in registry.helper_commands:
+        group = app.get_command(root_context, record.resource)
+        if not isinstance(group, click.Group):
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_HELPER_RESOURCE_NOT_REGISTERED",
+                    message="Resource group helper-команды не зарегистрирован.",
+                    item=record.command_id,
+                )
+            )
+            continue
+        action = group.get_command(root_context, record.action)
+        if action is None:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_HELPER_ACTION_NOT_REGISTERED",
+                    message="Action helper-команды не зарегистрирован.",
                     item=record.command_id,
                 )
             )

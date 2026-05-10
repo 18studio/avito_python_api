@@ -177,7 +177,7 @@ def _render_alias_help(alias: AliasRecord) -> str:
 
 
 def _parameter_lines(record: RegistryCommandRecord) -> tuple[str, ...]:
-    if not isinstance(record, ApiCommandRecord):
+    if isinstance(record, LocalCommandRecord):
         return ()
     return tuple(
         f"  {parameter.flag:<24} {_format_parameter_source(parameter.source)}: "

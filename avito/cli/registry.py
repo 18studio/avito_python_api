@@ -10,8 +10,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 from avito.cli.safety import CommandSafetyPolicy
-from avito.cli.schemas import CliParameterSchema as CliParameterRecord
-from avito.cli.schemas import build_parameter_schemas
+from avito.cli.schemas import (
+    CliParameterSchema,
+    CliValueKind,
+    build_parameter_schemas,
+)
 from avito.core.swagger_discovery import (
     DiscoveredSwaggerBinding,
     SwaggerBindingDiscovery,
@@ -92,7 +95,7 @@ class ApiCommandRecord:
     factory: str
     factory_args: Mapping[str, str]
     method_args: Mapping[str, str]
-    parameters: tuple[CliParameterRecord, ...]
+    parameters: tuple[CliParameterSchema, ...]
     spec: str
     http_method: str
     path: str
@@ -154,6 +157,7 @@ class HelperCommandRecord:
     action: str
     sdk_method_name: str
     sdk_method: str
+    parameters: tuple[CliParameterSchema, ...]
     implemented: bool
     description: str
     examples: tuple[str, ...]
@@ -173,6 +177,7 @@ class HelperCommandRecord:
             "action": self.action,
             "sdk_method_name": self.sdk_method_name,
             "sdk_method": self.sdk_method,
+            "parameters": [parameter.to_dict() for parameter in self.parameters],
             "implemented": self.implemented,
             "description": self.description,
             "examples": list(self.examples),
@@ -434,7 +439,7 @@ def _build_api_command_record(
 
 def _build_parameter_records(
     binding: DiscoveredSwaggerBinding,
-) -> tuple[CliParameterRecord, ...]:
+) -> tuple[CliParameterSchema, ...]:
     return build_parameter_schemas(binding)
 
 
@@ -497,12 +502,55 @@ def _build_temporary_write_exclusion(command: ApiCommandRecord) -> ExclusionReco
 
 def _build_helper_records() -> tuple[tuple[HelperCommandRecord, ...], tuple[ExclusionRecord, ...]]:
     helper_commands = (
-        _helper("account-health", "show", "account_health", "Health-сводка аккаунта."),
-        _helper("listing-health", "show", "listing_health", "Health-сводка объявлений."),
-        _helper("chat-summary", "show", "chat_summary", "Сводка сообщений."),
+        _helper(
+            "account-health",
+            "show",
+            "account_health",
+            "Health-сводка аккаунта.",
+            parameters=(
+                _helper_parameter("user_id", "integer"),
+                _helper_parameter("listing_limit", "integer"),
+                _helper_parameter("listing_page_size", "integer"),
+                _helper_parameter("date_from", "date"),
+                _helper_parameter("date_to", "date"),
+            ),
+        ),
+        _helper(
+            "listing-health",
+            "show",
+            "listing_health",
+            "Health-сводка объявлений.",
+            parameters=(
+                _helper_parameter("user_id", "integer"),
+                _helper_parameter("limit", "integer"),
+                _helper_parameter("page_size", "integer"),
+                _helper_parameter("date_from", "date"),
+                _helper_parameter("date_to", "date"),
+            ),
+        ),
+        _helper(
+            "chat-summary",
+            "show",
+            "chat_summary",
+            "Сводка сообщений.",
+            parameters=(_helper_parameter("user_id", "integer"),),
+        ),
         _helper("order-summary", "show", "order_summary", "Сводка заказов."),
         _helper("review-summary", "show", "review_summary", "Сводка отзывов."),
-        _helper("promotion-summary", "show", "promotion_summary", "Сводка продвижения."),
+        _helper(
+            "promotion-summary",
+            "show",
+            "promotion_summary",
+            "Сводка продвижения.",
+            parameters=(
+                _helper_parameter(
+                    "item_ids",
+                    "list",
+                    multiple=True,
+                    item_value_kind="integer",
+                ),
+            ),
+        ),
         _helper("capabilities", "show", "capabilities", "Список возможностей SDK."),
     )
     exclusions = (
@@ -525,6 +573,8 @@ def _helper(
     action: str,
     method_name: str,
     description: str,
+    *,
+    parameters: tuple[CliParameterSchema, ...] = (),
 ) -> HelperCommandRecord:
     return HelperCommandRecord(
         command_id=f"{resource}.{action}",
@@ -532,7 +582,8 @@ def _helper(
         action=action,
         sdk_method_name=method_name,
         sdk_method=f"avito.client.AvitoClient.{method_name}",
-        implemented=False,
+        parameters=parameters,
+        implemented=True,
         description=description,
         examples=(f"avito {resource} {action}", f"avito --json --no-input {resource} {action}"),
         related_commands=(),
@@ -545,6 +596,26 @@ def _helper(
             review_note="Helper-команда только читает данные через публичный интерфейс SDK.",
         ),
         output_hint="object",
+    )
+
+
+def _helper_parameter(
+    name: str,
+    value_kind: CliValueKind,
+    *,
+    multiple: bool = False,
+    item_value_kind: CliValueKind | None = None,
+) -> CliParameterSchema:
+    return CliParameterSchema(
+        name=name,
+        source="method",
+        binding_expression=f"helper.{name}",
+        flag=f"--{kebab_case(name)}",
+        value_kind=value_kind,
+        required=False,
+        multiple=multiple,
+        item_value_kind=item_value_kind,
+        annotation=value_kind,
     )
 
 
@@ -765,7 +836,7 @@ def _output_hint_for_command(command_id: str, method: str) -> OutputHint:
 __all__ = (
     "AliasRecord",
     "ApiCommandRecord",
-    "CliParameterRecord",
+    "CliParameterSchema",
     "CliRegistry",
     "ExclusionRecord",
     "HelperCommandRecord",

@@ -1982,12 +1982,26 @@ poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 
 Stage checklist:
 
-- [ ] Each supported helper workflow has a command or explicit exclusion.
-- [ ] Helper commands are excluded from Swagger one-to-one coverage counts.
-- [ ] Helper commands use only public `AvitoClient`/SDK methods.
-- [ ] Helper commands do not collide with generated API commands.
-- [ ] Helper outputs support human and JSON modes and are sanitized.
-- [ ] Stage verification commands pass.
+- [x] Each supported helper workflow has a command or explicit exclusion.
+- [x] Helper commands are excluded from Swagger one-to-one coverage counts.
+- [x] Helper commands use only public `AvitoClient`/SDK methods.
+- [x] Helper commands do not collide with generated API commands.
+- [x] Helper outputs support human and JSON modes and are sanitized.
+- [x] Stage verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli/test_helper_workflows.py: 6 passed
+poetry run pytest tests/cli/test_helper_workflows.py tests/cli/test_app.py tests/cli/test_registry.py: 28 passed
+poetry run python scripts/lint_cli_coverage.py --strict: errors=0
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run mypy scripts/lint_cli_coverage.py: Success
+poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py: All checks passed
+```
 
 ### Stage 12: Config, Status, Doctor, and Completion
 

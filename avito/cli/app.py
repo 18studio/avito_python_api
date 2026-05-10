@@ -13,7 +13,7 @@ from avito.cli.accounts import account_group
 from avito.cli.context import CliContext
 from avito.cli.errors import CliUsageError, InvalidFlagCombinationError
 from avito.cli.help import render_registry_help
-from avito.cli.registry import ApiCommandRecord, build_cli_registry
+from avito.cli.registry import ApiCommandRecord, HelperCommandRecord, build_cli_registry
 from avito.cli.safety import SafetyOptions
 from avito.cli.serialization import emit_cli_result
 from avito.cli.ui import emit_stdout
@@ -170,11 +170,16 @@ app.add_command(account_group)
 
 def _register_api_commands(root: click.Group) -> None:
     registry = build_cli_registry()
-    for command in registry.api_commands:
-        if not command.implemented:
+    for api_command in registry.api_commands:
+        if not api_command.implemented:
             continue
-        group = _resource_group(root, command.resource)
-        group.add_command(_build_api_click_command(command))
+        group = _resource_group(root, api_command.resource)
+        group.add_command(_build_api_click_command(api_command))
+    for helper_command in registry.helper_commands:
+        if not helper_command.implemented:
+            continue
+        group = _resource_group(root, helper_command.resource)
+        group.add_command(_build_helper_click_command(helper_command))
 
 
 def _resource_group(root: click.Group, resource: str) -> click.Group:
@@ -192,16 +197,7 @@ def _resource_group(root: click.Group, resource: str) -> click.Group:
 
 
 def _build_api_click_command(command: ApiCommandRecord) -> click.Command:
-    params: list[click.Parameter] = [
-        click.Option(
-            param_decls=(parameter.flag,),
-            multiple=parameter.multiple,
-            required=False,
-            metavar="VALUE",
-            help=f"Параметр SDK `{parameter.name}`.",
-        )
-        for parameter in command.parameters
-    ]
+    params = _parameter_click_options(command)
     params.extend(_safety_click_options(command))
 
     @click.pass_context
@@ -225,6 +221,44 @@ def _build_api_click_command(command: ApiCommandRecord) -> click.Command:
         callback=callback,
         help=command.description,
     )
+
+
+def _build_helper_click_command(command: HelperCommandRecord) -> click.Command:
+    params = _parameter_click_options(command)
+
+    @click.pass_context
+    def callback(click_context: click.Context, /, **raw_options: object) -> None:
+        ctx = click_context.find_object(CliContext)
+        if ctx is None:
+            raise CliUsageError("Контекст CLI не найден.")
+        result = api_commands.invoke_helper_command(
+            ctx,
+            command,
+            _raw_values_from_click(raw_options),
+        )
+        emit_cli_result(ctx, result)
+
+    return click.Command(
+        name=command.action,
+        params=params,
+        callback=callback,
+        help=command.description,
+    )
+
+
+def _parameter_click_options(
+    command: ApiCommandRecord | HelperCommandRecord,
+) -> list[click.Parameter]:
+    return [
+        click.Option(
+            param_decls=(parameter.flag,),
+            multiple=parameter.multiple,
+            required=False,
+            metavar="VALUE",
+            help=f"Параметр SDK `{parameter.name}`.",
+        )
+        for parameter in command.parameters
+    ]
 
 
 def _safety_click_options(command: ApiCommandRecord) -> list[click.Parameter]:

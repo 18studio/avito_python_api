@@ -47,6 +47,11 @@ and this project adheres to Semantic Versioning.
   проверяются фазой `scripts/lint_cli_coverage.py --phase write`; write-bindings,
   которым нужен CLI adapter или уточнение binding metadata, оформлены как
   временные исключения до Stage 10C.
+- Добавлены публичные CLI helper workflows: `account-health show`,
+  `listing-health show`, `chat-summary show`, `order-summary show`,
+  `review-summary show`, `promotion-summary show` и `capabilities show`;
+  команды вызывают только публичные методы `AvitoClient`, поддерживают JSON/human
+  вывод и не входят в Swagger one-to-one coverage.
 
 ## [2.1.0] - 2026-05-08
 
