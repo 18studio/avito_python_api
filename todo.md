@@ -112,30 +112,87 @@ Non-goals for the first complete release:
 
 ## Current Baseline Findings
 
-Recorded on 2026-05-10 while preparing this plan:
+Recorded and re-verified on 2026-05-10 while preparing this plan:
 
 ```text
 sync Swagger bindings: 204
+sync Swagger canonical map entries: 204
 AvitoClient public callable methods, excluding close/from_env/auth/debug_info: 56
 sync Swagger binding factories with factory metadata: 48
 sync bindings without factory metadata: 4
 ```
 
-Sync binding count by Swagger domain:
+Reproducible verification commands:
+
+```bash
+poetry run python -c "from avito.core.swagger_discovery import discover_swagger_bindings; d=discover_swagger_bindings(); sync=[b for b in d.bindings if b.variant == 'sync' and b.operation_key is not None]; print(len(sync)); print(len(d.canonical_map)); print(len([b for b in sync if b.factory is None]))"
+poetry run python -c "import inspect; from avito.client import AvitoClient; excluded={'close','from_env','auth','debug_info'}; print(len([name for name, value in inspect.getmembers(AvitoClient) if not name.startswith('_') and callable(value) and name not in excluded]))"
+poetry run pytest tests/core/test_swagger_linter.py tests/contracts/test_swagger_contracts.py
+```
+
+Verification result:
 
 ```text
-accounts: 8
-ads: 28
-auth: 4
-autoteka: 26
-cpa: 14
-jobs: 25
-messenger: 18
-orders: 45
-promotion: 24
-ratings: 4
-realty: 7
-tariffs: 1
+tests/core/test_swagger_linter.py tests/contracts/test_swagger_contracts.py:
+1913 passed
+```
+
+Do not use Swagger tag/domain labels as canonical CLI coverage buckets. Current
+Swagger labels are human-facing and may be localized. CLI coverage and wave
+planning must use discovered `factory` metadata as the stable grouping key.
+
+Sync binding count by discovered factory:
+
+```text
+<none>: 4
+account: 3
+account_hierarchy: 5
+ad: 3
+ad_promotion: 4
+ad_stats: 4
+application: 5
+autoload_archive: 4
+autoload_profile: 5
+autoload_report: 8
+autostrategy_campaign: 7
+autoteka_monitoring: 4
+autoteka_report: 7
+autoteka_scoring: 2
+autoteka_valuation: 1
+autoteka_vehicle: 12
+bbip_promotion: 3
+call_tracking_call: 3
+chat: 4
+chat_media: 2
+chat_message: 4
+chat_webhook: 3
+cpa_archive: 3
+cpa_auction: 2
+cpa_call: 2
+cpa_chat: 4
+cpa_lead: 2
+delivery_order: 5
+delivery_task: 1
+job_dictionary: 2
+job_webhook: 4
+order: 9
+order_label: 3
+promotion_order: 4
+rating_profile: 1
+realty_analytics_report: 2
+realty_booking: 2
+realty_listing: 2
+realty_pricing: 1
+resume: 3
+review: 1
+review_answer: 2
+sandbox_delivery: 25
+special_offer_campaign: 5
+stock: 2
+target_action_pricing: 5
+tariff: 1
+trx_promotion: 3
+vacancy: 11
 ```
 
 Bindings without factory metadata:
@@ -214,11 +271,40 @@ Additional findings from reviewing this plan against `.ai/STYLEGUIDE.md`, `.ai/c
 
 - The plan must treat CLI commands as public contracts. Renames, output schema changes, exit-code changes, and flag removals need deprecation, not silent replacement.
 - The CLI must have static architecture enforcement, not only review discipline. Import boundaries for `avito/cli/` must be covered by `scripts/lint_architecture.py` or a dedicated CLI architecture linter before broad command generation starts.
+- CLI coverage grouping must be based on discovered `factory` metadata, not localized Swagger tag/domain labels. Tags may be useful in reports, but they are not stable enough to drive command coverage gates.
 - Python guideline compliance must be part of every stage that changes Python code. `ruff` and `mypy` are necessary but not sufficient.
 - The write-command rollout is too large as a single stage. It is split into safety primitives, domain coverage waves, and strict coverage gate so each increment remains reviewable and testable.
 - Coverage must distinguish three statuses: implemented canonical command, documented temporary exclusion, and documented intentional permanent exclusion. Temporary exclusions require an owner/follow-up and must fail after the configured target stage if still present.
-- Generated command registration must be deterministic and snapshot-testable without constructing `AvitoClient`, reading account files, or touching the network.
+- Generated command registration must be deterministic and inspectable by the CLI coverage linter without constructing `AvitoClient`, reading account files, or touching the network.
 - Public docs must only describe implemented commands. Future commands stay in this plan until the implementation exists.
+
+## Test and Lint Boundaries
+
+`.ai/STYLEGUIDE.md` has a closed testing policy. CLI work must follow it from
+Stage 1 instead of using pytest as a general policy checker.
+
+Use pytest only for runtime behavior that a user or integration can observe:
+
+- CLI command execution, exit codes, stdout/stderr routing, and output formats;
+- profile/account/config persistence behavior through temporary directories;
+- secret masking on success, error, verbose, debug, and JSON paths;
+- generic invocation through public `AvitoClient` factories and public domain methods;
+- fake-transport API smoke flows with request/response behavior;
+- pagination materialization behavior and dry-run transport behavior.
+
+Use linters/scripts, not pytest, for static or inventory checks:
+
+- architecture/import boundaries for `avito/cli/`;
+- generated command naming, kebab-case resources/actions/flags, and forbidden `resource-id`;
+- duplicate canonical commands, local/API collisions, alias policy, and exclusion metadata completeness;
+- coverage inventory: missing bindings, extra commands, expired temporary exclusions, and strict one-to-one mapping;
+- report determinism and sanitized CLI coverage report content.
+
+Do not add pytest tests whose only purpose is to exercise the CLI coverage linter
+with synthetic broken inputs. The linter is verified by running it against the
+real repository in each stage gate. If a linter rule needs implementation-level
+confidence, keep its parser/checker simple and cover it through deterministic
+real-code fixtures or move the check into an existing static lint script.
 
 ## CLI Architecture
 
@@ -625,6 +711,7 @@ Deliverables:
 - Record current `AvitoClient` public callable count and sync binding factory metadata count.
 - Confirm which factory names exist in `AvitoClient` but not in bindings.
 - Confirm whether every sync binding has `factory` metadata.
+- Record sync binding counts grouped by discovered `factory`; do not use localized Swagger tags as the canonical CLI coverage grouping.
 - Record public non-Swagger helpers and decide command vs exclusion.
 - Record current `python -m avito` behavior and mark it for replacement.
 - Record existing `Makefile` gates that CLI work must integrate with.
@@ -646,6 +733,7 @@ Stage checklist:
 
 - [ ] Baseline command output is pasted into this plan or a linked implementation note.
 - [ ] Sync binding count, public callable count, sync binding factory count, and missing factory metadata list are recorded.
+- [ ] Factory-grouped binding counts are recorded and selected as the coverage wave planning basis.
 - [ ] The 4 auth-token bindings have an explicit planned treatment: exclusion, auth workflow, or SDK change.
 - [ ] Stage verification commands pass.
 
@@ -673,6 +761,8 @@ Verification:
 
 ```bash
 poetry run pytest tests/cli/test_app.py
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli
 poetry build
@@ -717,6 +807,8 @@ Verification:
 
 ```bash
 poetry run pytest tests/cli/test_errors.py tests/cli/test_ui.py
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli
 ```
@@ -768,6 +860,8 @@ Verification:
 
 ```bash
 poetry run pytest tests/cli/test_config.py tests/cli/test_accounts.py
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli
 ```
@@ -803,13 +897,15 @@ Deliverables:
 
 Tests:
 
-- registry includes all sync discovered bindings;
-- registry accounts for helpers separately from API bindings;
-- resource/action names are kebab-case;
-- every command maps to exactly one binding;
-- no duplicate canonical commands;
-- aliases do not affect canonical coverage;
-- local/API collisions fail.
+- registry can be built without constructing `AvitoClient`, reading account files, or touching the network;
+- local helper command metadata is visible to help/registration code separately from API command metadata;
+- aliases delegate to canonical command records at runtime and do not produce duplicate callbacks.
+
+Static lint responsibilities introduced in this stage:
+
+- `scripts/lint_cli_coverage.py --phase registry` verifies that the registry includes all sync discovered bindings in report mode;
+- the same phase verifies kebab-case resource/action names, duplicate canonical commands, one-to-one binding ownership, alias policy, local/API collisions, forbidden `resource-id`, and required exclusion metadata;
+- `scripts/lint_architecture.py` verifies CLI production import boundaries.
 
 Verification:
 
@@ -825,7 +921,8 @@ poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 Exit criteria:
 
 - Registry builds without creating `AvitoClient`.
-- Registry tests fail on duplicate records, invalid names, local/API collisions, or missing required exclusion metadata.
+- Registry pytest tests cover runtime behavior only.
+- CLI coverage and architecture linters fail on duplicate records, invalid names, local/API collisions, forbidden imports, or missing required exclusion metadata.
 - Full missing-command failures are deferred to read/full coverage phases, not silently skipped.
 
 Stage checklist:
@@ -853,13 +950,20 @@ Tests:
 - coercion for primitives, bools, dates, datetimes, enums, optionals, and lists;
 - missing required values fail without prompt in `--no-input`;
 - invalid values produce `VALIDATION_FAILED`;
-- kebab-case flag generation is stable;
-- `resource-id` is rejected.
+- supported repeated flags and comma-separated values coerce to the same typed list result.
+
+Static lint responsibilities:
+
+- generated flag names are lowercase kebab-case;
+- generated flags never expose `--resource-id`.
 
 Verification:
 
 ```bash
 poetry run pytest tests/cli/test_schemas.py
+poetry run python scripts/lint_cli_coverage.py --phase registry
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli
 ```
@@ -874,7 +978,7 @@ Stage checklist:
 - [ ] Primitive, bool, date, datetime, enum, optional, and list coercion are tested.
 - [ ] Repeated flags and documented comma-separated values behave consistently.
 - [ ] Invalid values produce Russian `VALIDATION_FAILED` errors.
-- [ ] Generated flag names are kebab-case and never `--resource-id`.
+- [ ] Generated flag names are checked by the CLI coverage linter for kebab-case and absence of `--resource-id`.
 - [ ] Stage verification commands pass.
 
 ### Stage 6: Generic Invocation Engine
@@ -894,13 +998,18 @@ Tests:
 - active profile is used by default;
 - `--profile` overrides active profile;
 - CLI invokes expected factory and public method with expected arguments;
-- CLI never calls operation specs or transport directly;
 - SDK `AuthenticationError`, `AuthorizationError`, `ValidationError`, `ConflictError`, and not-found equivalents map to documented exit codes.
+
+Static lint responsibilities:
+
+- CLI production code does not import or call operation specs, operation executor, transport implementations, auth provider internals, or testing fake transports.
 
 Verification:
 
 ```bash
 poetry run pytest tests/cli/test_commands.py
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli
 ```
@@ -915,7 +1024,7 @@ Stage checklist:
 - [ ] `AvitoClient` is always used as a context manager.
 - [ ] Invocation calls factory method, then public domain method.
 - [ ] Test-only fake clients are injected through typed protocols and are not imported by production CLI modules.
-- [ ] Tests prove operation specs and transport are not called directly by CLI code.
+- [ ] Architecture lint proves operation specs and transport are not called directly by CLI production code.
 - [ ] SDK exceptions map to documented CLI exit codes and sanitized messages.
 - [ ] Stage verification commands pass.
 
@@ -944,6 +1053,8 @@ Verification:
 
 ```bash
 poetry run pytest tests/cli/test_serialization.py
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli
 ```
@@ -986,6 +1097,9 @@ Verification:
 ```bash
 poetry run pytest tests/cli/test_account_api_commands.py
 poetry run pytest tests/contracts/test_swagger_contracts.py
+poetry run python scripts/lint_cli_coverage.py --phase read
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli
 ```
@@ -1013,33 +1127,33 @@ Deliverables:
 - Add command metadata for methods needing custom list/file/enum parsing.
 - Document every temporarily unsupported read-only sync binding.
 
-Required domains:
+Required coverage groups:
 
-- `accounts`
-- `ads`
-- `autoteka`
-- `cpa`
-- `jobs`
-- `messenger`
-- `orders`
-- `promotion`
-- `ratings`
-- `realty`
-- `tariffs`
+- Use discovered `factory` names as the canonical grouping key.
+- Keep smoke-test grouping human-sized by clustering related factories only for
+  test organization, not for coverage accounting.
+- Every factory that owns at least one read-only sync binding must have either a
+  smoke invocation in this stage or an explicit temporary exclusion with follow-up.
 
 Tests:
 
-- one read-only smoke invocation per domain with fake transport;
-- one metadata assertion per discovered read-only sync binding;
-- coverage test fails on missing read-only commands;
-- no generated command exposes forbidden names or secret fields.
+- one read-only smoke invocation per completed factory group with fake transport;
+- human and JSON output for representative object and collection commands;
+- fake-transport behavior proves no real network calls are made.
+
+Static lint responsibilities:
+
+- every discovered read-only sync binding has a canonical command or explicit temporary exclusion;
+- generated read-only commands do not expose forbidden names or secret fields;
+- local/API command collisions and alias policy remain valid.
 
 Verification:
 
 ```bash
-poetry run pytest tests/cli/test_all_domains_metadata.py
 poetry run pytest tests/cli/test_domain_smoke_commands.py
 poetry run python scripts/lint_cli_coverage.py --phase read
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
@@ -1051,8 +1165,8 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] Every required domain has at least one read-only smoke command test.
-- [ ] Metadata tests cover every discovered read-only sync binding.
+- [ ] Every completed factory group has at least one read-only smoke command test.
+- [ ] CLI coverage linter covers every discovered read-only sync binding.
 - [ ] Unsupported read-only bindings have explicit temporary exclusions with follow-up.
 - [ ] Domain/resource help exists for generated read-only commands.
 - [ ] Coverage linter distinguishes read coverage from pending write coverage.
@@ -1076,8 +1190,12 @@ Tests:
 - `--no-input` fails instead of prompting;
 - `--yes` and `--confirm` behave deterministically;
 - dry-run methods do not call transport when SDK contract says they should not;
-- non-dry-run write commands call transport exactly once;
-- safety metadata cannot be absent for write/destructive/expensive records.
+- non-dry-run write commands call transport exactly once.
+
+Static lint responsibilities:
+
+- safety metadata cannot be absent for write/destructive/expensive records;
+- destructive/expensive command help includes required safety flags and examples.
 
 Verification:
 
@@ -1085,6 +1203,7 @@ Verification:
 poetry run pytest tests/cli/test_write_safety.py
 poetry run python scripts/lint_cli_coverage.py --phase write-safety
 poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
@@ -1108,28 +1227,35 @@ Stage checklist:
 Deliverables:
 
 - Register generated commands for remaining write sync Swagger-bound methods in small domain waves.
-- Use these waves unless actual binding counts show a better split:
-  - Wave 1: low-count domains and isolated writes: `ratings`, `realty`, `tariffs`, `accounts`.
-  - Wave 2: medium domains: `ads`, `cpa`, `jobs`, `messenger`.
-  - Wave 3: large/high-risk domains: `orders`, `promotion`, `autoteka`.
+- Use discovered `factory` names as the wave unit. Suggested waves, based on the 2026-05-10 baseline:
+  - Wave 1: low-count/low-risk factories: `rating_profile`, `review`, `review_answer`, `realty_analytics_report`, `realty_booking`, `realty_listing`, `realty_pricing`, `tariff`, `account`, `account_hierarchy`.
+  - Wave 2: medium factories: `ad`, `ad_promotion`, `ad_stats`, `cpa_archive`, `cpa_auction`, `cpa_call`, `cpa_chat`, `cpa_lead`, `chat`, `chat_media`, `chat_message`, `chat_webhook`, `special_offer_campaign`.
+  - Wave 3: jobs and autoload factories: `application`, `resume`, `vacancy`, `job_dictionary`, `job_webhook`, `autoload_archive`, `autoload_profile`, `autoload_report`.
+  - Wave 4: large/high-risk commerce and promotion factories: `order`, `order_label`, `delivery_order`, `delivery_task`, `sandbox_delivery`, `stock`, `promotion_order`, `autostrategy_campaign`, `bbip_promotion`, `trx_promotion`, `target_action_pricing`.
+  - Wave 5: Autoteka factories: `autoteka_vehicle`, `autoteka_report`, `autoteka_monitoring`, `autoteka_scoring`, `autoteka_valuation`.
 - Each wave must update command metadata, smoke tests, exclusions, and coverage report together.
 - Eliminate or document every unsupported sync binding in the wave before moving to the next wave.
 - Temporary exclusions are allowed only inside a wave and must include owner, reason, target stage, and follow-up.
 
 Tests:
 
-- one write smoke invocation per write-capable domain in the current wave with fake transport;
-- coverage test fails on missing write commands for completed waves;
-- command metadata assertions cover every write sync binding in completed waves;
+- one write smoke invocation per write-capable factory group in the current wave with fake transport;
 - safety tests run for at least one destructive or expensive command when the wave contains one.
+
+Static lint responsibilities:
+
+- coverage linter fails on missing write commands for completed waves;
+- coverage linter covers every write sync binding in completed waves;
+- coverage linter verifies command naming, alias policy, and exclusion metadata for completed waves.
 
 Verification for each wave:
 
 ```bash
 poetry run pytest tests/cli/test_write_safety.py
-poetry run pytest tests/cli/test_all_domains_metadata.py tests/cli/test_domain_smoke_commands.py
+poetry run pytest tests/cli/test_domain_smoke_commands.py
 poetry run python scripts/lint_cli_coverage.py --phase write --domain <domain-or-wave>
 poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
@@ -1145,6 +1271,8 @@ Stage checklist:
 - [ ] Wave 1 write commands are covered or explicitly excluded.
 - [ ] Wave 2 write commands are covered or explicitly excluded.
 - [ ] Wave 3 write commands are covered or explicitly excluded.
+- [ ] Wave 4 write commands are covered or explicitly excluded.
+- [ ] Wave 5 write commands are covered or explicitly excluded.
 - [ ] Every completed wave has fake-transport smoke tests.
 - [ ] Temporary exclusions have owner, reason, target stage, and follow-up.
 - [ ] Stage verification commands pass for each wave.
@@ -1160,16 +1288,21 @@ Deliverables:
 
 Tests:
 
-- strict linter fails on a missing binding;
-- strict linter fails on duplicate canonical commands for one binding;
-- strict linter fails on a canonical API command without a binding;
-- strict linter fails on expired temporary exclusions;
+- smoke command suite still passes for every completed factory group;
+- representative strict-covered commands still run through fake transport with human and JSON output.
+
+Static lint responsibilities:
+
+- strict linter enforces that the real registry has no missing sync binding without an intentional exclusion;
+- strict linter enforces that the real registry has no duplicate canonical command for one binding;
+- strict linter enforces that the real registry has no canonical API command without a binding;
+- strict linter enforces that the real registry has no expired temporary exclusions;
 - strict linter passes with only implemented commands and intentional exclusions.
 
 Verification:
 
 ```bash
-poetry run pytest tests/cli/test_all_domains_metadata.py tests/cli/test_domain_smoke_commands.py
+poetry run pytest tests/cli/test_domain_smoke_commands.py
 poetry run python scripts/lint_cli_coverage.py --strict
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
@@ -1220,6 +1353,8 @@ Verification:
 ```bash
 poetry run pytest tests/cli/test_helper_workflows.py
 poetry run python scripts/lint_cli_coverage.py --strict
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
@@ -1258,6 +1393,8 @@ Verification:
 
 ```bash
 poetry run pytest tests/cli/test_config_commands.py tests/cli/test_status_doctor.py tests/cli/test_completion.py
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli
 ```
