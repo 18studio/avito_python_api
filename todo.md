@@ -122,14 +122,18 @@ Recorded and re-verified on 2026-05-10 while preparing this plan:
 sync Swagger bindings: 204
 sync Swagger canonical map entries: 204
 AvitoClient public callable methods, excluding close/from_env/auth/debug_info: 56
-sync Swagger binding factories with factory metadata: 48
+sync Swagger bindings with factory metadata: 200
+sync Swagger factory buckets with factory metadata: 48
 sync bindings without factory metadata: 4
+sync read bindings by HTTP method GET/HEAD: 60
+sync write/non-read bindings by HTTP method: 144
 ```
 
 Reproducible verification commands:
 
 ```bash
 poetry run python -c "from avito.core.swagger_discovery import discover_swagger_bindings; d=discover_swagger_bindings(); sync=[b for b in d.bindings if b.variant == 'sync' and b.operation_key is not None]; print(len(sync)); print(len(d.canonical_map)); print(len([b for b in sync if b.factory is None]))"
+poetry run python -c "from collections import Counter; from avito.core.swagger_discovery import discover_swagger_bindings; from avito.core.swagger_registry import load_swagger_registry; reg=load_swagger_registry(); ops={op.key: op for op in reg.operations}; d=discover_swagger_bindings(registry=reg); c=Counter(); [c.update([ops[b.operation_key].method, 'read' if ops[b.operation_key].method in {'GET','HEAD'} else 'write']) for b in d.bindings if b.variant == 'sync' and b.operation_key is not None]; print(c)"
 poetry run python -c "import inspect; from avito.client import AvitoClient; excluded={'close','from_env','auth','debug_info'}; print(len([name for name, value in inspect.getmembers(AvitoClient) if not name.startswith('_') and callable(value) and name not in excluded]))"
 poetry run pytest tests/core/test_swagger_linter.py tests/contracts/test_swagger_contracts.py
 ```
@@ -144,6 +148,17 @@ tests/core/test_swagger_linter.py tests/contracts/test_swagger_contracts.py:
 Do not use Swagger tag/domain labels as canonical CLI coverage buckets. Current
 Swagger labels are human-facing and may be localized. CLI coverage and wave
 planning must use discovered `factory` metadata as the stable grouping key.
+
+Coverage arithmetic for the first CLI release:
+
+- 204 sync Swagger bindings are discovered.
+- 200 bindings are normal domain/factory bindings and are candidates for
+  canonical API commands.
+- 4 bindings have no `AvitoClient` factory metadata and are the intentional
+  auth-token exclusions listed below.
+- The final strict gate must therefore prove exactly 200 canonical API commands
+  plus 4 documented intentional non-domain exclusions, unless a later stage
+  records a deliberate scope change in this plan.
 
 Sync binding count by discovered factory:
 
@@ -294,6 +309,18 @@ Additional findings from reviewing this plan against `.ai/STYLEGUIDE.md`, `.ai/c
 - Secret input must not force users to put `client_secret` in shell history. `--client-secret` remains supported for explicit automation, but `account add` must also support a hidden TTY prompt and at least one non-interactive alternative such as `--client-secret-stdin` or documented environment/config input.
 - Some Swagger-bound methods may need command-specific adapters for file input, multipart data, binary responses, or complex public input models. These adapters are allowed only inside `avito/cli/` and must still call public `AvitoClient` factories and public domain methods.
 - New CLI scripts must be type-checked explicitly when they are outside the configured `avito` mypy package scope. Stage verification should include `poetry run mypy scripts/lint_cli_coverage.py` once that script exists.
+- Generated API command inputs must be derived from Swagger binding metadata
+  (`factory_args` and `method_args`) first, with public signatures/type hints
+  used only to validate and coerce those selected arguments. Do not expose every
+  public SDK parameter automatically.
+- Per-operation SDK controls such as `timeout` and `retry` are not method
+  command flags. `timeout` is controlled only by the root `--timeout` option in
+  the first release. `retry` is intentionally not exposed in the first release
+  unless a later stage adds a deliberate global policy and tests.
+- Deprecated or legacy Swagger-bound SDK methods need an explicit CLI policy:
+  either one canonical command with deprecation help/warning behavior, or a
+  documented intentional exclusion. Compatibility aliases never count as
+  canonical coverage.
 
 ## Test and Lint Boundaries
 
@@ -553,7 +580,9 @@ Generic API invocation pipeline:
 2. Resolve profile/account and build `AvitoSettings`.
 3. Create `AvitoClient(settings)` in a context manager.
 4. Resolve CLI resource to an `AvitoClient` factory.
-5. Coerce CLI strings into factory and method arguments using public signatures/type hints.
+5. Coerce CLI strings into the selected factory and method arguments from
+   binding metadata, validating those arguments against public signatures/type
+   hints.
 6. Call the SDK factory.
 7. Call the public domain method.
 8. Serialize the SDK return value through `model_dump()` / `to_dict()` / bounded pagination helpers.
@@ -566,6 +595,13 @@ Constraints:
 - Never call operation specs directly from CLI commands.
 - CLI may inspect public signatures and type hints, but not private domain object attributes.
 - Dataclass serialization fallback is allowed only for CLI-local dataclasses, not SDK response models.
+- CLI must not expose every public SDK parameter automatically. For
+  Swagger-bound commands, generated inputs are the union of `binding.factory_args`
+  and `binding.method_args`; public signatures/type hints only validate and
+  coerce those selected names.
+- Per-operation SDK parameters `timeout` and `retry` must be filtered out of
+  generated method flags. The first release maps root `--timeout` into the SDK
+  call path where supported and does not expose `retry`.
 
 The coercion engine must support:
 
@@ -588,16 +624,25 @@ Complex input policy:
 
 If a method cannot be safely exposed by the generic engine, add it to a typed exclusion list with reason, owner, and follow-up. Final acceptance target is zero unsupported sync Swagger-bound methods unless intentionally excluded and documented.
 
+Unsupported here means one of:
+
+- the binding is non-domain and has no public `AvitoClient` factory;
+- selected binding arguments cannot be represented as stable CLI flags;
+- the public SDK method needs file, stdin, binary, multipart, or public-model
+  construction behavior that has not yet received a typed CLI adapter;
+- the method is deprecated/legacy and the release deliberately excludes it with
+  documented replacement guidance.
+
 ## Registry and Coverage
 
 Build a CLI registry from existing SDK metadata:
 
-- `discover_swagger_bindings(registry=SwaggerRegistry.load(...))`
+- `discover_swagger_bindings(registry=load_swagger_registry(...))`
 - `binding.factory`
 - `binding.factory_args`
 - `binding.method_name`
 - `binding.method_args`
-- public Python signatures and type hints
+- public Python signatures and type hints for validation/coercion only
 
 Registry records contain:
 
@@ -606,7 +651,11 @@ Registry records contain:
 - binding operation key for Swagger-bound API commands;
 - SDK factory name and public method name;
 - factory and method argument metadata from discovery/signatures;
+- selected CLI input arguments derived from `binding.factory_args` and
+  `binding.method_args`, with `timeout` and `retry` excluded from generated
+  method flags;
 - safety classification: read, write, destructive, expensive, local;
+- deprecation/legacy policy for deprecated Swagger bindings;
 - output hint: object, collection, mutation result, plain value, unknown;
 - examples and related commands for help;
 - aliases stored separately from canonical records;
@@ -646,6 +695,9 @@ The linter fails when:
 - a command exposes `resource-id`;
 - a command exposes a secret in an output schema;
 - a command uses non-kebab-case resource/action/flag names;
+- a generated API command exposes `timeout` or `retry` as a method-level flag;
+- a deprecated/legacy binding lacks command warning/help metadata or an
+  intentional exclusion;
 - an exclusion lacks reason and follow-up.
 
 Add `make cli-lint` and include it in `make check` after full CLI coverage is implemented.
@@ -722,7 +774,10 @@ Verified repository state:
 sync Swagger canonical map entries: 204
 sync Swagger bindings without factory metadata: 4
 sync Swagger bindings: 204
-sync binding factories with factory metadata: 48
+sync Swagger bindings with factory metadata: 200
+sync binding factory buckets with factory metadata: 48
+sync read bindings by HTTP method GET/HEAD: 60
+sync write/non-read bindings by HTTP method: 144
 AvitoClient public callable methods, excluding close/from_env/auth/debug_info: 56
 python -m avito behavior: silent smoke entry point that constructs AvitoClient
 CLI package/dependency state: no avito/cli package, no click dependency, no console script
@@ -745,6 +800,8 @@ Verification result:
 ```text
 canonical map entries: 204
 sync bindings without factory metadata: 4
+sync bindings with factory metadata: 200
+sync read/write split: 60 read, 144 write/non-read
 python -m avito: exited 0 with no output
 tests/core/test_swagger_linter.py tests/contracts/test_swagger_contracts.py:
 1913 passed in 8.67s
@@ -1152,6 +1209,12 @@ Deliverables:
   commands, one-to-one binding ownership for records present at this stage,
   alias policy, local/API collisions, forbidden `resource-id`, and required
   exclusion metadata.
+- Verify that generated API command input metadata is selected from
+  `factory_args` and `method_args`, not by blindly exposing the whole SDK method
+  signature.
+- Verify that generated method flags do not include `timeout` or `retry`.
+- Verify that deprecated/legacy Swagger bindings have either command
+  warning/help metadata or an intentional exclusion.
 - Verify that adapter references, if present, point to an explicit adapter
   registry entry rather than ad hoc callback names.
 - Extend `scripts/lint_architecture.py` with CLI import-boundary checks that
@@ -1183,6 +1246,10 @@ Exit criteria:
 - CLI coverage linter fails on duplicate records, invalid names, local/API
   collisions, forbidden `resource-id`, invalid adapter references, or missing
   required exclusion metadata.
+- CLI coverage linter fails if a generated API command exposes SDK control
+  parameters `timeout` or `retry` as method flags.
+- CLI coverage linter fails if a deprecated/legacy binding has no explicit CLI
+  policy.
 - Architecture lint statically enforces CLI production import boundaries.
 - Full missing-command failures are deferred to read/full coverage phases, not
   silently skipped.
@@ -1192,6 +1259,9 @@ Stage checklist:
 - [ ] `scripts/lint_cli_coverage.py` exists and exercises the registry in `--phase registry`.
 - [ ] Canonical API commands present at this stage map one-to-one to sync Swagger bindings.
 - [ ] CLI coverage linter checks kebab-case names, alias policy, local/API collisions, forbidden `resource-id`, and exclusion metadata.
+- [ ] CLI coverage linter checks selected generated inputs and rejects
+      method-level `timeout` / `retry` flags.
+- [ ] CLI coverage linter checks deprecated/legacy command or exclusion policy.
 - [ ] Existing `scripts/lint_architecture.py` statically checks CLI production import boundaries, unless a documented dedicated-linter exception exists.
 - [ ] Stage 4C verification commands pass.
 
@@ -1201,13 +1271,21 @@ Deliverables:
 
 - Implement `avito/cli/schemas.py`.
 - Implement typed CLI parameter metadata.
-- Coerce CLI strings from signatures/type hints.
+- Build generated command parameter metadata from `binding.factory_args` and
+  `binding.method_args`.
+- Use public signatures/type hints to validate and coerce only those selected
+  binding arguments.
+- Filter out per-operation SDK control parameters such as `timeout` and `retry`
+  from generated method flags. Root `--timeout` is handled by the global context;
+  `retry` is intentionally unsupported in the first release.
 - Support repeated flags and documented comma-separated list parsing.
 - Validate enum names/values and date/datetime formats with Russian errors.
 
 Tests:
 
 - coercion for primitives, bools, dates, datetimes, enums, optionals, and lists;
+- generated parameter selection excludes `timeout` and `retry` for representative
+  methods that have those SDK parameters;
 - missing required values fail without prompt in `--no-input`;
 - invalid values produce `VALIDATION_FAILED`;
 - supported repeated flags and comma-separated values coerce to the same typed list result.
@@ -1216,6 +1294,7 @@ Static lint responsibilities:
 
 - generated flag names are lowercase kebab-case;
 - generated flags never expose `--resource-id`.
+- generated method flags never expose `--timeout` or `--retry`.
 
 Verification:
 
@@ -1236,6 +1315,9 @@ Exit criteria:
 Stage checklist:
 
 - [ ] CLI parameter metadata is typed and independent from Click internals where practical.
+- [ ] Generated parameter metadata is selected from Swagger binding
+      `factory_args` / `method_args`, not from the whole SDK signature.
+- [ ] `timeout` and `retry` are filtered out of generated method flags.
 - [ ] Primitive, bool, date, datetime, enum, optional, and list coercion are tested.
 - [ ] Repeated flags and documented comma-separated values behave consistently.
 - [ ] Invalid values produce Russian `VALIDATION_FAILED` errors.
@@ -1249,6 +1331,10 @@ Deliverables:
 - Implement `avito/cli/commands.py`.
 - Build and call `AvitoClient` through active account/profile.
 - Invoke public SDK factory and method.
+- Pass root `--timeout` through the invocation context only for SDK methods that
+  expose `timeout`; do not generate per-command `--timeout` flags.
+- Keep SDK `retry` overrides unsupported in the first release unless a later
+  stage adds a documented global retry policy and tests.
 - Map SDK exceptions to CLI errors.
 - Add explicit unsupported-method registry only for documented exclusions.
 - Add a typed client factory protocol for tests so invocation behavior can be verified without real HTTP.
@@ -1259,6 +1345,9 @@ Tests:
 - active profile is used by default;
 - `--profile` overrides active profile;
 - CLI invokes expected factory and public method with expected arguments;
+- root `--timeout` reaches a representative SDK method without appearing as a
+  generated method flag;
+- `retry` is not accepted as a command flag in the first release;
 - SDK `AuthenticationError`, `AuthorizationError`, `ValidationError`, `ConflictError`, and not-found equivalents map to documented exit codes.
 
 Static lint responsibilities:
@@ -1286,6 +1375,8 @@ Stage checklist:
 - [ ] API command invocation resolves profile/config before constructing `AvitoClient`.
 - [ ] `AvitoClient` is always used as a context manager.
 - [ ] Invocation calls factory method, then public domain method.
+- [ ] Root `--timeout` is mapped deliberately and tested.
+- [ ] `retry` is not exposed as a generated CLI flag.
 - [ ] Test-only fake clients are injected through typed protocols and are not imported by production CLI modules.
 - [ ] Architecture lint proves operation specs and transport are not called directly by CLI production code.
 - [ ] SDK exceptions map to documented CLI exit codes and sanitized messages.
