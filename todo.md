@@ -286,6 +286,12 @@ Additional findings from reviewing this plan against `.ai/STYLEGUIDE.md`, `.ai/c
 - Safety classification cannot rely on HTTP method alone. HTTP method may provide a default, but final command safety must come from explicit registry metadata and reviewed overrides for write, destructive, expensive, and local commands.
 - CLI import-boundary checks should extend the existing `scripts/lint_architecture.py` unless there is a concrete reason to split them into a dedicated script. Avoid two overlapping architecture linters.
 - The stable CLI contract should be documented as soon as the corresponding surface exists. Create or update `docs/site/reference/cli.md` from the first stage that introduces user-visible flags, output fields, exit codes, or command names; Stage 13 remains the full documentation pass.
+- Every stage that adds or changes user-visible CLI behavior must update `CHANGELOG.md`. The SDK styleguide treats CLI commands, flags, output fields, and exit codes as public contracts.
+- Dependency stages must update both `pyproject.toml` and `poetry.lock`. Verification must include a lock consistency check after adding `typer` or direct `click` usage.
+- Representative smoke tests by factory are not enough for the final "all methods" claim. Before strict coverage, every canonical CLI command must be registered, render help, and execute at least once through a fake client or `SwaggerFakeTransport` when safe synthetic arguments exist. Commands that cannot be executed generically need a documented exclusion or a custom adapter with tests.
+- Secret input must not force users to put `client_secret` in shell history. `--client-secret` remains supported for explicit automation, but `account add` must also support a hidden TTY prompt and at least one non-interactive alternative such as `--client-secret-stdin` or documented environment/config input.
+- Some Swagger-bound methods may need command-specific adapters for file input, multipart data, binary responses, or complex public input models. These adapters are allowed only inside `avito/cli/` and must still call public `AvitoClient` factories and public domain methods.
+- New CLI scripts must be type-checked explicitly when they are outside the configured `avito` mypy package scope. Stage verification should include `poetry run mypy scripts/lint_cli_coverage.py` once that script exists.
 
 ## Test and Lint Boundaries
 
@@ -528,6 +534,7 @@ Canonical flags:
 
 - `--client-id`
 - `--client-secret`
+- `--client-secret-stdin`
 - `--base-url`
 - `--user-id`
 
@@ -719,6 +726,11 @@ Stage policy:
 - Every stage that changes command metadata must run the current `scripts/lint_cli_coverage.py` phase, even before strict mode is enabled.
 - Every stage that changes persisted config/account JSON shape must include migration/backward-compatibility tests or explicitly state why no existing persisted shape exists yet.
 - Every stage that changes user-visible CLI text, flags, output fields, or exit codes must update `docs/site/reference/cli.md` once that reference page exists.
+- Every stage that changes CLI public behavior must update `CHANGELOG.md` in the same change.
+- Every stage that adds runtime dependencies must update `poetry.lock` and verify that dependency resolution is consistent.
+- After `scripts/lint_cli_coverage.py` exists, every stage that touches CLI
+  metadata, adapters, coverage, or registration must run
+  `poetry run mypy scripts/lint_cli_coverage.py`.
 
 Coverage linter phase policy:
 
@@ -768,6 +780,7 @@ Deliverables:
 
 - Add `typer` dependency.
 - Add `click` as an explicit runtime dependency only if Stage 1 production code imports `click` directly. If Stage 1 uses Click only through Typer test utilities, do not add a separate direct dependency yet; revisit this when generated API commands start using `click.Command`.
+- Update `poetry.lock` after dependency changes.
 - Use Typer/Click test utilities only in tests; do not add a custom subprocess harness unless behavior specifically requires `python -m avito`.
 - Add `avito/cli/` package skeleton.
 - Add root `avito` app with typed global context.
@@ -776,6 +789,7 @@ Deliverables:
 - Route `python -m avito` to the same CLI app.
 - Register Poetry script as `avito = "avito.cli.app:main"`; keep `app` as the reusable Typer application object.
 - Use Russian help text from the beginning.
+- Add a `CHANGELOG.md` entry for the new CLI shell and public entry points.
 
 Tests:
 
@@ -792,6 +806,7 @@ poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli
+poetry check --lock
 poetry build
 ```
 
@@ -806,6 +821,7 @@ Stage checklist:
 
 - [ ] `typer` is added as a runtime dependency.
 - [ ] `click` is either not imported by production code, or is added as an explicit runtime dependency.
+- [ ] `poetry.lock` is updated and lock consistency is verified.
 - [ ] `avito/cli/` package exists with only the minimal shell files.
 - [ ] `avito --help`, `avito help`, `avito --version`, `avito version`, and `python -m avito --help` work.
 - [ ] Poetry script points to `avito.cli.app:main`, not directly to the Typer app object.
@@ -827,6 +843,7 @@ Deliverables:
 - Add invalid global flag-combination validation.
 - Create or update `docs/site/reference/cli.md` with the exit codes, global flags, output modes, stdout/stderr split, and current implemented commands.
 - Add `cli.md` to `docs/site/reference/.pages` when the reference page is created.
+- Update `CHANGELOG.md` with the first documented CLI contract: global flags, output modes, and exit codes.
 
 Tests:
 
@@ -866,18 +883,19 @@ Stage checklist:
 
 ### Stage 3: Account Store and Profile Commands
 
+Split Stage 3 into two reviewable sub-stages. Do not implement API invocation in
+this stage; account/profile commands are local only.
+
+#### Stage 3A: Account Store Primitives
+
 Deliverables:
 
 - Implement CLI home resolver and atomic JSON persistence.
 - Implement account/config dataclasses and stores.
-- Add account commands:
-  - `avito account add`
-  - `avito account list`
-  - `avito account use <account-name>`
-  - `avito account current`
-  - `avito account delete <account-name>`
-- Add optional `account remove` only as documented alias for `account delete`.
-- Convert active account to `AvitoSettings`.
+- Implement safe store loading: missing files, malformed JSON, permission
+  failures, and schema-version handling.
+- Implement conversion from stored account data to `AvitoSettings` without
+  constructing `AvitoClient`.
 - Store active account name in config, not per-account flags.
 
 Tests:
@@ -885,18 +903,72 @@ Tests:
 - default home and environment override precedence;
 - lazy directory creation;
 - file permissions where platform supports it;
+- atomic JSON writes through same-directory temporary files and `os.replace`;
+- malformed JSON handling;
+- account/config dataclass serialization masks secrets in JSON output helpers;
+- conversion to `AvitoSettings` uses only SDK public settings types.
+
+Verification:
+
+```bash
+poetry run pytest tests/cli/test_config.py
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
+poetry run mypy avito
+poetry run ruff check avito/cli tests/cli
+```
+
+Exit criteria:
+
+- Importing account/config modules creates no directories or files.
+- Store code performs no Avito API network calls.
+- Permission and malformed-file failures map to typed CLI errors.
+
+Stage checklist:
+
+- [ ] CLI home resolution follows `AVITO_PY_HOME`, `MY_SDK_HOME`, then `~/.avito-py`.
+- [ ] Directory/file creation is lazy and uses required permissions where supported.
+- [ ] JSON writes are atomic through same-directory temp files and `os.replace`.
+- [ ] Active account is stored once in config, not as per-account boolean state.
+- [ ] Store loading and malformed JSON behavior are tested.
+- [ ] Stage 3A verification commands pass.
+
+#### Stage 3B: Account Commands and Secret Input
+
+Deliverables:
+
+- Add account commands:
+  - `avito account add`
+  - `avito account list`
+  - `avito account use <account-name>`
+  - `avito account current`
+  - `avito account delete <account-name>`
+- Add optional `account remove` only as documented alias for `account delete`.
+- Support safe secret entry for `client_secret`: hidden TTY prompt by default when input is allowed, plus a non-interactive path that does not require putting the secret directly in shell history.
+- Add `--client-secret-stdin` for non-interactive secret input. It reads exactly
+  one secret value from stdin, strips one trailing newline, refuses TTY stdin, and
+  is mutually exclusive with `--client-secret` and `--api-key`.
+- Keep `--client-secret` and ticket-compatible `--api-key` for explicit automation, but document the shell-history tradeoff.
+- Ensure `--no-input` fails with `AUTH_REQUIRED`/`CONFIG_INVALID` instead of
+  prompting when no secret was provided.
+- Update `CHANGELOG.md` for account/profile commands and local plaintext secret storage behavior.
+
+Tests:
+
 - add/reload account;
 - duplicate account conflict;
 - active account set/get/clear;
-- malformed JSON handling;
 - no-input behavior;
 - ticket aliases `--api-key` and `--endpoint`;
+- hidden prompt path;
+- `--client-secret-stdin` path;
+- mutually exclusive secret flags;
 - JSON output contains no raw secrets.
 
 Verification:
 
 ```bash
-poetry run pytest tests/cli/test_config.py tests/cli/test_accounts.py
+poetry run pytest tests/cli/test_accounts.py
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
 poetry run mypy avito
@@ -907,16 +979,18 @@ Exit criteria:
 
 - Account commands perform no Avito API network calls.
 - Secret fields are masked in every output mode.
+- Users have one interactive and one non-interactive way to provide secrets
+  without putting them in shell history.
 
 Stage checklist:
 
-- [ ] CLI home resolution follows `AVITO_PY_HOME`, `MY_SDK_HOME`, then `~/.avito-py`.
-- [ ] Directory/file creation is lazy and uses required permissions where supported.
-- [ ] JSON writes are atomic through same-directory temp files and `os.replace`.
 - [ ] Account add/list/use/current/delete commands work without network.
-- [ ] Active account is stored once in config, not as per-account boolean state.
 - [ ] `--api-key` and `--endpoint` aliases are tested.
-- [ ] Stage verification commands pass.
+- [ ] Hidden prompt secret input is tested.
+- [ ] `--client-secret-stdin` is tested and refuses TTY stdin.
+- [ ] `--client-secret`, `--api-key`, and `--client-secret-stdin` are mutually exclusive.
+- [ ] Public docs or reference text clearly describe plaintext local storage and safe secret input.
+- [ ] Stage 3B verification commands pass.
 
 ### Stage 4: CLI Registry From SDK Metadata
 
@@ -947,6 +1021,8 @@ Static lint responsibilities introduced in this stage:
 
 - `scripts/lint_cli_coverage.py --phase registry` verifies that the registry includes all sync discovered bindings in report mode;
 - the same phase verifies kebab-case resource/action names, duplicate canonical commands, one-to-one binding ownership, alias policy, local/API collisions, forbidden `resource-id`, and required exclusion metadata;
+- the same phase verifies that adapter references, if present, point to an
+  explicit adapter registry entry rather than ad hoc callback names;
 - `scripts/lint_architecture.py` verifies CLI production import boundaries.
 
 Verification:
@@ -957,6 +1033,7 @@ poetry run python scripts/lint_cli_coverage.py --phase registry
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
 poetry run mypy avito
+poetry run mypy scripts/lint_cli_coverage.py
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
 
@@ -975,6 +1052,7 @@ Stage checklist:
 - [ ] Canonical API commands map one-to-one to sync Swagger bindings.
 - [ ] Local/API command collisions fail during registry construction.
 - [ ] `scripts/lint_cli_coverage.py` exists and exercises the registry.
+- [ ] Registry records can reference named adapters without importing adapter implementation modules during discovery.
 - [ ] Existing `scripts/lint_architecture.py` statically checks CLI production import boundaries, unless a documented dedicated-linter exception exists.
 - [ ] Stage verification commands pass.
 
@@ -1008,6 +1086,7 @@ poetry run python scripts/lint_cli_coverage.py --phase registry
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
 poetry run mypy avito
+poetry run mypy scripts/lint_cli_coverage.py
 poetry run ruff check avito/cli tests/cli
 ```
 
@@ -1051,9 +1130,11 @@ Verification:
 
 ```bash
 poetry run pytest tests/cli/test_commands.py
+poetry run python scripts/lint_cli_coverage.py --phase registry
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
 poetry run mypy avito
+poetry run mypy scripts/lint_cli_coverage.py
 poetry run ruff check avito/cli tests/cli
 ```
 
@@ -1070,6 +1151,59 @@ Stage checklist:
 - [ ] Architecture lint proves operation specs and transport are not called directly by CLI production code.
 - [ ] SDK exceptions map to documented CLI exit codes and sanitized messages.
 - [ ] Stage verification commands pass.
+
+### Stage 6B: Command Adapter Extension Point
+
+Deliverables:
+
+- Add `avito/cli/adapters.py` with a typed adapter protocol for commands whose
+  public SDK signature is valid but cannot be exposed safely by the fully generic
+  path.
+- Restrict adapters to CLI input/output concerns: file opening, stdin handling,
+  multipart-friendly path arguments, binary result rendering, and public input
+  model construction.
+- Require every adapter to call the same invocation engine or public
+  `AvitoClient` factory/domain method path. Adapters must not call operation
+  specs, operation executor, transport, auth provider internals, or domain object
+  constructors directly.
+- Add adapter metadata to registry records by stable adapter id. Do not store raw
+  callables in metadata that must be serialized by the coverage report.
+- Add linter checks that every adapter id referenced by a command exists, is
+  used by at least one command, and has an owner/reason note.
+
+Tests:
+
+- a simple adapter can transform CLI-only input and still invokes a public SDK
+  method through the shared path;
+- adapter errors are sanitized and mapped to documented CLI exit codes;
+- adapter registry rejects unknown adapter ids and duplicate adapter ids;
+- an adapter-backed command still renders help and appears in coverage reports.
+
+Verification:
+
+```bash
+poetry run pytest tests/cli/test_adapters.py tests/cli/test_commands.py
+poetry run python scripts/lint_cli_coverage.py --phase registry
+poetry run python scripts/lint_python_guidelines.py
+poetry run python scripts/lint_architecture.py
+poetry run mypy avito
+poetry run mypy scripts/lint_cli_coverage.py
+poetry run ruff check avito/cli tests/cli
+```
+
+Exit criteria:
+
+- Adapter support exists before any all-domain command wave needs it.
+- Adapter-backed commands remain auditable by the coverage linter.
+
+Stage checklist:
+
+- [ ] Adapter protocol is typed and documented in code.
+- [ ] Adapter metadata is stable and serializable in registry/coverage reports.
+- [ ] Adapter-backed invocation still uses public SDK factories and methods only.
+- [ ] Architecture lint prevents adapters from importing forbidden internal layers.
+- [ ] Unknown, duplicate, or unused adapter ids fail lint.
+- [ ] Stage 6B verification commands pass.
 
 ### Stage 7: Result Serialization and Pagination
 
@@ -1144,6 +1278,7 @@ poetry run python scripts/lint_cli_coverage.py --phase read
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
 poetry run mypy avito
+poetry run mypy scripts/lint_cli_coverage.py
 poetry run ruff check avito/cli tests/cli
 ```
 
@@ -1181,6 +1316,7 @@ Required coverage groups:
 Tests:
 
 - one read-only smoke invocation per completed factory group with fake transport;
+- every canonical read-only command is registered, renders help, and has either a successful fake execution test or a documented temporary exclusion from execution smoke with reason and follow-up;
 - human and JSON output for representative object and collection commands;
 - fake-transport behavior proves no real network calls are made.
 
@@ -1198,6 +1334,7 @@ poetry run python scripts/lint_cli_coverage.py --phase read
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
 poetry run mypy avito
+poetry run mypy scripts/lint_cli_coverage.py
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
 
@@ -1209,6 +1346,7 @@ Exit criteria:
 Stage checklist:
 
 - [ ] Every completed factory group has at least one read-only smoke command test.
+- [ ] Every canonical read-only command has registration/help coverage and execution coverage or a documented temporary execution-smoke exclusion.
 - [ ] CLI coverage linter covers every discovered read-only sync binding.
 - [ ] Unsupported read-only bindings have explicit temporary exclusions with follow-up.
 - [ ] Domain/resource help exists for generated read-only commands.
@@ -1249,6 +1387,7 @@ poetry run python scripts/lint_cli_coverage.py --phase write-safety
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
 poetry run mypy avito
+poetry run mypy scripts/lint_cli_coverage.py
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
 
@@ -1285,6 +1424,7 @@ Deliverables:
 Tests:
 
 - one write smoke invocation per write-capable factory group in the current wave with fake transport;
+- every canonical write command in the current wave is registered, renders help, and has either a successful fake execution test or a documented temporary execution-smoke exclusion with reason and follow-up;
 - safety tests run for at least one destructive or expensive command when the wave contains one.
 
 Static lint responsibilities:
@@ -1302,6 +1442,7 @@ poetry run python scripts/lint_cli_coverage.py --phase write --domain <domain-or
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
 poetry run mypy avito
+poetry run mypy scripts/lint_cli_coverage.py
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
 
@@ -1319,6 +1460,7 @@ Stage checklist:
 - [ ] Wave 4 write commands are covered or explicitly excluded.
 - [ ] Wave 5 write commands are covered or explicitly excluded.
 - [ ] Every completed wave has fake-transport smoke tests.
+- [ ] Every canonical write command in completed waves has registration/help coverage and execution coverage or a documented temporary execution-smoke exclusion.
 - [ ] Temporary exclusions have owner, reason, target stage, and follow-up.
 - [ ] Stage verification commands pass for each wave.
 
@@ -1330,6 +1472,8 @@ Deliverables:
 - Fail strict mode on expired temporary exclusions.
 - Add `make cli-lint` and include it in `quality` after `swagger-lint` and before `architecture-lint`.
 - Ensure the strict report is deterministic, sanitized, and suitable for CI output.
+- Enforce that every canonical API command is registered and help-renderable.
+- Enforce that every canonical API command has execution-smoke coverage or an intentional documented execution exclusion.
 
 Tests:
 
@@ -1353,6 +1497,7 @@ poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
 make cli-lint
 poetry run mypy avito
+poetry run mypy scripts/lint_cli_coverage.py
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
 
@@ -1360,6 +1505,7 @@ Exit criteria:
 
 - Every sync discovered Swagger binding has exactly one canonical CLI command or documented intentional exclusion.
 - `make cli-lint` is part of `make check` through `quality`.
+- Every canonical CLI command is registered, help-renderable, and covered by execution smoke or explicit execution exclusion.
 
 Makefile integration:
 
@@ -1370,6 +1516,8 @@ Makefile integration:
 Stage checklist:
 
 - [ ] Remaining sync Swagger bindings are covered or intentionally excluded.
+- [ ] All canonical API commands have registration/help coverage.
+- [ ] All canonical API commands have execution-smoke coverage or documented intentional execution exclusions.
 - [ ] `make cli-lint` is added to `make check`.
 - [ ] Stage verification commands pass.
 
@@ -1401,6 +1549,7 @@ poetry run python scripts/lint_cli_coverage.py --strict
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
 poetry run mypy avito
+poetry run mypy scripts/lint_cli_coverage.py
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
 
@@ -1464,9 +1613,10 @@ Deliverables:
   - install and verify `avito --version`;
   - add/use/list/delete local accounts;
   - run read-only API commands;
-  - run JSON automation commands with `--json --no-input`;
-  - use `status`, `doctor`, and completion commands;
-  - explain safe handling of local plaintext secrets.
+- run JSON automation commands with `--json --no-input`;
+- use `status`, `doctor`, and completion commands;
+- explain safe handling of local plaintext secrets.
+- show safe secret input examples with hidden prompt and `--client-secret-stdin`;
 - Complete `docs/site/reference/cli.md` for stable CLI contracts:
   - command grammar `avito <resource> <action>`;
   - global flags;
@@ -1513,6 +1663,7 @@ rg -n "client_secret|access_token|Authorization: Bearer|api_key" README.md docs/
 Stage checklist:
 
 - [ ] README includes a CLI quickstart.
+- [ ] `CHANGELOG.md` summarizes the CLI feature and points to the stable reference docs.
 - [ ] `docs/site/index.md` links to the CLI docs.
 - [ ] `docs/site/tutorials/getting-started.md` has a first CLI path or a clear CLI how-to link.
 - [ ] `docs/site/how-to/cli.md` explains account/profile setup, daily workflows, automation, status/doctor, completion, and local plaintext secret storage.
@@ -1531,6 +1682,7 @@ Run the full gate before completing the branch:
 poetry run pytest tests/cli
 poetry run pytest tests/core/test_swagger*.py tests/contracts/test_swagger_contracts.py
 poetry run mypy avito
+poetry run mypy scripts/lint_cli_coverage.py
 poetry run ruff check .
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
@@ -1573,6 +1725,7 @@ Stage checklist:
 - [ ] Account commands add/list/use/current/delete accounts.
 - [ ] `account remove` is omitted or implemented only as documented alias for `account delete`.
 - [ ] `account add` supports `--client-id`, `--client-secret`, `--base-url`, `--api-key`, and `--endpoint`.
+- [ ] `account add` supports `--client-secret-stdin` and hidden prompt input so secrets do not have to appear in shell history.
 - [ ] No CLI output leaks raw secrets.
 - [ ] CLI errors use stable error codes and documented exit codes.
 - [ ] Results go to stdout; errors, warnings, progress, and debug diagnostics go to stderr.
