@@ -459,23 +459,21 @@ def _lint_deprecated_policy(registry: CliRegistry) -> tuple[CliCoverageLintError
 
 
 def _lint_read_phase(registry: CliRegistry) -> tuple[CliCoverageLintError, ...]:
-    implemented_read_commands = [
+    read_commands = [
         record
         for record in registry.api_commands
-        if record.implemented and record.http_method in {"GET", "HEAD"}
+        if record.http_method in {"GET", "HEAD"}
     ]
-    implemented_ids = {record.command_id for record in implemented_read_commands}
     errors: list[CliCoverageLintError] = []
-    required_stage8_ids = {"account.get-balance", "account.get-self"}
-    for command_id in sorted(required_stage8_ids - implemented_ids):
-        errors.append(
-            CliCoverageLintError(
-                code="CLI_READ_SLICE_MISSING",
-                message="Stage 8 read slice должен быть реализован.",
-                item=command_id,
+    for record in read_commands:
+        if not record.implemented:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_READ_COMMAND_NOT_IMPLEMENTED",
+                    message="Read-only sync binding должен иметь canonical CLI-команду.",
+                    item=record.command_id,
+                )
             )
-        )
-    for record in implemented_read_commands:
         if record.safety != "read":
             errors.append(
                 CliCoverageLintError(
@@ -484,6 +482,16 @@ def _lint_read_phase(registry: CliRegistry) -> tuple[CliCoverageLintError, ...]:
                     item=record.command_id,
                 )
             )
+    required_stage8_ids = {"account.get-balance", "account.get-self"}
+    implemented_ids = {record.command_id for record in read_commands if record.implemented}
+    for command_id in sorted(required_stage8_ids - implemented_ids):
+        errors.append(
+            CliCoverageLintError(
+                code="CLI_READ_SLICE_MISSING",
+                message="Stage 8 read slice должен быть реализован.",
+                item=command_id,
+            )
+        )
     return tuple(errors)
 
 

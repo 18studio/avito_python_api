@@ -1692,13 +1692,38 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] Every completed factory group has at least one read-only smoke command test.
-- [ ] Every canonical read-only command has registration/help coverage and execution coverage or a documented temporary execution-smoke exclusion.
-- [ ] CLI coverage linter covers every discovered read-only sync binding.
-- [ ] Unsupported read-only bindings have explicit temporary exclusions with follow-up.
-- [ ] Domain/resource help exists for generated read-only commands.
-- [ ] Coverage linter distinguishes read coverage from pending write coverage.
-- [ ] Stage verification commands pass.
+- [x] Every completed factory group has at least one read-only smoke command test.
+- [x] Every canonical read-only command has registration/help coverage and execution coverage or a documented temporary execution-smoke exclusion.
+- [x] CLI coverage linter covers every discovered read-only sync binding.
+- [x] Unsupported read-only bindings have explicit temporary exclusions with follow-up.
+- [x] Domain/resource help exists for generated read-only commands.
+- [x] Coverage linter distinguishes read coverage from pending write coverage.
+- [x] Stage verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+Read sync Swagger bindings: 60
+Registered canonical read commands: 53
+Temporary read API exclusions: 7
+Excluded temporarily until Stage 10C:
+- autoteka-vehicle.get-preview
+- autoteka-vehicle.get-specification-by-id
+- autoteka-vehicle.get-teaser
+- cpa-chat.get
+- order-label.download
+- realty-analytics-report.get-market-price-correspondence
+- target-action-pricing.get-bids
+
+poetry run pytest tests/cli/test_domain_smoke_commands.py: 107 passed
+poetry run python scripts/lint_cli_coverage.py --phase read: errors=0
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run mypy scripts/lint_cli_coverage.py: Success
+poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py: All checks passed
+```
 
 ### Stage 10A: Write Safety Primitives
 

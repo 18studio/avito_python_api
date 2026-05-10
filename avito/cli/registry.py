@@ -25,6 +25,18 @@ SafetyKind = Literal["read", "write", "destructive", "expensive", "local"]
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 _IMPLEMENTED_API_COMMAND_IDS = frozenset({"account.get-balance", "account.get-self"})
+_READ_METHODS = frozenset({"GET", "HEAD"})
+_TEMPORARY_READ_EXCLUSION_COMMAND_IDS = frozenset(
+    {
+        "autoteka-vehicle.get-preview",
+        "autoteka-vehicle.get-specification-by-id",
+        "autoteka-vehicle.get-teaser",
+        "cpa-chat.get",
+        "order-label.download",
+        "realty-analytics-report.get-market-price-correspondence",
+        "target-action-pricing.get-bids",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,7 +299,11 @@ def build_cli_registry(
         if binding.factory is None:
             exclusions.append(_build_auth_token_exclusion(binding))
             continue
-        api_commands.append(_build_api_command_record(binding, operation))
+        command_record = _build_api_command_record(binding, operation)
+        if command_record.command_id in _TEMPORARY_READ_EXCLUSION_COMMAND_IDS:
+            exclusions.append(_build_temporary_read_exclusion(command_record))
+            continue
+        api_commands.append(command_record)
 
     helper_commands, helper_exclusions = _build_helper_records()
     exclusions.extend(helper_exclusions)
@@ -358,7 +374,7 @@ def _build_api_command_record(
         domain=binding.domain,
         deprecated=binding.deprecated or operation.deprecated,
         legacy=binding.legacy,
-        implemented=command_id in _IMPLEMENTED_API_COMMAND_IDS,
+        implemented=_is_implemented_api_command(command_id, operation.method),
         description=_api_description(binding, operation),
         examples=_api_examples(resource, action, binding),
         related_commands=(),
@@ -384,6 +400,27 @@ def _build_auth_token_exclusion(binding: DiscoveredSwaggerBinding) -> ExclusionR
         owner="cli",
         operation_key=binding.operation_key,
         sdk_method=binding.sdk_method,
+    )
+
+
+def _build_temporary_read_exclusion(command: ApiCommandRecord) -> ExclusionRecord:
+    return ExclusionRecord(
+        exclusion_id=f"api.{command.operation_key}",
+        category="api",
+        status="temporary",
+        reason=(
+            "Read-only binding требует дополнительный идентификатор доменного объекта, "
+            "который не представлен в factory_args/method_args metadata."
+        ),
+        follow_up=(
+            "Уточнить Swagger binding metadata или добавить CLI adapter, чтобы команда "
+            "могла принять обязательный идентификатор без обхода публичного SDK."
+        ),
+        owner="cli",
+        operation_key=command.operation_key,
+        sdk_method=command.sdk_method,
+        command_id=command.command_id,
+        target_stage="10C",
     )
 
 
@@ -585,15 +622,19 @@ def _api_examples(
 
 
 def _safety_for_method(method: str) -> SafetyKind:
-    if method in {"GET", "HEAD"}:
+    if method in _READ_METHODS:
         return "read"
     return "write"
 
 
 def _safety_summary_for_method(method: str) -> str:
-    if method in {"GET", "HEAD"}:
+    if method in _READ_METHODS:
         return "Команда только читает данные Avito API."
     return "Команда может изменить состояние или запустить действие в Avito API."
+
+
+def _is_implemented_api_command(command_id: str, method: str) -> bool:
+    return method in _READ_METHODS or command_id in _IMPLEMENTED_API_COMMAND_IDS
 
 
 def _output_hint_for_command(command_id: str) -> OutputHint:

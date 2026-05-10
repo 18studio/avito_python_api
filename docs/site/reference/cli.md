@@ -2,7 +2,8 @@
 
 `avito` is the command-line entry point for `avito-py`. The current CLI surface
 exposes the shell, global flags, account/profile commands, version commands,
-registry-backed help, and the first account API commands.
+registry-backed help, account API commands, and generated read-only API commands
+for supported sync Swagger-bound GET/HEAD methods.
 
 ## Commands
 
@@ -15,6 +16,7 @@ registry-backed help, and the first account API commands.
 | `avito --version` | Prints the installed package version. |
 | `avito version` | Prints the installed package version. With `--json`, prints `{"version": "..."}`. |
 | `python -m avito --help` | Uses the same CLI application as `avito --help`. |
+| `avito <resource> <read-action> [flags]` | Calls a supported sync Swagger-bound GET/HEAD SDK method through `AvitoClient` and public domain methods. |
 | `avito account get-self` | Calls `AvitoClient.account().get_self()` through the public SDK and prints the authorized profile. |
 | `avito account get-balance --user-id USER_ID` | Calls `AvitoClient.account(user_id=...).get_balance()` through the public SDK and prints the account balance. |
 
@@ -54,16 +56,35 @@ The `NO_COLOR=1` environment variable also disables colored human diagnostics.
 ## Implemented API Commands
 
 API commands are registry-backed and call only public SDK factories and public
-domain methods. The first vertical slice includes:
+domain methods. Read-only commands are generated from sync Swagger binding
+metadata for GET/HEAD operations when all required CLI inputs are represented by
+`factory_args` and `method_args`.
 
 ```bash
 avito --profile main account get-self
 avito --json --profile main account get-balance --user-id 123
+avito --profile main ad get --user-id 123 --item-id 456
+avito --json --profile main vacancy list
 ```
 
 The command output uses the same result renderer as local commands. Human output
 uses grouped key/value lines for single SDK models, and `--json` emits the
 serialized public SDK model without extra prose.
+
+The current read phase intentionally excludes these temporary command candidates
+because their Swagger binding metadata does not yet expose a required domain
+identifier as a stable CLI flag:
+
+- `autoteka-vehicle.get-preview`
+- `autoteka-vehicle.get-specification-by-id`
+- `autoteka-vehicle.get-teaser`
+- `cpa-chat.get`
+- `order-label.download`
+- `realty-analytics-report.get-market-price-correspondence`
+- `target-action-pricing.get-bids`
+
+Each exclusion is represented in the CLI registry with owner, reason, follow-up,
+and target stage metadata.
 
 ## Output Contract
 
