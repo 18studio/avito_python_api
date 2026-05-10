@@ -1433,15 +1433,28 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] API command invocation resolves profile/config before constructing `AvitoClient`.
-- [ ] `AvitoClient` is always used as a context manager.
-- [ ] Invocation calls factory method, then public domain method.
-- [ ] Root `--timeout` is mapped deliberately and tested.
-- [ ] `retry` is not exposed as a generated CLI flag.
-- [ ] Test-only fake clients are injected through typed protocols and are not imported by production CLI modules.
-- [ ] Architecture lint proves operation specs and transport are not called directly by CLI production code.
-- [ ] SDK exceptions map to documented CLI exit codes and sanitized messages.
-- [ ] Stage verification commands pass.
+- [x] API command invocation resolves profile/config before constructing `AvitoClient`.
+- [x] `AvitoClient` is always used as a context manager.
+- [x] Invocation calls factory method, then public domain method.
+- [x] Root `--timeout` is mapped deliberately and tested.
+- [x] `retry` is not exposed as a generated CLI flag.
+- [x] Test-only fake clients are injected through typed protocols and are not imported by production CLI modules.
+- [x] Architecture lint proves operation specs and transport are not called directly by CLI production code.
+- [x] SDK exceptions map to documented CLI exit codes and sanitized messages.
+- [x] Stage verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli/test_commands.py: 6 passed
+poetry run python scripts/lint_cli_coverage.py --phase registry: errors=0
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run mypy scripts/lint_cli_coverage.py: Success
+poetry run ruff check avito/cli tests/cli: All checks passed
+```
 
 ### Stage 6B: Command Adapter Extension Point
 

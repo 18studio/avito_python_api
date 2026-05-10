@@ -136,10 +136,80 @@ class CliAuthRequiredError(CliError):
         )
 
 
+class CliAuthorizationError(CliError):
+    """Ошибка прав доступа в Avito API."""
+
+    DEFAULT_CODE: ClassVar[str] = "PERMISSION_DENIED"
+
+    def __init__(self, message: str, *, details: object | None = None) -> None:
+        super().__init__(
+            message=message,
+            code=self.DEFAULT_CODE,
+            exit_code=EXIT_AUTHORIZATION,
+            details=details,
+        )
+
+
 class CliValidationError(CliError):
     """Ошибка валидации входных значений CLI."""
 
     DEFAULT_CODE: ClassVar[str] = "VALIDATION_FAILED"
+
+    def __init__(self, message: str, *, details: object | None = None) -> None:
+        super().__init__(
+            message=message,
+            code=self.DEFAULT_CODE,
+            exit_code=EXIT_UPSTREAM,
+            details=details,
+        )
+
+
+class CliConflictError(CliError):
+    """Конфликт состояния upstream-ресурса."""
+
+    DEFAULT_CODE: ClassVar[str] = "CONFLICT"
+
+    def __init__(self, message: str, *, details: object | None = None) -> None:
+        super().__init__(
+            message=message,
+            code=self.DEFAULT_CODE,
+            exit_code=EXIT_UPSTREAM,
+            details=details,
+        )
+
+
+class CliRateLimitError(CliError):
+    """Upstream API вернул ограничение частоты запросов."""
+
+    DEFAULT_CODE: ClassVar[str] = "RATE_LIMITED"
+
+    def __init__(self, message: str, *, details: object | None = None) -> None:
+        super().__init__(
+            message=message,
+            code=self.DEFAULT_CODE,
+            exit_code=EXIT_RATE_LIMIT,
+            details=details,
+        )
+
+
+class CliTransportError(CliError):
+    """Транспортный сбой до корректного ответа upstream API."""
+
+    DEFAULT_CODE: ClassVar[str] = "TRANSPORT_FAILED"
+
+    def __init__(self, message: str, *, details: object | None = None) -> None:
+        super().__init__(
+            message=message,
+            code=self.DEFAULT_CODE,
+            exit_code=EXIT_TRANSPORT,
+            details=details,
+        )
+
+
+class CliSdkMethodError(CliError):
+    """Ошибка выполнения публичного SDK-метода."""
+
+    DEFAULT_CODE: ClassVar[str] = "SDK_METHOD_FAILED"
 
     def __init__(self, message: str, *, details: object | None = None) -> None:
         super().__init__(
@@ -159,10 +229,15 @@ __all__ = (
     "EXIT_TRANSPORT",
     "EXIT_UPSTREAM",
     "EXIT_USAGE",
-    "CliError",
     "CliAuthRequiredError",
+    "CliAuthorizationError",
+    "CliConflictError",
     "CliConfigFileError",
+    "CliError",
     "CliPermissionError",
+    "CliRateLimitError",
+    "CliSdkMethodError",
+    "CliTransportError",
     "CliUsageError",
     "CliValidationError",
     "InvalidFlagCombinationError",
