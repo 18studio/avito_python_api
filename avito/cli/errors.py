@@ -21,6 +21,8 @@ EXIT_INTERNAL = 70
 
 
 def _current_cli_context() -> CliContext | None:
+    """Вернуть текущий CliContext из Click context stack."""
+
     click_context = click.get_current_context(silent=True)
     if click_context is None:
         return None
@@ -44,6 +46,8 @@ class CliError(click.ClickException):
     _ctx: CliContext | None = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        """Инициализировать ClickException и сохранить CLI context."""
+
         self._raw_message = self.message
         self._ctx = _current_cli_context()
         click.ClickException.__init__(self, self.message)
@@ -80,6 +84,8 @@ class CliUsageError(CliError):
     DEFAULT_CODE: ClassVar[str] = "CLI_USAGE_ERROR"
 
     def __init__(self, message: str, *, details: object | None = None) -> None:
+        """Создать ошибку некорректного использования CLI."""
+
         super().__init__(
             message=message,
             code=self.DEFAULT_CODE,
@@ -100,6 +106,8 @@ class CliPermissionError(CliError):
     DEFAULT_CODE: ClassVar[str] = "PERMISSION_DENIED"
 
     def __init__(self, message: str, *, details: object | None = None) -> None:
+        """Создать ошибку доступа к локальному ресурсу."""
+
         super().__init__(
             message=message,
             code=self.DEFAULT_CODE,
@@ -114,6 +122,8 @@ class CliConfigFileError(CliError):
     DEFAULT_CODE: ClassVar[str] = "CONFIG_INVALID"
 
     def __init__(self, message: str, *, details: object | None = None) -> None:
+        """Создать ошибку локальной конфигурации."""
+
         super().__init__(
             message=message,
             code=self.DEFAULT_CODE,
@@ -128,6 +138,8 @@ class CliAuthRequiredError(CliError):
     DEFAULT_CODE: ClassVar[str] = "AUTH_REQUIRED"
 
     def __init__(self, message: str, *, details: object | None = None) -> None:
+        """Создать ошибку отсутствующей авторизации."""
+
         super().__init__(
             message=message,
             code=self.DEFAULT_CODE,
@@ -142,6 +154,8 @@ class CliAuthorizationError(CliError):
     DEFAULT_CODE: ClassVar[str] = "PERMISSION_DENIED"
 
     def __init__(self, message: str, *, details: object | None = None) -> None:
+        """Создать ошибку недостаточных прав upstream API."""
+
         super().__init__(
             message=message,
             code=self.DEFAULT_CODE,
@@ -156,6 +170,8 @@ class CliValidationError(CliError):
     DEFAULT_CODE: ClassVar[str] = "VALIDATION_FAILED"
 
     def __init__(self, message: str, *, details: object | None = None) -> None:
+        """Создать ошибку валидации CLI input."""
+
         super().__init__(
             message=message,
             code=self.DEFAULT_CODE,
@@ -170,6 +186,8 @@ class CliConflictError(CliError):
     DEFAULT_CODE: ClassVar[str] = "CONFLICT"
 
     def __init__(self, message: str, *, details: object | None = None) -> None:
+        """Создать ошибку конфликта состояния."""
+
         super().__init__(
             message=message,
             code=self.DEFAULT_CODE,
@@ -184,6 +202,8 @@ class CliRateLimitError(CliError):
     DEFAULT_CODE: ClassVar[str] = "RATE_LIMITED"
 
     def __init__(self, message: str, *, details: object | None = None) -> None:
+        """Создать ошибку rate limit."""
+
         super().__init__(
             message=message,
             code=self.DEFAULT_CODE,
@@ -198,6 +218,8 @@ class CliTransportError(CliError):
     DEFAULT_CODE: ClassVar[str] = "TRANSPORT_FAILED"
 
     def __init__(self, message: str, *, details: object | None = None) -> None:
+        """Создать ошибку транспорта."""
+
         super().__init__(
             message=message,
             code=self.DEFAULT_CODE,
@@ -212,6 +234,8 @@ class CliSdkMethodError(CliError):
     DEFAULT_CODE: ClassVar[str] = "SDK_METHOD_FAILED"
 
     def __init__(self, message: str, *, details: object | None = None) -> None:
+        """Создать ошибку публичного SDK method."""
+
         super().__init__(
             message=message,
             code=self.DEFAULT_CODE,

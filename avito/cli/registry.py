@@ -373,6 +373,8 @@ def build_cli_registry(
 def _sync_bindings(
     discovery: SwaggerBindingDiscovery,
 ) -> tuple[DiscoveredSwaggerBinding, ...]:
+    """Вернуть sync Swagger bindings с operation key."""
+
     return tuple(
         sorted(
             (
@@ -389,6 +391,8 @@ def _operation_for_binding(
     binding: DiscoveredSwaggerBinding,
     operations_by_key: Mapping[str, SwaggerOperation],
 ) -> SwaggerOperation:
+    """Найти Swagger operation для discovered binding."""
+
     if binding.operation_key is None:
         raise ValueError("Swagger binding без operation_key не может стать API-командой.")
     operation = operations_by_key.get(binding.operation_key)
@@ -401,6 +405,8 @@ def _build_api_command_record(
     binding: DiscoveredSwaggerBinding,
     operation: SwaggerOperation,
 ) -> ApiCommandRecord:
+    """Построить canonical API command record из SDK binding."""
+
     if binding.operation_key is None or binding.spec is None or binding.factory is None:
         raise ValueError("API-команда требует operation_key, spec и factory.")
     resource = kebab_case(binding.factory)
@@ -440,10 +446,14 @@ def _build_api_command_record(
 def _build_parameter_records(
     binding: DiscoveredSwaggerBinding,
 ) -> tuple[CliParameterSchema, ...]:
+    """Построить CLI parameter records из binding metadata."""
+
     return build_parameter_schemas(binding)
 
 
 def _build_auth_token_exclusion(binding: DiscoveredSwaggerBinding) -> ExclusionRecord:
+    """Построить intentional exclusion для non-domain token binding."""
+
     return ExclusionRecord(
         exclusion_id=f"api.{binding.operation_key}",
         category="api",
@@ -457,6 +467,8 @@ def _build_auth_token_exclusion(binding: DiscoveredSwaggerBinding) -> ExclusionR
 
 
 def _build_temporary_read_exclusion(command: ApiCommandRecord) -> ExclusionRecord:
+    """Построить intentional exclusion для read command без safe generic input."""
+
     return ExclusionRecord(
         exclusion_id=f"api.{command.operation_key}",
         category="api",
@@ -479,6 +491,8 @@ def _build_temporary_read_exclusion(command: ApiCommandRecord) -> ExclusionRecor
 
 
 def _build_temporary_write_exclusion(command: ApiCommandRecord) -> ExclusionRecord:
+    """Построить intentional exclusion для write command без safe generic input."""
+
     return ExclusionRecord(
         exclusion_id=f"api.{command.operation_key}",
         category="api",
@@ -501,6 +515,8 @@ def _build_temporary_write_exclusion(command: ApiCommandRecord) -> ExclusionReco
 
 
 def _build_helper_records() -> tuple[tuple[HelperCommandRecord, ...], tuple[ExclusionRecord, ...]]:
+    """Построить helper commands и helper exclusions."""
+
     helper_commands = (
         _helper(
             "account-health",
@@ -576,6 +592,8 @@ def _helper(
     *,
     parameters: tuple[CliParameterSchema, ...] = (),
 ) -> HelperCommandRecord:
+    """Создать helper command record."""
+
     return HelperCommandRecord(
         command_id=f"{resource}.{action}",
         resource=resource,
@@ -606,6 +624,8 @@ def _helper_parameter(
     multiple: bool = False,
     item_value_kind: CliValueKind | None = None,
 ) -> CliParameterSchema:
+    """Создать optional helper parameter schema."""
+
     return CliParameterSchema(
         name=name,
         source="method",
@@ -620,6 +640,8 @@ def _helper_parameter(
 
 
 def _build_local_command_records() -> tuple[LocalCommandRecord, ...]:
+    """Построить registry records для local CLI commands."""
+
     records = (
         _local("account", "add", "Добавить учетную запись.", "mutation"),
         _local("account", "list", "Показать учетные записи.", "collection"),
@@ -649,6 +671,8 @@ def _local(
     *,
     safety: SafetyKind = "local",
 ) -> LocalCommandRecord:
+    """Создать local command record."""
+
     return LocalCommandRecord(
         command_id=f"{resource}.{action}",
         resource=resource,
@@ -665,6 +689,8 @@ def _local(
 
 
 def _build_alias_records() -> tuple[AliasRecord, ...]:
+    """Построить compatibility alias records."""
+
     records = (
         AliasRecord(
             alias_id="account.remove",
@@ -695,6 +721,8 @@ def validate_cli_registry(registry: CliRegistry) -> None:
 
 
 def _validate_canonical_collisions(registry: CliRegistry) -> None:
+    """Проверить отсутствие duplicate canonical resource/action."""
+
     seen: dict[tuple[str, str], str] = {}
     for category, record in _canonical_records(registry):
         key = (record.resource, record.action)
@@ -708,6 +736,8 @@ def _validate_canonical_collisions(registry: CliRegistry) -> None:
 
 
 def _validate_aliases(registry: CliRegistry) -> None:
+    """Проверить target и collision policy для aliases."""
+
     command_ids = registry.command_ids()
     canonical_keys = {
         (record.resource, record.action)
@@ -741,6 +771,8 @@ def _canonical_records(
     tuple[CommandCategory, ApiCommandRecord | HelperCommandRecord | LocalCommandRecord],
     ...,
 ]:
+    """Вернуть все canonical records с category labels."""
+
     records: list[
         tuple[CommandCategory, ApiCommandRecord | HelperCommandRecord | LocalCommandRecord]
     ] = []
@@ -751,6 +783,8 @@ def _canonical_records(
 
 
 def _api_description(binding: DiscoveredSwaggerBinding, operation: SwaggerOperation) -> str:
+    """Сформировать русское описание API command."""
+
     if binding.deprecated or operation.deprecated:
         return (
             "Устаревшая операция Avito API; политика CLI должна сохранять "
@@ -771,6 +805,8 @@ def _api_examples(
     action: str,
     binding: DiscoveredSwaggerBinding,
 ) -> tuple[str, ...]:
+    """Сформировать базовые examples для API command."""
+
     flags = tuple(
         f"--{kebab_case(name)} <value>"
         for name in (*sorted(binding.factory_args), *sorted(binding.method_args))
@@ -780,6 +816,8 @@ def _api_examples(
 
 
 def _safety_for_method(method: str) -> SafetyKind:
+    """Классифицировать safety kind по HTTP method."""
+
     if method in _READ_METHODS:
         return "read"
     if method == "DELETE":
@@ -788,6 +826,8 @@ def _safety_for_method(method: str) -> SafetyKind:
 
 
 def _safety_summary_for_method(method: str) -> str:
+    """Вернуть русскую safety-сводку для HTTP method."""
+
     if method in _READ_METHODS:
         return "Команда только читает данные Avito API."
     if method == "DELETE":
@@ -799,6 +839,8 @@ def _api_safety_policy(
     binding: DiscoveredSwaggerBinding,
     operation: SwaggerOperation,
 ) -> CommandSafetyPolicy:
+    """Построить reviewed safety policy для API command."""
+
     kind = _safety_for_method(operation.method)
     if kind == "read":
         return CommandSafetyPolicy(
@@ -819,6 +861,8 @@ def _api_safety_policy(
 
 
 def _local_safety_policy(kind: SafetyKind) -> CommandSafetyPolicy:
+    """Построить safety policy для local CLI command."""
+
     return CommandSafetyPolicy(
         kind=kind,
         confirmation_required=kind in {"destructive", "expensive"},
@@ -828,6 +872,8 @@ def _local_safety_policy(kind: SafetyKind) -> CommandSafetyPolicy:
 
 
 def _sdk_method_accepts(binding: DiscoveredSwaggerBinding, parameter_name: str) -> bool:
+    """Проверить наличие параметра в публичном SDK method."""
+
     module = importlib.import_module(binding.module)
     domain_class = getattr(module, binding.class_name)
     method = getattr(domain_class, binding.method_name)
@@ -835,6 +881,8 @@ def _sdk_method_accepts(binding: DiscoveredSwaggerBinding, parameter_name: str) 
 
 
 def _output_hint_for_command(command_id: str, method: str) -> OutputHint:
+    """Определить output hint для command record."""
+
     if command_id in _IMPLEMENTED_API_COMMAND_IDS:
         return "object"
     if method not in _READ_METHODS:

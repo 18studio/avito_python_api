@@ -187,6 +187,8 @@ def completion_fish(ctx: CliContext) -> None:
 
 
 def _config_entry(ctx: CliContext, key: ConfigKey) -> dict[str, JsonValue]:
+    """Вернуть значение config key вместе с источником."""
+
     store = _config_store(ctx)
     document = store.load()
     if key == "active-profile":
@@ -210,6 +212,8 @@ def _config_entry(ctx: CliContext, key: ConfigKey) -> dict[str, JsonValue]:
 
 
 def _status_payload(ctx: CliContext) -> dict[str, JsonValue]:
+    """Собрать payload локальной готовности CLI."""
+
     home = resolve_cli_home()
     config_store = _config_store(ctx)
     account_store = AccountStore(home)
@@ -234,6 +238,8 @@ def _status_payload(ctx: CliContext) -> dict[str, JsonValue]:
 
 
 def _doctor_payload(ctx: CliContext) -> dict[str, JsonValue]:
+    """Собрать payload диагностики локальных CLI files."""
+
     home = resolve_cli_home()
     config_store = _config_store(ctx)
     account_store = AccountStore(home)
@@ -257,6 +263,8 @@ def _load_for_doctor(
     loader: Callable[[], object],
     issues: list[JsonValue],
 ) -> None:
+    """Загрузить локальный файл и добавить issue при CLI error."""
+
     try:
         loader()
     except CliError as exc:
@@ -272,6 +280,8 @@ def _load_for_doctor(
 
 
 def _format_issue(issue: object) -> str:
+    """Отформатировать одну diagnostic issue для human output."""
+
     if not isinstance(issue, dict):
         return "- Некорректная диагностическая запись."
     return (
@@ -281,6 +291,8 @@ def _format_issue(issue: object) -> str:
 
 
 def _emit_completion(ctx: CliContext, shell: ShellName) -> None:
+    """Напечатать команду подключения shell completion."""
+
     command = _completion_command(shell)
     if ctx.json_output:
         emit_stdout(ctx, _json_dump({"completion": {"shell": shell, "command": command}}))
@@ -300,6 +312,8 @@ def _emit_completion(ctx: CliContext, shell: ShellName) -> None:
 
 
 def _completion_command(shell: ShellName) -> str:
+    """Вернуть shell-specific команду completion."""
+
     if shell == "bash":
         return 'eval "$(_AVITO_COMPLETE=bash_source avito)"'
     if shell == "zsh":
@@ -308,6 +322,8 @@ def _completion_command(shell: ShellName) -> str:
 
 
 def _profile_source(ctx: CliContext, config: CliConfigDocument) -> str:
+    """Определить источник выбранного профиля."""
+
     if ctx.profile is not None:
         return "cli"
     if config.active_profile is not None:
@@ -316,6 +332,8 @@ def _profile_source(ctx: CliContext, config: CliConfigDocument) -> str:
 
 
 def _parse_config_key(value: str) -> ConfigKey:
+    """Проверить и нормализовать ключ локальной конфигурации."""
+
     if value == "active-profile":
         return "active-profile"
     raise CliUsageError(
@@ -325,10 +343,14 @@ def _parse_config_key(value: str) -> ConfigKey:
 
 
 def _config_store(ctx: CliContext) -> ConfigStore:
+    """Создать ConfigStore с учетом --config."""
+
     return ConfigStore(resolve_cli_home(), path=ctx.config)
 
 
 def _json_dump(payload: dict[str, object]) -> str:
+    """Сериализовать payload в стабильный JSON."""
+
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 

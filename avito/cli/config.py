@@ -173,6 +173,8 @@ class AccountStore:
     """Хранилище локальных учетных записей CLI."""
 
     def __init__(self, home: Path) -> None:
+        """Создать store для accounts.json внутри CLI home."""
+
         self._home = home
         self._path = home / ACCOUNTS_FILENAME
 
@@ -200,6 +202,8 @@ class ConfigStore:
     """Хранилище локальной конфигурации CLI."""
 
     def __init__(self, home: Path, *, path: Path | None = None) -> None:
+        """Создать store для config.json или пользовательского пути."""
+
         self._home = home
         self._uses_default_path = path is None
         self._path = path if path is not None else home / CONFIG_FILENAME
@@ -241,6 +245,8 @@ def resolve_cli_home(env: Mapping[str, str] | None = None) -> Path:
 
 
 def _ensure_cli_home(path: Path) -> None:
+    """Создать CLI home с закрытыми правами доступа."""
+
     try:
         path.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(path, 0o700)
@@ -252,6 +258,8 @@ def _ensure_cli_home(path: Path) -> None:
 
 
 def _ensure_config_parent(path: Path) -> None:
+    """Создать родительский каталог пользовательского config path."""
+
     try:
         path.mkdir(parents=True, exist_ok=True)
     except PermissionError as exc:
@@ -262,6 +270,8 @@ def _ensure_config_parent(path: Path) -> None:
 
 
 def _read_json_file(path: Path) -> JsonValue:
+    """Прочитать JSON-файл и преобразовать ошибки в CLI errors."""
+
     try:
         with path.open("r", encoding="utf-8") as file_obj:
             # JSON is the boundary where Python cannot know the concrete shape.
@@ -279,6 +289,8 @@ def _read_json_file(path: Path) -> JsonValue:
 
 
 def _write_json_file(path: Path, payload: Mapping[str, JsonValue]) -> None:
+    """Атомарно записать JSON-файл с закрытыми правами доступа."""
+
     text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     temporary_name: str | None = None
     try:
@@ -299,12 +311,16 @@ def _write_json_file(path: Path, payload: Mapping[str, JsonValue]) -> None:
 
 
 def _require_mapping(value: object, *, label: str) -> Mapping[str, object]:
+    """Проверить, что JSON value является объектом."""
+
     if not isinstance(value, dict):
         raise CliConfigFileError(f"`{label}` должен содержать JSON-объект.")
     return value
 
 
 def _require_str(payload: Mapping[str, object], field_name: str) -> str:
+    """Прочитать обязательную непустую строку из JSON object."""
+
     value = payload.get(field_name)
     if not isinstance(value, str) or not value:
         raise CliConfigFileError(f"Поле `{field_name}` должно быть непустой строкой.")
@@ -312,6 +328,8 @@ def _require_str(payload: Mapping[str, object], field_name: str) -> str:
 
 
 def _optional_str(payload: Mapping[str, object], field_name: str) -> str | None:
+    """Прочитать optional строку из JSON object."""
+
     value = payload.get(field_name)
     if value is None:
         return None
@@ -321,6 +339,8 @@ def _optional_str(payload: Mapping[str, object], field_name: str) -> str | None:
 
 
 def _optional_int(payload: Mapping[str, object], field_name: str) -> int | None:
+    """Прочитать optional integer из JSON object."""
+
     value = payload.get(field_name)
     if value is None:
         return None
@@ -330,6 +350,8 @@ def _optional_int(payload: Mapping[str, object], field_name: str) -> int | None:
 
 
 def _validate_schema_version(schema_version: int, *, filename: str) -> None:
+    """Проверить поддерживаемую версию локального JSON-файла."""
+
     if schema_version != SCHEMA_VERSION:
         raise CliConfigFileError(
             "Версия локального файла CLI не поддерживается.",
@@ -338,6 +360,8 @@ def _validate_schema_version(schema_version: int, *, filename: str) -> None:
 
 
 def _mask(value: str | None, *, enabled: bool) -> str | None:
+    """Замаскировать secret value при безопасном выводе."""
+
     if value is None:
         return None
     if enabled:

@@ -21,6 +21,7 @@ from avito.cli.ui import emit_stdout
 
 PACKAGE_NAME = "avito-py"
 
+
 def package_version() -> str:
     """Return installed package version for CLI output."""
 
@@ -31,6 +32,8 @@ def package_version() -> str:
 
 
 def _validate_output_flags(json_output: bool, plain: bool, table: bool, wide: bool) -> None:
+    """Проверить взаимоисключающие режимы вывода."""
+
     output_flags = {
         "--json": json_output,
         "--plain": plain,
@@ -147,6 +150,8 @@ def help_command(ctx: click.Context, topic: tuple[str, ...]) -> None:
 
 
 def _resolve_help_topic(parent: click.Context, topic: tuple[str, ...]) -> click.Context:
+    """Найти Click context для вложенной команды справки."""
+
     command: click.Command = parent.command
     command_context = parent
     for part in topic:
@@ -174,6 +179,8 @@ app.add_command(completion_group)
 
 
 def _register_api_commands(root: click.Group) -> None:
+    """Зарегистрировать реализованные API и helper команды из registry."""
+
     registry = build_cli_registry()
     for api_command in registry.api_commands:
         if not api_command.implemented:
@@ -188,6 +195,8 @@ def _register_api_commands(root: click.Group) -> None:
 
 
 def _resource_group(root: click.Group, resource: str) -> click.Group:
+    """Вернуть существующую или создать новую группу resource."""
+
     existing = root.get_command(click.Context(root), resource)
     if isinstance(existing, click.Group):
         return existing
@@ -202,11 +211,15 @@ def _resource_group(root: click.Group, resource: str) -> click.Group:
 
 
 def _build_api_click_command(command: ApiCommandRecord) -> click.Command:
+    """Построить Click-команду для registry-backed API command."""
+
     params = _parameter_click_options(command)
     params.extend(_safety_click_options(command))
 
     @click.pass_context
     def callback(click_context: click.Context, /, **raw_options: object) -> None:
+        """Выполнить registry-backed API command через общий invocation engine."""
+
         ctx = click_context.find_object(CliContext)
         if ctx is None:
             raise CliUsageError("Контекст CLI не найден.")
@@ -229,10 +242,14 @@ def _build_api_click_command(command: ApiCommandRecord) -> click.Command:
 
 
 def _build_helper_click_command(command: HelperCommandRecord) -> click.Command:
+    """Построить Click-команду для helper workflow."""
+
     params = _parameter_click_options(command)
 
     @click.pass_context
     def callback(click_context: click.Context, /, **raw_options: object) -> None:
+        """Выполнить helper workflow через общий invocation engine."""
+
         ctx = click_context.find_object(CliContext)
         if ctx is None:
             raise CliUsageError("Контекст CLI не найден.")
@@ -254,6 +271,8 @@ def _build_helper_click_command(command: HelperCommandRecord) -> click.Command:
 def _parameter_click_options(
     command: ApiCommandRecord | HelperCommandRecord,
 ) -> list[click.Parameter]:
+    """Преобразовать registry parameter records в Click options."""
+
     return [
         click.Option(
             param_decls=(parameter.flag,),
@@ -267,6 +286,8 @@ def _parameter_click_options(
 
 
 def _safety_click_options(command: ApiCommandRecord) -> list[click.Parameter]:
+    """Вернуть Click options для safety-флагов команды."""
+
     if command.safety in {"read", "local"}:
         return []
     options: list[click.Parameter] = [
@@ -296,6 +317,8 @@ def _safety_options_from_click(
     command: ApiCommandRecord,
     raw_options: dict[str, object],
 ) -> SafetyOptions:
+    """Извлечь safety-флаги из Click options."""
+
     if command.safety in {"read", "local"}:
         return SafetyOptions()
     return SafetyOptions(
@@ -306,12 +329,16 @@ def _safety_options_from_click(
 
 
 def _optional_string(value: object) -> str | None:
+    """Преобразовать optional Click value в строку."""
+
     if value is None:
         return None
     return str(value)
 
 
 def _raw_values_from_click(raw_options: dict[str, object]) -> dict[str, tuple[str, ...]]:
+    """Преобразовать Click kwargs в raw CLI values для coercion."""
+
     values: dict[str, tuple[str, ...]] = {}
     for name, value in raw_options.items():
         if value is None:

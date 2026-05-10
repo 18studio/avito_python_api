@@ -178,6 +178,8 @@ def map_sdk_error(
 
 
 def _default_client_factory(settings: AvitoSettings) -> ClientContext:
+    """Создать context-managed AvitoClient для production invocation."""
+
     return AvitoClient(settings)
 
 
@@ -187,6 +189,8 @@ def _kwargs_for_source(
     *,
     source: str,
 ) -> dict[str, object]:
+    """Выбрать kwargs для factory или method из coerced values."""
+
     return {
         parameter.name: values[parameter.name]
         for parameter in command.parameters
@@ -199,6 +203,8 @@ def _call_public_factory(
     command: ApiCommandRecord,
     kwargs: Mapping[str, object],
 ) -> object:
+    """Вызвать публичную factory на AvitoClient."""
+
     factory = getattr(client, command.factory, None)
     if not callable(factory):
         raise CliSdkMethodError(
@@ -213,6 +219,8 @@ def _call_public_method(
     command: ApiCommandRecord,
     kwargs: Mapping[str, object],
 ) -> object:
+    """Вызвать публичный метод domain object."""
+
     method = getattr(domain, command.sdk_method_name, None)
     if not callable(method):
         raise CliSdkMethodError(
@@ -228,6 +236,8 @@ def _with_timeout_if_supported(
     command: ApiCommandRecord,
     kwargs: Mapping[str, object],
 ) -> dict[str, object]:
+    """Добавить SDK timeout, если публичный метод его принимает."""
+
     resolved = dict(kwargs)
     if ctx.timeout is None:
         return resolved
@@ -250,6 +260,8 @@ def _with_dry_run_if_supported(
     command: ApiCommandRecord,
     kwargs: Mapping[str, object],
 ) -> dict[str, object]:
+    """Добавить dry_run, если команда и SDK-метод его поддерживают."""
+
     resolved = dict(kwargs)
     if not options.dry_run:
         return resolved
@@ -264,6 +276,8 @@ def _with_dry_run_if_supported(
 
 
 def _find_account(accounts: Sequence[StoredAccount], profile: str) -> StoredAccount | None:
+    """Найти сохраненный account по имени профиля."""
+
     for account in accounts:
         if account.name == profile:
             return account
@@ -275,6 +289,8 @@ def _sdk_error_details(
     *,
     command: ApiCommandRecord | HelperCommandRecord,
 ) -> dict[str, object]:
+    """Собрать безопасные детали SDK-ошибки для CLI diagnostics."""
+
     details: dict[str, object] = {
         "command_id": command.command_id,
         "sdk_method": command.sdk_method,

@@ -224,6 +224,8 @@ account_group.add_command(
 
 
 def _delete_account(ctx: CliContext, *, account_name: str, yes: bool, confirm: str | None) -> None:
+    """Удалить account с интерактивной или явной проверкой имени."""
+
     if yes and confirm is not None:
         raise InvalidFlagCombinationError("Флаги --yes и --confirm нельзя использовать вместе.")
     if not yes and confirm != account_name:
@@ -269,6 +271,8 @@ def _resolve_client_secret(
     api_key: str | None,
     client_secret_stdin: bool,
 ) -> str:
+    """Получить client secret из одного разрешенного источника."""
+
     selected = [
         name
         for name, enabled in (
@@ -299,6 +303,8 @@ def _resolve_client_secret(
 
 
 def _read_client_secret_stdin() -> str:
+    """Прочитать ровно одну строку client secret из stdin."""
+
     stream = click.get_text_stream("stdin")
     if stream.isatty():
         raise CliUsageError("--client-secret-stdin требует неинтерактивный stdin.")
@@ -313,20 +319,28 @@ def _read_client_secret_stdin() -> str:
 
 
 def _require_non_empty_secret(value: str) -> str:
+    """Проверить, что client secret не пустой."""
+
     if not value:
         raise CliAuthRequiredError("Client Secret не может быть пустым.")
     return value
 
 
 def _account_store() -> AccountStore:
+    """Создать store учетных записей для текущего CLI home."""
+
     return AccountStore(resolve_cli_home())
 
 
 def _config_store(ctx: CliContext) -> ConfigStore:
+    """Создать store конфигурации с учетом флага --config."""
+
     return ConfigStore(resolve_cli_home(), path=ctx.config)
 
 
 def _find_account(document: AccountsDocument, account_name: str) -> StoredAccount | None:
+    """Найти account по имени в документе хранилища."""
+
     for account in document.accounts:
         if account.name == account_name:
             return account
@@ -334,22 +348,30 @@ def _find_account(document: AccountsDocument, account_name: str) -> StoredAccoun
 
 
 def _effective_profile(ctx: CliContext, config: CliConfigDocument) -> str | None:
+    """Вернуть профиль из CLI-флага или локальной конфигурации."""
+
     if ctx.profile is not None:
         return ctx.profile
     return config.active_profile
 
 
 def _account_summary(account: StoredAccount, *, active: bool) -> dict[str, JsonValue]:
+    """Собрать безопасную JSON-сводку account для вывода."""
+
     payload = account.to_json(mask_secrets=True)
     payload["active"] = active
     return payload
 
 
 def _json_dump(payload: dict[str, object]) -> str:
+    """Сериализовать payload в стабильный JSON."""
+
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
 def _render_table(headers: tuple[str, ...], rows: Sequence[tuple[str, ...]]) -> str:
+    """Отрендерить простую выровненную таблицу."""
+
     widths = [
         max(len(header), *(len(row[index]) for row in rows))
         for index, header in enumerate(headers)

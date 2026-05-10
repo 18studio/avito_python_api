@@ -69,6 +69,8 @@ class RegistryHelpRenderer:
         return None
 
     def _commands_for_resource(self, resource: str) -> tuple[RegistryCommandRecord, ...]:
+        """Вернуть canonical commands для resource."""
+
         records: list[RegistryCommandRecord] = []
         records.extend(
             record for record in self.registry.api_commands if record.resource == resource
@@ -82,10 +84,14 @@ class RegistryHelpRenderer:
         return tuple(sorted(records, key=lambda record: record.action))
 
     def _aliases_for_resource(self, resource: str) -> tuple[AliasRecord, ...]:
+        """Вернуть aliases для resource."""
+
         aliases = tuple(alias for alias in self.registry.aliases if alias.resource == resource)
         return tuple(sorted(aliases, key=lambda alias: alias.action))
 
     def _command_for_action(self, resource: str, action: str) -> RegistryCommandRecord | None:
+        """Найти canonical command для resource/action."""
+
         matches = [
             record
             for record in self._commands_for_resource(resource)
@@ -98,6 +104,8 @@ class RegistryHelpRenderer:
         return matches[0]
 
     def _alias_for_action(self, resource: str, action: str) -> AliasRecord | None:
+        """Найти alias для resource/action."""
+
         matches = [
             alias
             for alias in self._aliases_for_resource(resource)
@@ -122,15 +130,21 @@ def render_registry_help(
 
 
 def _format_command_line(record: RegistryCommandRecord) -> str:
+    """Отформатировать строку команды в resource help."""
+
     status = "готова" if record.implemented else "запланирована"
     return f"  {record.action:<24} {record.description} ({status})"
 
 
 def _format_alias_line(alias: AliasRecord) -> str:
+    """Отформатировать строку alias в resource help."""
+
     return f"  {alias.action:<24} совместимое имя для {alias.target_command_id}: {alias.reason}"
 
 
 def _render_command_help(record: RegistryCommandRecord) -> str:
+    """Отрендерить help для canonical command."""
+
     lines = [
         f"Справка: avito {record.resource} {record.action}",
         "",
@@ -162,6 +176,8 @@ def _render_command_help(record: RegistryCommandRecord) -> str:
 
 
 def _render_alias_help(alias: AliasRecord) -> str:
+    """Отрендерить help для compatibility alias."""
+
     target_resource, target_action = alias.target_command_id.split(".", maxsplit=1)
     return "\n".join(
         (
@@ -177,6 +193,8 @@ def _render_alias_help(alias: AliasRecord) -> str:
 
 
 def _parameter_lines(record: RegistryCommandRecord) -> tuple[str, ...]:
+    """Вернуть help-строки параметров команды."""
+
     if isinstance(record, LocalCommandRecord):
         return ()
     return tuple(
@@ -187,6 +205,8 @@ def _parameter_lines(record: RegistryCommandRecord) -> tuple[str, ...]:
 
 
 def _format_output_hint(output_hint: OutputHint) -> str:
+    """Вернуть русскую подпись output hint."""
+
     labels: dict[OutputHint, str] = {
         "object": "объект",
         "collection": "коллекция",
@@ -198,6 +218,8 @@ def _format_output_hint(output_hint: OutputHint) -> str:
 
 
 def _format_parameter_source(source: Literal["factory", "method"]) -> str:
+    """Вернуть русскую подпись источника параметра."""
+
     labels: dict[Literal["factory", "method"], str] = {
         "factory": "аргумент ресурса",
         "method": "аргумент действия",

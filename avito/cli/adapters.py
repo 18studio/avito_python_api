@@ -206,6 +206,8 @@ def invoke_adapter_command(
             safety_options: SafetyOptions | None = None,
             client_factory: ClientFactory | None = None,
         ) -> object:
+            """Invoke shared engine while preserving command safety options."""
+
             if safety_options is not None:
                 raise CliValidationError(
                     "CLI adapter не должен переопределять safety-флаги команды.",

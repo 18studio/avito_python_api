@@ -19,17 +19,23 @@ DEFAULT_PAGE_LIMIT = 1
 
 @runtime_checkable
 class _ModelDumpable(Protocol):
+    """Protocol for SDK models exposing model_dump."""
+
     def model_dump(self) -> Mapping[str, object]:
         """Вернуть публичное JSON-совместимое представление модели."""
 
 
 @runtime_checkable
 class _DictSerializable(Protocol):
+    """Protocol for SDK models exposing to_dict."""
+
     def to_dict(self) -> Mapping[str, object]:
         """Вернуть публичное JSON-совместимое представление модели."""
 
 
 class _DataclassInstance(Protocol):
+    """Protocol marker for dataclass instances accepted by serializer."""
+
     __dataclass_fields__: Mapping[str, Field[object]]
 
 
@@ -84,6 +90,8 @@ def emit_cli_result(
 
 
 def _serialize_value(value: object, *, options: SerializationOptions) -> object:
+    """Сериализовать одно значение результата CLI."""
+
     if isinstance(value, PaginatedList):
         return _serialize_paginated_list(value, options=options)
     if isinstance(value, _ModelDumpable):
@@ -113,6 +121,8 @@ def _serialize_dataclass(
     *,
     options: SerializationOptions,
 ) -> dict[str, object]:
+    """Сериализовать dataclass без private и raw payload fields."""
+
     return {
         field.name: _serialize_value(getattr(value, field.name), options=options)
         for field in value.__dataclass_fields__.values()
@@ -125,6 +135,8 @@ def _serialize_paginated_list(
     *,
     options: SerializationOptions,
 ) -> dict[str, object]:
+    """Сериализовать PaginatedList с bounded snapshot metadata."""
+
     items = _paginated_snapshot(value, options=options)
     visible_items = items
     if options.limit is not None:
@@ -153,6 +165,8 @@ def _paginated_snapshot(
     *,
     options: SerializationOptions,
 ) -> list[object]:
+    """Получить bounded snapshot из lazy PaginatedList."""
+
     if options.all_items:
         return value.materialize()
 
@@ -176,6 +190,8 @@ def _paginated_snapshot(
 
 
 def _load_next_page(value: PaginatedList[object]) -> None:
+    """Загрузить следующую страницу PaginatedList, если она доступна."""
+
     if value.is_materialized:
         return
     try:
@@ -190,12 +206,16 @@ def _pagination_is_truncated(
     loaded_items: int,
     visible_items: int,
 ) -> bool:
+    """Определить, был ли pagination output усечен."""
+
     if visible_items < loaded_items:
         return True
     return not value.is_materialized
 
 
 def _render_plain(value: object) -> str:
+    """Отрендерить значение в plain output mode."""
+
     if isinstance(value, str):
         return value
     if isinstance(value, int | float | bool) or value is None:
@@ -204,6 +224,8 @@ def _render_plain(value: object) -> str:
 
 
 def _render_grouped(value: object) -> str:
+    """Отрендерить mapping как grouped key-value output."""
+
     if isinstance(value, Mapping):
         rows = [
             f"{str(key)}: {_render_cell(item)}"
@@ -214,6 +236,8 @@ def _render_grouped(value: object) -> str:
 
 
 def _render_table(value: object, *, wide: bool) -> str:
+    """Отрендерить collection payload как таблицу."""
+
     rows = _table_rows(value)
     if not rows:
         return ""
@@ -231,6 +255,8 @@ def _render_table(value: object, *, wide: bool) -> str:
 
 
 def _table_rows(value: object) -> list[Mapping[str, object]]:
+    """Преобразовать payload в строки таблицы."""
+
     if isinstance(value, Mapping) and isinstance(value.get("items"), Sequence):
         return _sequence_table_rows(value["items"])
     if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
@@ -241,6 +267,8 @@ def _table_rows(value: object) -> list[Mapping[str, object]]:
 
 
 def _sequence_table_rows(value: object) -> list[Mapping[str, object]]:
+    """Преобразовать sequence payload в строки таблицы."""
+
     if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return []
     rows: list[Mapping[str, object]] = []
@@ -253,6 +281,8 @@ def _sequence_table_rows(value: object) -> list[Mapping[str, object]]:
 
 
 def _table_columns(rows: Sequence[Mapping[str, object]], *, wide: bool) -> tuple[str, ...]:
+    """Выбрать columns для table output."""
+
     columns: list[str] = []
     for row in rows:
         for key in row:
@@ -270,6 +300,8 @@ def _table_columns(rows: Sequence[Mapping[str, object]], *, wide: bool) -> tuple
 
 
 def _is_simple_cell(value: object) -> bool:
+    """Проверить, безопасно ли значение показывать в narrow table."""
+
     return (
         value is None
         or isinstance(value, str | int | float | bool)
@@ -278,6 +310,8 @@ def _is_simple_cell(value: object) -> bool:
 
 
 def _render_cell(value: object) -> str:
+    """Отрендерить одно значение table cell."""
+
     if value is None:
         return ""
     if isinstance(value, str):
@@ -288,6 +322,8 @@ def _render_cell(value: object) -> str:
 
 
 def _is_collection_payload(value: object) -> bool:
+    """Проверить, выглядит ли payload как collection."""
+
     if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
         return True
     return isinstance(value, Mapping) and isinstance(value.get("items"), Sequence)

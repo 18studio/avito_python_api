@@ -66,6 +66,8 @@ class CoercedParameter:
 
 @dataclass(frozen=True, slots=True)
 class _CallableSchemaContext:
+    """Signature and type hints used to build parameter schemas."""
+
     signature: inspect.Signature
     type_hints: Mapping[str, object]
 
@@ -141,11 +143,15 @@ def coerce_cli_value(schema: CliParameterSchema, values: Sequence[str]) -> objec
 
 
 def _context_for_factory(factory_name: str) -> _CallableSchemaContext:
+    """Построить schema context для AvitoClient factory."""
+
     factory = getattr(AvitoClient, factory_name)
     return _context_for_callable(factory)
 
 
 def _context_for_sdk_method(binding: DiscoveredSwaggerBinding) -> _CallableSchemaContext:
+    """Построить schema context для публичного SDK method."""
+
     module = importlib.import_module(binding.module)
     domain_class = getattr(module, binding.class_name)
     method = getattr(domain_class, binding.method_name)
@@ -153,6 +159,8 @@ def _context_for_sdk_method(binding: DiscoveredSwaggerBinding) -> _CallableSchem
 
 
 def _context_for_callable(callable_object: Callable[..., object]) -> _CallableSchemaContext:
+    """Построить schema context для callable object."""
+
     return _CallableSchemaContext(
         signature=inspect.signature(callable_object),
         type_hints=get_type_hints(callable_object),
@@ -166,6 +174,8 @@ def _build_schema(
     expression: str,
     context: _CallableSchemaContext,
 ) -> CliParameterSchema:
+    """Построить schema для одного selected binding argument."""
+
     parameter = context.signature.parameters.get(name)
     annotation: object = object
     required = True
@@ -188,6 +198,8 @@ def _build_schema(
 
 
 def _resolve_annotation(context: _CallableSchemaContext, parameter: inspect.Parameter) -> object:
+    """Вернуть resolved type annotation для parameter."""
+
     annotation = context.type_hints.get(parameter.name)
     if annotation is not None:
         return annotation
@@ -200,6 +212,8 @@ def _classify_annotation(
     name: str,
     annotation: object,
 ) -> tuple[CliValueKind, CliValueKind | None, tuple[str, ...]]:
+    """Классифицировать type annotation в CLI value kind."""
+
     normalized = _strip_optional(annotation)
     origin = get_origin(normalized)
     if origin in {list, tuple, Sequence}:
@@ -231,6 +245,8 @@ def _classify_union(
     name: str,
     annotation: object,
 ) -> tuple[CliValueKind, CliValueKind | None, tuple[str, ...]]:
+    """Классифицировать union annotation в CLI value kind."""
+
     choices = tuple(argument for argument in get_args(annotation) if argument is not _NONE_TYPE)
     enum_choices = tuple(choice for choice in choices if isinstance(choice, type) and issubclass(choice, Enum))
     if enum_choices:
@@ -254,6 +270,8 @@ def _classify_union(
 
 
 def _strip_optional(annotation: object) -> object:
+    """Убрать None из Optional annotation, если это единственный wrapper."""
+
     origin = get_origin(annotation)
     if not _is_union_origin(origin):
         return annotation
@@ -264,10 +282,14 @@ def _strip_optional(annotation: object) -> object:
 
 
 def _is_union_origin(origin: object) -> bool:
+    """Проверить, является ли origin union type."""
+
     return origin in {Union, types.UnionType}
 
 
 def _first_type_arg(annotation: object) -> object:
+    """Вернуть первый generic type argument или str по умолчанию."""
+
     arguments = get_args(annotation)
     if not arguments:
         return str
@@ -275,6 +297,8 @@ def _first_type_arg(annotation: object) -> object:
 
 
 def _string_kind_for_name(name: str) -> CliValueKind:
+    """Уточнить string-like kind по имени параметра."""
+
     if "date_time" in name or name.endswith("_at") or name.endswith("_time"):
         return "datetime"
     if "date" in name or name.endswith("_from") or name.endswith("_to"):
@@ -283,14 +307,20 @@ def _string_kind_for_name(name: str) -> CliValueKind:
 
 
 def _integer_name(name: str) -> bool:
+    """Проверить, выглядит ли имя параметра как integer id."""
+
     return name == "id" or name.endswith("_id") or name.endswith("_ids")
 
 
 def _enum_values(enum_type: type[Enum]) -> tuple[str, ...]:
+    """Вернуть допустимые строковые enum values."""
+
     return tuple(str(item.value) for item in enum_type)
 
 
 def _annotation_label(annotation: object) -> str:
+    """Вернуть стабильную подпись annotation для coverage report."""
+
     if annotation is object:
         return "object"
     if isinstance(annotation, type):
@@ -299,11 +329,15 @@ def _annotation_label(annotation: object) -> str:
 
 
 def _flag_for_name(name: str) -> str:
+    """Преобразовать parameter name в CLI flag."""
+
     normalized = name.replace("_", "-")
     return f"--{normalized}"
 
 
 def _split_list_values(values: Sequence[str]) -> tuple[str, ...]:
+    """Развернуть repeated и comma-separated list values."""
+
     items: list[str] = []
     for value in values:
         for item in value.split(","):
@@ -319,6 +353,8 @@ def _coerce_scalar(
     *,
     value_kind: CliValueKind,
 ) -> object:
+    """Привести scalar CLI value к schema kind."""
+
     normalized = value.strip()
     if value_kind == "string" or value_kind == "unknown":
         return value
@@ -346,6 +382,8 @@ def _coerce_scalar(
 
 
 def _coerce_int(schema: CliParameterSchema, value: str) -> int:
+    """Привести CLI value к int."""
+
     try:
         return int(value, 10)
     except ValueError as exc:
@@ -356,6 +394,8 @@ def _coerce_int(schema: CliParameterSchema, value: str) -> int:
 
 
 def _coerce_float(schema: CliParameterSchema, value: str) -> float:
+    """Привести CLI value к float."""
+
     try:
         return float(value)
     except ValueError as exc:
@@ -366,6 +406,8 @@ def _coerce_float(schema: CliParameterSchema, value: str) -> float:
 
 
 def _coerce_bool(schema: CliParameterSchema, value: str) -> bool:
+    """Привести CLI value к bool."""
+
     normalized = value.lower()
     if normalized in _BOOLEAN_TRUE:
         return True
@@ -378,6 +420,8 @@ def _coerce_bool(schema: CliParameterSchema, value: str) -> bool:
 
 
 def _coerce_date(schema: CliParameterSchema, value: str) -> date:
+    """Привести CLI value к date."""
+
     try:
         return date.fromisoformat(value)
     except ValueError as exc:
@@ -388,6 +432,8 @@ def _coerce_date(schema: CliParameterSchema, value: str) -> date:
 
 
 def _coerce_datetime(schema: CliParameterSchema, value: str) -> datetime:
+    """Привести CLI value к datetime."""
+
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
@@ -398,6 +444,8 @@ def _coerce_datetime(schema: CliParameterSchema, value: str) -> datetime:
 
 
 def _coerce_enum(schema: CliParameterSchema, value: str) -> str:
+    """Проверить CLI value против enum values."""
+
     normalized = value.lower()
     for enum_value in schema.enum_values:
         if value == enum_value or normalized == enum_value.lower():
