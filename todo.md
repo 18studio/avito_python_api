@@ -44,7 +44,8 @@ Definition of done for the whole plan:
 
 - Все stage checklists выполнены.
 - `avito` и `python -m avito` работают через один CLI app.
-- Все sync Swagger-bound методы покрыты canonical CLI command или явным documented exclusion.
+- Все sync Swagger-bound domain methods покрыты canonical CLI command или явным documented exclusion.
+- Под "100% CLI coverage" в этом плане понимается: каждый sync Swagger-bound domain method имеет ровно одну canonical CLI command, а каждый не-доменный Swagger binding, deprecated/compatibility path или unsupported helper имеет documented exclusion с причиной. Прямое покрытие auth-token internals через CLI не входит в первый релиз и не считается дефектом покрытия.
 - Все supported helper workflows покрыты command или documented exclusion.
 - Coverage linter проходит и включен в `make check`.
 - CLI не дублирует SDK contracts и не обходит public `AvitoClient` surface.
@@ -62,6 +63,7 @@ Target outcome:
 - `avito` console command and `python -m avito` expose the same CLI.
 - Local account/profile/config commands work without Avito network calls.
 - Every sync Swagger-bound public SDK method has exactly one canonical CLI command, unless it has a documented intentional exclusion.
+- The first release coverage target is strict for sync domain API methods discovered through `AvitoClient` factory metadata. Non-domain auth-token bindings and compatibility-only wrappers are intentionally excluded unless a separate public SDK facade is designed for them.
 - Every supported public non-Swagger helper has a CLI command or a documented exclusion.
 - CLI coverage is checked automatically against Swagger binding discovery.
 - Human output is useful by default; JSON output is stable for automation.
@@ -280,6 +282,7 @@ Additional findings from reviewing this plan against `.ai/STYLEGUIDE.md`, `.ai/c
 - The console entry point must be a stable callable, not the Typer application object itself. Use `avito.cli.app:main` for packaging and keep `app` as the reusable Typer application instance for tests and `python -m avito`.
 - Root-level global options are the canonical syntax for the first release: `avito --profile main account get-self`. Supporting trailing global options such as `avito account get-self --profile main` is optional and must be implemented deliberately, not assumed from Typer/Click behavior.
 - The generated API command layer should prefer deterministic Click command objects attached to the Typer root app when runtime-built parameters become too rigid for Typer's signature model. This keeps registration inspectable without generating Python source.
+- If production code imports `click` directly, add `click` as an explicit runtime dependency instead of relying on Typer's transitive dependency. If `click` is used only through Typer testing utilities, keep it out of production imports.
 - Safety classification cannot rely on HTTP method alone. HTTP method may provide a default, but final command safety must come from explicit registry metadata and reviewed overrides for write, destructive, expensive, and local commands.
 - CLI import-boundary checks should extend the existing `scripts/lint_architecture.py` unless there is a concrete reason to split them into a dedicated script. Avoid two overlapping architecture linters.
 - The stable CLI contract should be documented as soon as the corresponding surface exists. Create or update `docs/site/reference/cli.md` from the first stage that introduces user-visible flags, output fields, exit codes, or command names; Stage 13 remains the full documentation pass.
@@ -683,6 +686,12 @@ Help must include:
 - flags with stable names;
 - related commands when useful.
 
+Implementation requirement:
+
+- `avito help` is a public compatibility command, not a private Typer behavior assumption.
+- `avito help <resource>` and `avito help <resource> <action>` must be tested no later than the stage that introduces nested generated commands.
+- If Typer's default help cannot provide this shape, implement a small `help.py` adapter that reads the same command registry metadata used for command registration.
+
 Completion commands:
 
 ```bash
@@ -758,10 +767,12 @@ Stage checklist:
 Deliverables:
 
 - Add `typer` dependency.
+- Add `click` as an explicit runtime dependency only if Stage 1 production code imports `click` directly. If Stage 1 uses Click only through Typer test utilities, do not add a separate direct dependency yet; revisit this when generated API commands start using `click.Command`.
 - Use Typer/Click test utilities only in tests; do not add a custom subprocess harness unless behavior specifically requires `python -m avito`.
 - Add `avito/cli/` package skeleton.
 - Add root `avito` app with typed global context.
 - Add `avito --help`, `avito --version`, `avito version`.
+- Add `avito help` as the user-facing help entry point. At Stage 1 it may delegate to root help only; nested help such as `avito help account get-self` becomes mandatory once nested commands exist.
 - Route `python -m avito` to the same CLI app.
 - Register Poetry script as `avito = "avito.cli.app:main"`; keep `app` as the reusable Typer application object.
 - Use Russian help text from the beginning.
@@ -794,8 +805,9 @@ Exit criteria:
 Stage checklist:
 
 - [ ] `typer` is added as a runtime dependency.
+- [ ] `click` is either not imported by production code, or is added as an explicit runtime dependency.
 - [ ] `avito/cli/` package exists with only the minimal shell files.
-- [ ] `avito --help`, `avito --version`, `avito version`, and `python -m avito --help` work.
+- [ ] `avito --help`, `avito help`, `avito --version`, `avito version`, and `python -m avito --help` work.
 - [ ] Poetry script points to `avito.cli.app:main`, not directly to the Typer app object.
 - [ ] Canonical root-level global option syntax is covered by tests.
 - [ ] No config directory or account file is created by help/version commands.
@@ -913,6 +925,10 @@ Deliverables:
 - Build `avito/cli/registry.py`.
 - Convert sync discovered Swagger bindings into canonical resource/action records.
 - Preserve factory name, factory args, method name, method args, operation key, and domain.
+- Add nested help support for registry-backed resources and actions:
+  - `avito help <resource>`;
+  - `avito help <resource> <action>`;
+  - generated help must use registry metadata and must not instantiate `AvitoClient`.
 - Register local commands and public non-Swagger helpers in separate categories.
 - Add alias support separate from canonical command records.
 - Add deterministic collision detection for `resource action`.
@@ -925,6 +941,7 @@ Tests:
 - registry can be built without constructing `AvitoClient`, reading account files, or touching the network;
 - local helper command metadata is visible to help/registration code separately from API command metadata;
 - aliases delegate to canonical command records at runtime and do not produce duplicate callbacks.
+- `avito help <resource>` and `avito help <resource> <action>` render registry-backed help without constructing `AvitoClient`.
 
 Static lint responsibilities introduced in this stage:
 
@@ -953,6 +970,7 @@ Exit criteria:
 Stage checklist:
 
 - [ ] Registry records are typed and deterministic.
+- [ ] Registry-backed `avito help <resource>` and `avito help <resource> <action>` are implemented and tested.
 - [ ] API, helper, local, alias, and exclusion records are separate categories.
 - [ ] Canonical API commands map one-to-one to sync Swagger bindings.
 - [ ] Local/API command collisions fail during registry construction.
@@ -1546,7 +1564,8 @@ Stage checklist:
 - [ ] Console command entry point is `avito.cli.app:main`.
 - [ ] `python -m avito` exposes the same CLI.
 - [ ] `avito --help`, `avito --version`, and `avito version` work.
-- [ ] Global flags work consistently at root and subcommand levels.
+- [ ] Root-level global flags work in the documented canonical syntax, for example `avito --profile main account get-self`.
+- [ ] Trailing/subcommand global flags are either deliberately implemented, tested, and documented as additive behavior, or explicitly documented as unsupported in the first release.
 - [ ] CLI home defaults to `~/.avito-py/`.
 - [ ] `AVITO_PY_HOME` and `MY_SDK_HOME` override CLI home with documented precedence.
 - [ ] CLI home directory is created lazily with `0700` permissions.
@@ -1571,7 +1590,7 @@ Stage checklist:
 - [ ] Pagination behavior is bounded and documented.
 - [ ] Destructive commands require confirmation unless `--yes` or `--confirm` is supplied.
 - [ ] `--dry-run` is exposed only for SDK methods that safely support it.
-- [ ] One smoke command per domain is tested through fake transport.
+- [ ] Every completed factory group has at least one representative smoke command tested through fake transport.
 - [ ] CLI coverage linter exists, passes, and is included in `make check` after full coverage.
 - [ ] README and docs include CLI usage, config, output, and exit-code contracts.
 - [ ] Minimum stage verification commands pass during implementation.
