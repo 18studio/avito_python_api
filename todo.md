@@ -1925,11 +1925,28 @@ Makefile integration:
 
 Stage checklist:
 
-- [ ] Remaining sync Swagger bindings are covered or intentionally excluded.
-- [ ] All canonical API commands have registration/help coverage.
-- [ ] All canonical API commands have execution-smoke coverage or documented intentional execution exclusions.
-- [ ] `make cli-lint` is added to `make check`.
-- [ ] Stage verification commands pass.
+- [x] Remaining sync Swagger bindings are covered or intentionally excluded.
+- [x] All canonical API commands have registration/help coverage.
+- [x] All canonical API commands have execution-smoke coverage or documented intentional execution exclusions.
+- [x] `make cli-lint` is added to `make check`.
+- [x] Stage verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+Canonical API commands: 162.
+Intentional API exclusions: 42.
+Temporary exclusions: 0.
+poetry run pytest tests/cli/test_domain_smoke_commands.py: 326 passed
+poetry run python scripts/lint_cli_coverage.py --strict: errors=0
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+make cli-lint: errors=0
+poetry run mypy avito: Success
+poetry run mypy scripts/lint_cli_coverage.py: Success
+poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py: All checks passed
+```
 
 ### Stage 11: Public Helper Workflows
 

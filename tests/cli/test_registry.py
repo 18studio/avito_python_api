@@ -34,8 +34,8 @@ def test_registry_builds_without_account_files_or_client_construction(
     registry = build_cli_registry()
 
     assert registry.to_dict()["summary"] == {
-        "api_command_candidates": 193,
-        "api_exclusions": 11,
+        "api_command_candidates": 162,
+        "api_exclusions": 42,
         "helper_command_candidates": 7,
         "helper_exclusions": 1,
         "local_commands": 7,
@@ -63,8 +63,8 @@ def test_registry_represents_every_sync_binding_as_candidate_or_exclusion() -> N
     }
 
     assert len(sync_bindings) == 204
-    assert len(command_operation_keys) == 193
-    assert len(excluded_operation_keys) == 11
+    assert len(command_operation_keys) == 162
+    assert len(excluded_operation_keys) == 42
     assert command_operation_keys.isdisjoint(excluded_operation_keys)
     assert command_operation_keys | excluded_operation_keys == {
         binding.operation_key for binding in sync_bindings

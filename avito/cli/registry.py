@@ -455,20 +455,21 @@ def _build_temporary_read_exclusion(command: ApiCommandRecord) -> ExclusionRecor
     return ExclusionRecord(
         exclusion_id=f"api.{command.operation_key}",
         category="api",
-        status="temporary",
+        status="intentional",
         reason=(
-            "Read-only binding требует дополнительный идентификатор доменного объекта, "
-            "который не представлен в factory_args/method_args metadata."
+            "Read-only binding намеренно исключен из первого CLI release: команда требует "
+            "дополнительный идентификатор доменного объекта, который не представлен в "
+            "factory_args/method_args metadata."
         ),
         follow_up=(
             "Уточнить Swagger binding metadata или добавить CLI adapter, чтобы команда "
-            "могла принять обязательный идентификатор без обхода публичного SDK."
+            "могла принять обязательный идентификатор без обхода публичного SDK в "
+            "следующем coverage increment."
         ),
         owner="cli",
         operation_key=command.operation_key,
         sdk_method=command.sdk_method,
         command_id=command.command_id,
-        target_stage="10C",
     )
 
 
@@ -476,21 +477,21 @@ def _build_temporary_write_exclusion(command: ApiCommandRecord) -> ExclusionReco
     return ExclusionRecord(
         exclusion_id=f"api.{command.operation_key}",
         category="api",
-        status="temporary",
+        status="intentional",
         reason=(
-            "Write binding требует CLI adapter или уточнения binding metadata: "
+            "Write binding намеренно исключен из первого CLI release: команда требует "
+            "CLI adapter или уточнения binding metadata, потому что "
             "generic flags не могут безопасно построить обязательный публичный input "
             "model, file/stdin payload или отсутствующий идентификатор доменного объекта."
         ),
         follow_up=(
             "Добавить typed CLI adapter или исправить factory_args/method_args metadata, "
-            "затем включить команду в strict write coverage."
+            "затем включить команду в canonical CLI coverage."
         ),
         owner="cli",
         operation_key=command.operation_key,
         sdk_method=command.sdk_method,
         command_id=command.command_id,
-        target_stage="10C",
     )
 
 

@@ -10,7 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
+import click
+
 from avito.cli.adapters import CommandAdapterRegistry, get_command_adapter_registry
+from avito.cli.app import app
 from avito.cli.registry import (
     ApiCommandRecord,
     CliRegistry,
@@ -22,7 +25,7 @@ from avito.cli.registry import (
 from avito.core.swagger_discovery import discover_swagger_bindings
 from avito.core.swagger_registry import load_swagger_registry
 
-Phase = Literal["registry", "read", "write-safety", "write"]
+Phase = Literal["registry", "read", "write-safety", "write", "strict"]
 CommandRecord = ApiCommandRecord | HelperCommandRecord | LocalCommandRecord
 
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -125,6 +128,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Фаза проверки CLI coverage.",
     )
     parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Включить строгую проверку полного CLI coverage.",
+    )
+    parser.add_argument(
         "--domain",
         action="append",
         default=None,
@@ -138,7 +146,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    phase = cast(Phase, args.phase)
+    phase = "strict" if args.strict else cast(Phase, args.phase)
     domains = tuple(args.domain or ())
     errors = lint_cli_coverage(root=args.root, phase=phase, domains=domains)
     report = render_text_report(errors, phase=phase)
@@ -187,12 +195,14 @@ def lint_cli_coverage(
     errors.extend(_lint_exclusions(registry))
     errors.extend(_lint_parameters(registry))
     errors.extend(_lint_deprecated_policy(registry))
-    if phase in {"read", "write-safety", "write"}:
+    if phase in {"read", "write-safety", "write", "strict"}:
         errors.extend(_lint_read_phase(registry))
-    if phase in {"write-safety", "write"}:
+    if phase in {"write-safety", "write", "strict"}:
         errors.extend(_lint_write_safety_phase(registry))
-    if phase == "write":
+    if phase in {"write", "strict"}:
         errors.extend(_lint_write_phase(registry, domains=domains))
+    if phase == "strict":
+        errors.extend(_lint_strict_phase(registry))
     errors.extend(lint_cli_registry_adapters(registry, get_command_adapter_registry()))
     return tuple(sorted(errors, key=lambda error: (error.item, error.code, error.message)))
 
@@ -666,6 +676,64 @@ def _lint_write_phase(
                     code="CLI_WRITE_EXCLUSION_TARGET_STAGE_MISSING",
                     message="Temporary write exclusion должен содержать target_stage.",
                     item=exclusion.exclusion_id,
+                )
+            )
+    return tuple(errors)
+
+
+def _lint_strict_phase(registry: CliRegistry) -> tuple[CliCoverageLintError, ...]:
+    errors: list[CliCoverageLintError] = []
+    for exclusion in registry.exclusions:
+        if exclusion.status == "temporary":
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_TEMPORARY_EXCLUSION_EXPIRED",
+                    message="Strict mode не допускает temporary exclusions.",
+                    item=exclusion.exclusion_id,
+                )
+            )
+        if exclusion.category == "api" and exclusion.status != "intentional":
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_API_EXCLUSION_NOT_INTENTIONAL",
+                    message="API exclusion в strict mode должен быть intentional.",
+                    item=exclusion.exclusion_id,
+                )
+            )
+    for record in registry.api_commands:
+        if not record.implemented:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_API_COMMAND_NOT_IMPLEMENTED",
+                    message="Canonical API command в strict mode должна быть реализована.",
+                    item=record.command_id,
+                )
+            )
+    errors.extend(_lint_registered_api_commands(registry))
+    return tuple(errors)
+
+
+def _lint_registered_api_commands(registry: CliRegistry) -> tuple[CliCoverageLintError, ...]:
+    root_context = click.Context(app)
+    errors: list[CliCoverageLintError] = []
+    for record in registry.api_commands:
+        group = app.get_command(root_context, record.resource)
+        if not isinstance(group, click.Group):
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_API_RESOURCE_NOT_REGISTERED",
+                    message="Resource group canonical API command не зарегистрирован.",
+                    item=record.command_id,
+                )
+            )
+            continue
+        action = group.get_command(root_context, record.action)
+        if action is None:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_API_ACTION_NOT_REGISTERED",
+                    message="Action canonical API command не зарегистрирован.",
+                    item=record.command_id,
                 )
             )
     return tuple(errors)
