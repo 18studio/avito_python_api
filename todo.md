@@ -2190,44 +2190,44 @@ make docs-strict: not run; no generated docs, snippets, coverage pages, or refer
 
 ## Acceptance Checklist
 
-- [ ] `click` dependency added.
-- [ ] `avito/cli/` exists and is isolated from SDK core/domain/transport/auth layers.
-- [ ] Console command `avito` is registered in `pyproject.toml`.
-- [ ] Console command entry point is `avito.cli.app:main`.
-- [ ] `python -m avito` exposes the same CLI.
-- [ ] `avito --help`, `avito --version`, and `avito version` work.
-- [ ] Root-level global flags work in the documented canonical syntax, for example `avito --profile main account get-self`.
-- [ ] Trailing/subcommand global flags are either deliberately implemented, tested, and documented as additive behavior, or explicitly documented as unsupported in the first release.
-- [ ] CLI home defaults to `~/.avito-py/`.
-- [ ] `AVITO_PY_HOME` and `MY_SDK_HOME` override CLI home with documented precedence.
-- [ ] CLI home directory is created lazily with `0700` permissions.
-- [ ] `accounts.json` and `config.json` are written atomically with `0600` permissions.
-- [ ] Account commands add/list/use/current/delete accounts.
-- [ ] `account remove` is omitted or implemented only as documented alias for `account delete`.
-- [ ] `account add` supports `--client-id`, `--client-secret`, `--base-url`, `--api-key`, and `--endpoint`.
-- [ ] `account add` supports `--client-secret-stdin` and hidden prompt input so secrets do not have to appear in shell history.
-- [ ] No CLI output leaks raw secrets.
-- [ ] CLI errors use stable error codes and documented exit codes.
-- [ ] Results go to stdout; errors, warnings, progress, and debug diagnostics go to stderr.
-- [ ] `--json` emits stable JSON for success and errors.
-- [ ] CLI registry is built from SDK Swagger binding metadata.
-- [ ] Every sync discovered Swagger binding has exactly one canonical CLI command or documented intentional exclusion.
-- [ ] Every canonical API CLI command maps to exactly one sync discovered Swagger binding.
-- [ ] Every supported public non-Swagger helper has a CLI command or documented exclusion.
-- [ ] Compatibility aliases do not count as canonical coverage.
-- [ ] Generated command names and flags are lowercase kebab-case.
-- [ ] No command exposes `resource-id`.
-- [ ] Generic invocation uses `AvitoClient` factories and public domain methods.
-- [ ] CLI does not call `OperationSpec` or transport directly for API commands.
-- [ ] Input coercion covers primitives, booleans, dates, datetimes, enums, optionals, and lists.
-- [ ] Pagination behavior is bounded and documented.
-- [ ] Destructive commands require confirmation unless `--yes` or `--confirm` is supplied.
-- [ ] `--dry-run` is exposed only for SDK methods that safely support it.
-- [ ] Every completed factory group has at least one representative smoke command tested through fake transport.
-- [ ] CLI coverage linter exists, passes, and is included in `make check` after full coverage.
-- [ ] README and docs include CLI usage, config, output, and exit-code contracts.
-- [ ] Minimum stage verification commands pass during implementation.
-- [ ] Final `make check` passes before completion.
+- [x] `click` dependency added.
+- [x] `avito/cli/` exists and is isolated from SDK core/domain/transport/auth layers.
+- [x] Console command `avito` is registered in `pyproject.toml`.
+- [x] Console command entry point is `avito.cli.app:main`.
+- [x] `python -m avito` exposes the same CLI.
+- [x] `avito --help`, `avito --version`, and `avito version` work.
+- [x] Root-level global flags work in the documented canonical syntax, for example `avito --profile main account get-self`.
+- [x] Trailing/subcommand global flags are either deliberately implemented, tested, and documented as additive behavior, or explicitly documented as unsupported in the first release.
+- [x] CLI home defaults to `~/.avito-py/`.
+- [x] `AVITO_PY_HOME` and `MY_SDK_HOME` override CLI home with documented precedence.
+- [x] CLI home directory is created lazily with `0700` permissions.
+- [x] `accounts.json` and `config.json` are written atomically with `0600` permissions.
+- [x] Account commands add/list/use/current/delete accounts.
+- [x] `account remove` is omitted or implemented only as documented alias for `account delete`.
+- [x] `account add` supports `--client-id`, `--client-secret`, `--base-url`, `--api-key`, and `--endpoint`.
+- [x] `account add` supports `--client-secret-stdin` and hidden prompt input so secrets do not have to appear in shell history.
+- [x] No CLI output leaks raw secrets.
+- [x] CLI errors use stable error codes and documented exit codes.
+- [x] Results go to stdout; errors, warnings, progress, and debug diagnostics go to stderr.
+- [x] `--json` emits stable JSON for success and errors.
+- [x] CLI registry is built from SDK Swagger binding metadata.
+- [x] Every sync discovered Swagger binding has exactly one canonical CLI command or documented intentional exclusion.
+- [x] Every canonical API CLI command maps to exactly one sync discovered Swagger binding.
+- [x] Every supported public non-Swagger helper has a CLI command or documented exclusion.
+- [x] Compatibility aliases do not count as canonical coverage.
+- [x] Generated command names and flags are lowercase kebab-case.
+- [x] No command exposes `resource-id`.
+- [x] Generic invocation uses `AvitoClient` factories and public domain methods.
+- [x] CLI does not call `OperationSpec` or transport directly for API commands.
+- [x] Input coercion covers primitives, booleans, dates, datetimes, enums, optionals, and lists.
+- [x] Pagination behavior is bounded and documented.
+- [x] Destructive commands require confirmation unless `--yes` or `--confirm` is supplied.
+- [x] `--dry-run` is exposed only for SDK methods that safely support it.
+- [x] Every completed factory group has at least one representative smoke command tested through fake transport.
+- [x] CLI coverage linter exists, passes, and is included in `make check` after full coverage.
+- [x] README and docs include CLI usage, config, output, and exit-code contracts.
+- [x] Minimum stage verification commands pass during implementation.
+- [x] Final `make check` passes before completion.
 
 ## Resolved Defaults
 
