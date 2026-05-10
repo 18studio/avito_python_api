@@ -53,6 +53,26 @@ more than one exits with code `2`.
 
 The `NO_COLOR=1` environment variable also disables colored human diagnostics.
 
+## Safety Flags
+
+Write-like generated API commands use reviewed safety metadata from the CLI
+registry. HTTP method can provide an initial default, but the command record is
+the contract used by command registration, help, and the coverage linter.
+
+Destructive or expensive commands require confirmation before the SDK client is
+constructed:
+
+```bash
+avito --profile main <resource> <action> --confirm <command-id>
+avito --profile main <resource> <action> --yes
+```
+
+In non-interactive mode, a command that requires confirmation fails instead of
+prompting. `--yes` and `--confirm` are mutually exclusive.
+
+`--dry-run` is shown only when the public SDK method accepts `dry_run`. The CLI
+does not fake dry-run for methods that would still call transport.
+
 ## Implemented API Commands
 
 API commands are registry-backed and call only public SDK factories and public

@@ -1770,13 +1770,27 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] Write/destructive/expensive classification is deterministic and tested.
-- [ ] Exposed write/destructive/expensive commands have explicit reviewed safety metadata.
-- [ ] Destructive commands require prompt, `--yes`, or exact `--confirm`.
-- [ ] `--no-input` never hangs and fails safely when confirmation is required.
-- [ ] `--dry-run` is exposed only for SDK methods that safely support it.
-- [ ] Safety behavior is reflected in command help.
-- [ ] Stage verification commands pass.
+- [x] Write/destructive/expensive classification is deterministic and tested.
+- [x] Exposed write/destructive/expensive commands have explicit reviewed safety metadata.
+- [x] Destructive commands require prompt, `--yes`, or exact `--confirm`.
+- [x] `--no-input` never hangs and fails safely when confirmation is required.
+- [x] `--dry-run` is exposed only for SDK methods that safely support it.
+- [x] Safety behavior is reflected in command help.
+- [x] Stage verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli/test_write_safety.py: 5 passed
+poetry run pytest tests/cli/test_registry.py tests/cli/test_app.py tests/cli/test_domain_smoke_commands.py: 129 passed
+poetry run python scripts/lint_cli_coverage.py --phase write-safety: errors=0
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run mypy scripts/lint_cli_coverage.py: Success
+poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py: All checks passed
+```
 
 ### Stage 10B: Write Command Coverage by Domain Waves
 

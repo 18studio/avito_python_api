@@ -14,6 +14,7 @@ from avito.cli.context import CliContext
 from avito.cli.errors import CliUsageError, InvalidFlagCombinationError
 from avito.cli.help import render_registry_help
 from avito.cli.registry import ApiCommandRecord, build_cli_registry
+from avito.cli.safety import SafetyOptions
 from avito.cli.serialization import emit_cli_result
 from avito.cli.ui import emit_stdout
 
@@ -201,14 +202,21 @@ def _build_api_click_command(command: ApiCommandRecord) -> click.Command:
         )
         for parameter in command.parameters
     ]
+    params.extend(_safety_click_options(command))
 
     @click.pass_context
     def callback(click_context: click.Context, /, **raw_options: object) -> None:
         ctx = click_context.find_object(CliContext)
         if ctx is None:
             raise CliUsageError("Контекст CLI не найден.")
+        safety_options = _safety_options_from_click(command, raw_options)
         raw_values = _raw_values_from_click(raw_options)
-        result = api_commands.invoke_api_command(ctx, command, raw_values)
+        result = api_commands.invoke_api_command(
+            ctx,
+            command,
+            raw_values,
+            safety_options=safety_options,
+        )
         emit_cli_result(ctx, result)
 
     return click.Command(
@@ -217,6 +225,51 @@ def _build_api_click_command(command: ApiCommandRecord) -> click.Command:
         callback=callback,
         help=command.description,
     )
+
+
+def _safety_click_options(command: ApiCommandRecord) -> list[click.Parameter]:
+    if command.safety in {"read", "local"}:
+        return []
+    options: list[click.Parameter] = [
+        click.Option(
+            param_decls=("--yes",),
+            is_flag=True,
+            help="Выполнить команду без интерактивного подтверждения.",
+        ),
+        click.Option(
+            param_decls=("--confirm",),
+            metavar="VALUE",
+            help="Точно подтвердить выполнение команды.",
+        ),
+    ]
+    if command.safety_policy.dry_run_supported:
+        options.append(
+            click.Option(
+                param_decls=("--dry-run",),
+                is_flag=True,
+                help="Показать план без применения изменений.",
+            )
+        )
+    return options
+
+
+def _safety_options_from_click(
+    command: ApiCommandRecord,
+    raw_options: dict[str, object],
+) -> SafetyOptions:
+    if command.safety in {"read", "local"}:
+        return SafetyOptions()
+    return SafetyOptions(
+        yes=bool(raw_options.pop("yes", False)),
+        confirm=_optional_string(raw_options.pop("confirm", None)),
+        dry_run=bool(raw_options.pop("dry_run", False)),
+    )
+
+
+def _optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
 
 
 def _raw_values_from_click(raw_options: dict[str, object]) -> dict[str, tuple[str, ...]]:

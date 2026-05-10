@@ -21,9 +21,11 @@ from avito.cli.errors import (
     CliRateLimitError,
     CliSdkMethodError,
     CliTransportError,
+    CliUsageError,
     CliValidationError,
 )
 from avito.cli.registry import ApiCommandRecord
+from avito.cli.safety import SafetyOptions, validate_safety_options
 from avito.cli.schemas import coerce_cli_values
 from avito.client import AvitoClient
 from avito.config import AvitoSettings
@@ -44,6 +46,7 @@ def invoke_api_command(
     command: ApiCommandRecord,
     raw_values: Mapping[str, Sequence[str]],
     *,
+    safety_options: SafetyOptions | None = None,
     client_factory: ClientFactory | None = None,
 ) -> object:
     """Invoke one registry-backed API command through `AvitoClient`."""
@@ -55,12 +58,14 @@ def invoke_api_command(
             command,
             raw_values,
             engine=_invoke_api_command_generic,
+            safety_options=safety_options,
             client_factory=client_factory,
         )
     return _invoke_api_command_generic(
         ctx,
         command,
         raw_values,
+        safety_options=safety_options,
         client_factory=client_factory,
     )
 
@@ -70,10 +75,13 @@ def _invoke_api_command_generic(
     command: ApiCommandRecord,
     raw_values: Mapping[str, Sequence[str]],
     *,
+    safety_options: SafetyOptions | None = None,
     client_factory: ClientFactory | None = None,
 ) -> object:
     """Invoke one command through the generic public SDK path."""
 
+    resolved_safety_options = safety_options or SafetyOptions()
+    validate_safety_options(ctx, command, resolved_safety_options)
     values = coerce_cli_values(command.parameters, raw_values, no_input=ctx.no_input)
     factory_kwargs = _kwargs_for_source(command, values, source="factory")
     method_kwargs = _kwargs_for_source(command, values, source="method")
@@ -84,6 +92,12 @@ def _invoke_api_command_generic(
         with resolved_factory(settings) as client:
             domain = _call_public_factory(client, command, factory_kwargs)
             method_kwargs = _with_timeout_if_supported(ctx, domain, command, method_kwargs)
+            method_kwargs = _with_dry_run_if_supported(
+                resolved_safety_options,
+                domain,
+                command,
+                method_kwargs,
+            )
             return _call_public_method(domain, command, method_kwargs)
     except CliError:
         raise
@@ -195,6 +209,25 @@ def _with_timeout_if_supported(
     return resolved
 
 
+def _with_dry_run_if_supported(
+    options: SafetyOptions,
+    domain: object,
+    command: ApiCommandRecord,
+    kwargs: Mapping[str, object],
+) -> dict[str, object]:
+    resolved = dict(kwargs)
+    if not options.dry_run:
+        return resolved
+    method = getattr(domain, command.sdk_method_name, None)
+    if callable(method) and "dry_run" in inspect.signature(method).parameters:
+        resolved["dry_run"] = True
+        return resolved
+    raise CliUsageError(
+        "SDK-метод команды не поддерживает dry_run.",
+        details={"command_id": command.command_id, "method": command.sdk_method},
+    )
+
+
 def _find_account(accounts: Sequence[StoredAccount], profile: str) -> StoredAccount | None:
     for account in accounts:
         if account.name == profile:
@@ -221,6 +254,7 @@ def _sdk_error_details(error: AvitoError, *, command: ApiCommandRecord) -> dict[
 __all__ = (
     "ClientContext",
     "ClientFactory",
+    "SafetyOptions",
     "invoke_api_command",
     "map_sdk_error",
     "resolve_avito_settings",

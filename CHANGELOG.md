@@ -38,6 +38,10 @@ and this project adheres to Semantic Versioning.
   smoke coverage и проверяются фазой `scripts/lint_cli_coverage.py --phase read`;
   read-bindings без достаточных factory/method аргументов оформлены как
   временные исключения до Stage 10C.
+- Добавлены CLI safety primitives для будущих write/destructive API-команд:
+  registry хранит проверенную safety policy, destructive/expensive команды
+  требуют prompt, `--yes` или точный `--confirm`, а `--dry-run` публикуется
+  только для SDK-методов с публичным `dry_run`.
 
 ## [2.1.0] - 2026-05-08
 

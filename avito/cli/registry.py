@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import importlib
+import inspect
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from avito.cli.safety import CommandSafetyPolicy
 from avito.cli.schemas import CliParameterSchema as CliParameterRecord
 from avito.cli.schemas import build_parameter_schemas
 from avito.core.swagger_discovery import (
@@ -68,6 +71,7 @@ class ApiCommandRecord:
     related_commands: tuple[str, ...]
     safety: SafetyKind
     safety_summary: str
+    safety_policy: CommandSafetyPolicy
     output_hint: OutputHint
     adapter_id: str | None = None
 
@@ -100,6 +104,7 @@ class ApiCommandRecord:
             "related_commands": list(self.related_commands),
             "safety": self.safety,
             "safety_summary": self.safety_summary,
+            "safety_policy": self.safety_policy.to_dict(),
             "output_hint": self.output_hint,
             "adapter_id": self.adapter_id,
         }
@@ -120,6 +125,7 @@ class HelperCommandRecord:
     related_commands: tuple[str, ...]
     safety: SafetyKind
     safety_summary: str
+    safety_policy: CommandSafetyPolicy
     output_hint: OutputHint
     adapter_id: str | None = None
 
@@ -138,6 +144,7 @@ class HelperCommandRecord:
             "related_commands": list(self.related_commands),
             "safety": self.safety,
             "safety_summary": self.safety_summary,
+            "safety_policy": self.safety_policy.to_dict(),
             "output_hint": self.output_hint,
             "adapter_id": self.adapter_id,
         }
@@ -156,6 +163,7 @@ class LocalCommandRecord:
     related_commands: tuple[str, ...]
     safety: SafetyKind
     safety_summary: str
+    safety_policy: CommandSafetyPolicy
     output_hint: OutputHint
 
     def to_dict(self) -> dict[str, object]:
@@ -171,6 +179,7 @@ class LocalCommandRecord:
             "related_commands": list(self.related_commands),
             "safety": self.safety,
             "safety_summary": self.safety_summary,
+            "safety_policy": self.safety_policy.to_dict(),
             "output_hint": self.output_hint,
         }
 
@@ -380,6 +389,7 @@ def _build_api_command_record(
         related_commands=(),
         safety=_safety_for_method(operation.method),
         safety_summary=_safety_summary_for_method(operation.method),
+        safety_policy=_api_safety_policy(binding, operation),
         output_hint=_output_hint_for_command(command_id),
     )
 
@@ -467,6 +477,12 @@ def _helper(
         related_commands=(),
         safety="read",
         safety_summary="Локальная вспомогательная команда читает данные через публичный интерфейс SDK.",
+        safety_policy=CommandSafetyPolicy(
+            kind="read",
+            confirmation_required=False,
+            dry_run_supported=False,
+            review_note="Helper-команда только читает данные через публичный интерфейс SDK.",
+        ),
         output_hint="object",
     )
 
@@ -502,6 +518,7 @@ def _local(
         related_commands=(),
         safety=safety,
         safety_summary="Локальная команда не вызывает Avito API.",
+        safety_policy=_local_safety_policy(safety),
         output_hint=output_hint,
     )
 
@@ -624,13 +641,56 @@ def _api_examples(
 def _safety_for_method(method: str) -> SafetyKind:
     if method in _READ_METHODS:
         return "read"
+    if method == "DELETE":
+        return "destructive"
     return "write"
 
 
 def _safety_summary_for_method(method: str) -> str:
     if method in _READ_METHODS:
         return "Команда только читает данные Avito API."
+    if method == "DELETE":
+        return "Команда удаляет или отменяет данные в Avito API и требует подтверждения."
     return "Команда может изменить состояние или запустить действие в Avito API."
+
+
+def _api_safety_policy(
+    binding: DiscoveredSwaggerBinding,
+    operation: SwaggerOperation,
+) -> CommandSafetyPolicy:
+    kind = _safety_for_method(operation.method)
+    if kind == "read":
+        return CommandSafetyPolicy(
+            kind="read",
+            confirmation_required=False,
+            dry_run_supported=False,
+            review_note="GET/HEAD operation проверена как read-only команда.",
+        )
+    return CommandSafetyPolicy(
+        kind=kind,
+        confirmation_required=kind in {"destructive", "expensive"},
+        dry_run_supported=_sdk_method_accepts(binding, "dry_run"),
+        review_note=(
+            "Write operation получает явную CLI safety metadata перед публикацией; "
+            "HTTP method используется только как исходная классификация."
+        ),
+    )
+
+
+def _local_safety_policy(kind: SafetyKind) -> CommandSafetyPolicy:
+    return CommandSafetyPolicy(
+        kind=kind,
+        confirmation_required=kind in {"destructive", "expensive"},
+        dry_run_supported=False,
+        review_note="Локальная CLI-команда проверена отдельно от Swagger coverage.",
+    )
+
+
+def _sdk_method_accepts(binding: DiscoveredSwaggerBinding, parameter_name: str) -> bool:
+    module = importlib.import_module(binding.module)
+    domain_class = getattr(module, binding.class_name)
+    method = getattr(domain_class, binding.method_name)
+    return parameter_name in inspect.signature(method).parameters
 
 
 def _is_implemented_api_command(command_id: str, method: str) -> bool:

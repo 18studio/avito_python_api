@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Protocol
+from typing import Protocol, cast
 
 from avito.cli.context import CliContext
 from avito.cli.errors import CliError, CliSdkMethodError, CliValidationError
 from avito.cli.registry import ApiCommandRecord
+from avito.cli.safety import SafetyOptions
 from avito.config import AvitoSettings
 
 
@@ -44,6 +45,7 @@ class CommandInvocationEngine(Protocol):
         command: ApiCommandRecord,
         raw_values: Mapping[str, Sequence[str]],
         *,
+        safety_options: SafetyOptions | None = None,
         client_factory: ClientFactory | None = None,
     ) -> object:
         """Invoke a command after adapter-owned CLI input normalization."""
@@ -174,12 +176,18 @@ def invoke_adapter_command(
     raw_values: Mapping[str, Sequence[str]],
     *,
     engine: CommandInvocationEngine,
+    safety_options: SafetyOptions | None = None,
     client_factory: ClientFactory | None = None,
 ) -> object:
     """Invoke an adapter-backed command with sanitized adapter errors."""
 
     if command.adapter_id is None:
-        return engine(ctx, command, raw_values, client_factory=client_factory)
+        return engine(
+            ctx,
+            command,
+            raw_values,
+            client_factory=client_factory,
+        )
 
     registered_adapter = registry.get(command.adapter_id)
     if registered_adapter is None:
@@ -188,11 +196,34 @@ def invoke_adapter_command(
             details={"adapter_id": command.adapter_id, "command_id": command.command_id},
         )
     try:
+        resolved_safety_options = safety_options
+
+        def safety_engine(
+            engine_ctx: CliContext,
+            engine_command: ApiCommandRecord,
+            engine_raw_values: Mapping[str, Sequence[str]],
+            *,
+            safety_options: SafetyOptions | None = None,
+            client_factory: ClientFactory | None = None,
+        ) -> object:
+            if safety_options is not None:
+                raise CliValidationError(
+                    "CLI adapter не должен переопределять safety-флаги команды.",
+                    details={"command_id": command.command_id},
+                )
+            return engine(
+                engine_ctx,
+                engine_command,
+                engine_raw_values,
+                safety_options=resolved_safety_options,
+                client_factory=client_factory,
+            )
+
         return registered_adapter.adapter.invoke(
             ctx,
             command,
             raw_values,
-            engine=engine,
+            engine=cast(CommandInvocationEngine, safety_engine),
             client_factory=client_factory,
         )
     except CliError:

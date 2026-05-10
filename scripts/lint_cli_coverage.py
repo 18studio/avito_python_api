@@ -22,7 +22,7 @@ from avito.cli.registry import (
 from avito.core.swagger_discovery import discover_swagger_bindings
 from avito.core.swagger_registry import load_swagger_registry
 
-Phase = Literal["registry", "read"]
+Phase = Literal["registry", "read", "write-safety"]
 CommandRecord = ApiCommandRecord | HelperCommandRecord | LocalCommandRecord
 
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -51,7 +51,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Проверить coverage registry CLI.")
     parser.add_argument(
         "--phase",
-        choices=("registry", "read"),
+        choices=("registry", "read", "write-safety"),
         default="registry",
         help="Фаза проверки CLI coverage.",
     )
@@ -110,8 +110,10 @@ def lint_cli_coverage(
     errors.extend(_lint_exclusions(registry))
     errors.extend(_lint_parameters(registry))
     errors.extend(_lint_deprecated_policy(registry))
-    if phase == "read":
+    if phase in {"read", "write-safety"}:
         errors.extend(_lint_read_phase(registry))
+    if phase == "write-safety":
+        errors.extend(_lint_write_safety_phase(registry))
     errors.extend(lint_cli_registry_adapters(registry, get_command_adapter_registry()))
     return tuple(sorted(errors, key=lambda error: (error.item, error.code, error.message)))
 
@@ -492,6 +494,52 @@ def _lint_read_phase(registry: CliRegistry) -> tuple[CliCoverageLintError, ...]:
                 item=command_id,
             )
         )
+    return tuple(errors)
+
+
+def _lint_write_safety_phase(registry: CliRegistry) -> tuple[CliCoverageLintError, ...]:
+    errors: list[CliCoverageLintError] = []
+    for record in _canonical_records(registry):
+        if record.safety_policy.kind != record.safety:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_SAFETY_POLICY_KIND_MISMATCH",
+                    message="Safety policy kind должен совпадать с command safety.",
+                    item=record.command_id,
+                )
+            )
+        if not record.safety_policy.review_note:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_SAFETY_POLICY_REVIEW_MISSING",
+                    message="Safety policy должен содержать review note.",
+                    item=record.command_id,
+                )
+            )
+        if record.safety in {"destructive", "expensive"} and not record.safety_policy.confirmation_required:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_SAFETY_CONFIRMATION_MISSING",
+                    message="Destructive/expensive команда должна требовать подтверждение.",
+                    item=record.command_id,
+                )
+            )
+        if record.safety == "read" and record.safety_policy.confirmation_required:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_READ_CONFIRMATION_INVALID",
+                    message="Read-команда не должна требовать подтверждение.",
+                    item=record.command_id,
+                )
+            )
+        if record.safety == "read" and record.safety_policy.dry_run_supported:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_READ_DRY_RUN_INVALID",
+                    message="Read-команда не должна публиковать dry-run.",
+                    item=record.command_id,
+                )
+            )
     return tuple(errors)
 
 
