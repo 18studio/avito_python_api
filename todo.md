@@ -277,6 +277,12 @@ Additional findings from reviewing this plan against `.ai/STYLEGUIDE.md`, `.ai/c
 - Coverage must distinguish three statuses: implemented canonical command, documented temporary exclusion, and documented intentional permanent exclusion. Temporary exclusions require an owner/follow-up and must fail after the configured target stage if still present.
 - Generated command registration must be deterministic and inspectable by the CLI coverage linter without constructing `AvitoClient`, reading account files, or touching the network.
 - Public docs must only describe implemented commands. Future commands stay in this plan until the implementation exists.
+- The console entry point must be a stable callable, not the Typer application object itself. Use `avito.cli.app:main` for packaging and keep `app` as the reusable Typer application instance for tests and `python -m avito`.
+- Root-level global options are the canonical syntax for the first release: `avito --profile main account get-self`. Supporting trailing global options such as `avito account get-self --profile main` is optional and must be implemented deliberately, not assumed from Typer/Click behavior.
+- The generated API command layer should prefer deterministic Click command objects attached to the Typer root app when runtime-built parameters become too rigid for Typer's signature model. This keeps registration inspectable without generating Python source.
+- Safety classification cannot rely on HTTP method alone. HTTP method may provide a default, but final command safety must come from explicit registry metadata and reviewed overrides for write, destructive, expensive, and local commands.
+- CLI import-boundary checks should extend the existing `scripts/lint_architecture.py` unless there is a concrete reason to split them into a dedicated script. Avoid two overlapping architecture linters.
+- The stable CLI contract should be documented as soon as the corresponding surface exists. Create or update `docs/site/reference/cli.md` from the first stage that introduces user-visible flags, output fields, exit codes, or command names; Stage 13 remains the full documentation pass.
 
 ## Test and Lint Boundaries
 
@@ -334,7 +340,7 @@ Command registration approach:
 
 - Use Typer for the root app, global options, local workflow commands, and help/version/status/doctor/config/account commands.
 - Register generated API commands deterministically from registry records.
-- If Typer's signature-based command model is too rigid for registry-built parameters, attach typed `click.Command` objects to the Typer app. This is allowed because it is deterministic command registration, not SDK method injection.
+- For generated API commands, prefer typed `click.Command` objects attached to the Typer app when registry-built parameters are required. This is allowed because it is deterministic command registration, not SDK method injection.
 - Do not generate Python source files for commands.
 - Do not use `setattr`, `globals()`, monkey-patching, or modifying SDK/domain classes to create commands.
 - Generated command callbacks must all delegate to one invocation engine; command-specific behavior belongs in registry metadata only when the generic path cannot infer it safely.
@@ -349,7 +355,7 @@ Register only the canonical command:
 
 ```toml
 [tool.poetry.scripts]
-avito = "avito.cli.app:app"
+avito = "avito.cli.app:main"
 ```
 
 ## Command Model
@@ -409,6 +415,16 @@ Supported from root and subcommands through one typed CLI context:
 --debug
 --timeout <seconds>
 ```
+
+Canonical invocation syntax for global options:
+
+```bash
+avito --profile main account get-self
+avito --json --no-input account get-self
+```
+
+The first release only guarantees root-level global options before the resource/action path.
+If trailing global options are added later, they must be additive, tested, and documented.
 
 Write/destructive commands additionally support:
 
@@ -747,7 +763,7 @@ Deliverables:
 - Add root `avito` app with typed global context.
 - Add `avito --help`, `avito --version`, `avito version`.
 - Route `python -m avito` to the same CLI app.
-- Register Poetry script.
+- Register Poetry script as `avito = "avito.cli.app:main"`; keep `app` as the reusable Typer application object.
 - Use Russian help text from the beginning.
 
 Tests:
@@ -773,12 +789,15 @@ Exit criteria:
 - Help/version commands do not touch network, config, or account files.
 - `python -m avito --help` and `avito --help` exercise the same app.
 - Importing `avito.cli.app` has no filesystem side effects and does not construct `AvitoClient`.
+- Root-level global options are parsed in the canonical position before subcommands.
 
 Stage checklist:
 
 - [ ] `typer` is added as a runtime dependency.
 - [ ] `avito/cli/` package exists with only the minimal shell files.
 - [ ] `avito --help`, `avito --version`, `avito version`, and `python -m avito --help` work.
+- [ ] Poetry script points to `avito.cli.app:main`, not directly to the Typer app object.
+- [ ] Canonical root-level global option syntax is covered by tests.
 - [ ] No config directory or account file is created by help/version commands.
 - [ ] `tests/cli/test_app.py` covers the shell behavior.
 - [ ] Stage verification commands pass.
@@ -794,6 +813,8 @@ Deliverables:
 - Add one reusable sanitizer used by all renderers.
 - Add color handling for `--no-color` and `NO_COLOR=1`.
 - Add invalid global flag-combination validation.
+- Create or update `docs/site/reference/cli.md` with the exit codes, global flags, output modes, stdout/stderr split, and current implemented commands.
+- Add `cli.md` to `docs/site/reference/.pages` when the reference page is created.
 
 Tests:
 
@@ -811,12 +832,14 @@ poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli
+poetry run mkdocs build --strict
 ```
 
 Exit criteria:
 
 - Every CLI error has a Russian message, stable uppercase code, and documented exit code.
 - No traceback is printed by default; diagnostics are sanitized.
+- The reference CLI contract documents only implemented behavior.
 
 Stage checklist:
 
@@ -825,6 +848,8 @@ Stage checklist:
 - [ ] Human and JSON errors use the same sanitized error payload.
 - [ ] Invalid output flag combinations exit with code `2`.
 - [ ] `--quiet`, `--debug`, `--verbose`, `--no-color`, and `NO_COLOR=1` are covered by tests.
+- [ ] `docs/site/reference/cli.md` documents implemented global flags, output modes, and exit codes.
+- [ ] `docs/site/reference/.pages` includes `cli.md` once the page exists.
 - [ ] Stage verification commands pass.
 
 ### Stage 3: Account Store and Profile Commands
@@ -893,7 +918,7 @@ Deliverables:
 - Add deterministic collision detection for `resource action`.
 - Add exclusion record type.
 - Add registry/coverage JSON report command or hidden internal report.
-- Extend `scripts/lint_architecture.py` or add a dedicated CLI architecture lint rule that forbids production `avito/cli/` imports from `tests`, `avito.testing`, domain operation modules, transport implementations, auth provider internals, and `avito.core.operations`.
+- Extend `scripts/lint_architecture.py` with CLI import-boundary checks that forbid production `avito/cli/` imports from `tests`, `avito.testing`, domain operation modules, transport implementations, auth provider internals, and `avito.core.operations`. Add a dedicated CLI architecture linter only if the existing script becomes materially unsuitable.
 
 Tests:
 
@@ -932,7 +957,7 @@ Stage checklist:
 - [ ] Canonical API commands map one-to-one to sync Swagger bindings.
 - [ ] Local/API command collisions fail during registry construction.
 - [ ] `scripts/lint_cli_coverage.py` exists and exercises the registry.
-- [ ] CLI production import boundaries are statically checked.
+- [ ] Existing `scripts/lint_architecture.py` statically checks CLI production import boundaries, unless a documented dedicated-linter exception exists.
 - [ ] Stage verification commands pass.
 
 ### Stage 5: Generic Input Coercion
@@ -1176,7 +1201,7 @@ Stage checklist:
 
 Deliverables:
 
-- Classify write/destructive commands from HTTP method and/or SDK metadata.
+- Classify write/destructive commands from explicit registry safety metadata. HTTP method may provide defaults, but reviewed metadata is the source of truth.
 - Require confirmation for destructive commands unless `--yes` or exact `--confirm` is supplied.
 - Support `--dry-run` only when the SDK public method already supports `dry_run` or when CLI can safely preview without changing SDK behavior.
 - Do not fake dry-run for SDK methods that would still execute transport.
@@ -1195,6 +1220,7 @@ Tests:
 Static lint responsibilities:
 
 - safety metadata cannot be absent for write/destructive/expensive records;
+- HTTP-method-derived safety defaults must be reviewed into explicit registry metadata before a command is exposed;
 - destructive/expensive command help includes required safety flags and examples.
 
 Verification:
@@ -1216,6 +1242,7 @@ Exit criteria:
 Stage checklist:
 
 - [ ] Write/destructive/expensive classification is deterministic and tested.
+- [ ] Exposed write/destructive/expensive commands have explicit reviewed safety metadata.
 - [ ] Destructive commands require prompt, `--yes`, or exact `--confirm`.
 - [ ] `--no-input` never hangs and fails safely when confirmation is required.
 - [ ] `--dry-run` is exposed only for SDK methods that safely support it.
@@ -1422,7 +1449,7 @@ Deliverables:
   - run JSON automation commands with `--json --no-input`;
   - use `status`, `doctor`, and completion commands;
   - explain safe handling of local plaintext secrets.
-- Add `docs/site/reference/cli.md` for stable CLI contracts:
+- Complete `docs/site/reference/cli.md` for stable CLI contracts:
   - command grammar `avito <resource> <action>`;
   - global flags;
   - output modes and stdout/stderr split;
@@ -1516,6 +1543,7 @@ Stage checklist:
 - [ ] `typer` dependency added.
 - [ ] `avito/cli/` exists and is isolated from SDK core/domain/transport/auth layers.
 - [ ] Console command `avito` is registered in `pyproject.toml`.
+- [ ] Console command entry point is `avito.cli.app:main`.
 - [ ] `python -m avito` exposes the same CLI.
 - [ ] `avito --help`, `avito --version`, and `avito version` work.
 - [ ] Global flags work consistently at root and subcommand levels.
