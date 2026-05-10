@@ -22,6 +22,7 @@ SafetyKind = Literal["read", "write", "destructive", "expensive", "local"]
 
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+KNOWN_ADAPTER_IDS: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -590,6 +591,16 @@ def _canonical_records(
 
 
 def _api_description(binding: DiscoveredSwaggerBinding, operation: SwaggerOperation) -> str:
+    if binding.deprecated or operation.deprecated:
+        return (
+            "Устаревшая операция Avito API; политика CLI должна сохранять "
+            "совместимость или явно исключать команду."
+        )
+    if binding.legacy:
+        return (
+            "Совместимая операция Avito API; политика CLI должна сохранять "
+            "канонический путь или явно исключать команду."
+        )
     if operation.operation_id is not None:
         return f"Вызвать операцию Avito API `{operation.operation_id}` через публичный SDK."
     return f"Вызвать SDK-метод {binding.sdk_method}."
@@ -627,6 +638,7 @@ __all__ = (
     "CliRegistry",
     "ExclusionRecord",
     "HelperCommandRecord",
+    "KNOWN_ADAPTER_IDS",
     "LocalCommandRecord",
     "OutputHint",
     "SafetyKind",

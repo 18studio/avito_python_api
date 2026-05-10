@@ -1291,14 +1291,27 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] `scripts/lint_cli_coverage.py` exists and exercises the registry in `--phase registry`.
-- [ ] Canonical API commands present at this stage map one-to-one to sync Swagger bindings.
-- [ ] CLI coverage linter checks kebab-case names, alias policy, local/API collisions, forbidden `resource-id`, and exclusion metadata.
-- [ ] CLI coverage linter checks selected generated inputs and rejects
+- [x] `scripts/lint_cli_coverage.py` exists and exercises the registry in `--phase registry`.
+- [x] Canonical API commands present at this stage map one-to-one to sync Swagger bindings.
+- [x] CLI coverage linter checks kebab-case names, alias policy, local/API collisions, forbidden `resource-id`, and exclusion metadata.
+- [x] CLI coverage linter checks selected generated inputs and rejects
       method-level `timeout` / `retry` flags.
-- [ ] CLI coverage linter checks deprecated/legacy command or exclusion policy.
-- [ ] Existing `scripts/lint_architecture.py` statically checks CLI production import boundaries, unless a documented dedicated-linter exception exists.
-- [ ] Stage 4C verification commands pass.
+- [x] CLI coverage linter checks deprecated/legacy command or exclusion policy.
+- [x] Existing `scripts/lint_architecture.py` statically checks CLI production import boundaries, unless a documented dedicated-linter exception exists.
+- [x] Stage 4C verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli/test_registry.py tests/cli/test_app.py: 22 passed
+poetry run python scripts/lint_cli_coverage.py --phase registry: errors=0
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run mypy scripts/lint_cli_coverage.py: Success
+poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py: All checks passed
+```
 
 ### Stage 5: Generic Input Coercion
 

@@ -69,6 +69,24 @@ DATE_VALIDATION_CALLS = frozenset(
 DATE_SAFE_ANNOTATION_NAMES = frozenset({"DateInput", "date", "datetime"})
 FORBIDDEN_OFFICIAL_ENV_ALIASES = frozenset({"SECRET", "TOKEN", "AVITO_SECRET", "AVITO_TOKEN"})
 REQUIRED_AVITO_ERROR_FIELDS = frozenset({"attempt", "method", "endpoint", "request_id"})
+FORBIDDEN_CLI_EXACT_IMPORTS = frozenset(
+    {
+        "avito.auth.provider",
+        "avito.core.operations",
+        "avito.core.transport",
+        "avito.testing",
+        "tests",
+    }
+)
+FORBIDDEN_CLI_IMPORT_PREFIXES = frozenset(
+    {
+        "avito.auth.provider.",
+        "avito.core.operations.",
+        "avito.core.transport.",
+        "avito.testing.",
+        "tests.",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,6 +220,7 @@ def lint_architecture(
     errors.extend(_lint_runtime_patching(normalized_root))
     errors.extend(_lint_official_env_aliases(normalized_root))
     errors.extend(_lint_public_exception_fields(normalized_root))
+    errors.extend(_lint_cli_import_boundaries(normalized_root))
     errors.extend(_lint_public_domain_methods(normalized_root, allowlist))
     errors.extend(_lint_operation_models(normalized_root, allowlist))
     return tuple(sorted(errors, key=lambda error: (error.path, error.line, error.code)))
@@ -378,6 +397,30 @@ def _lint_public_exception_fields(root: Path) -> tuple[ArchitectureLintError, ..
             path=_relative_path(path, root),
         ),
     )
+
+
+def _lint_cli_import_boundaries(root: Path) -> tuple[ArchitectureLintError, ...]:
+    errors: list[ArchitectureLintError] = []
+    cli_path = root / "avito" / "cli"
+    if not cli_path.exists():
+        return ()
+    for path in sorted(cli_path.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for module, line in _imported_modules(tree):
+            if not _is_forbidden_cli_import(module):
+                continue
+            errors.append(
+                ArchitectureLintError(
+                    code="ARCH_CLI_FORBIDDEN_IMPORT",
+                    message=(
+                        "Production CLI code не должен импортировать internal SDK layer "
+                        f"или test helper `{module}`."
+                    ),
+                    path=_relative_path(path, root),
+                    line=line,
+                )
+            )
+    return tuple(errors)
 
 
 def _lint_public_domain_methods(
@@ -681,6 +724,30 @@ def _string_constants(node: ast.AST | None) -> Iterable[ast.Constant]:
         child
         for child in ast.walk(node)
         if isinstance(child, ast.Constant) and isinstance(child.value, str)
+    )
+
+
+def _imported_modules(tree: ast.Module) -> tuple[tuple[str, int], ...]:
+    modules: list[tuple[str, int]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            modules.append((node.module, node.lineno))
+        elif isinstance(node, ast.Import):
+            modules.extend((alias.name, node.lineno) for alias in node.names)
+    return tuple(modules)
+
+
+def _is_forbidden_cli_import(module: str) -> bool:
+    if module in FORBIDDEN_CLI_EXACT_IMPORTS:
+        return True
+    if any(module.startswith(prefix) for prefix in FORBIDDEN_CLI_IMPORT_PREFIXES):
+        return True
+    parts = module.split(".")
+    return (
+        len(parts) >= 3
+        and parts[0] == "avito"
+        and parts[1] in API_DOMAINS
+        and parts[2] == "operations"
     )
 
 
