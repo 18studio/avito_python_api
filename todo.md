@@ -1560,12 +1560,23 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] SDK models serialize through `model_dump()` or `to_dict()`.
-- [ ] CLI-local dataclasses, enums, dates, datetimes, lists, and primitives serialize safely.
-- [ ] Pagination defaults are bounded and documented in command help.
-- [ ] Human table/grouped output and JSON output are both tested.
-- [ ] Secret sanitizer is applied after serialization and before rendering.
-- [ ] Stage verification commands pass.
+- [x] SDK models serialize through `model_dump()` or `to_dict()`.
+- [x] CLI-local dataclasses, enums, dates, datetimes, lists, and primitives serialize safely.
+- [x] Pagination defaults are bounded and documented in the CLI output contract; command help integration remains for the first paginated command stage.
+- [x] Human table/grouped output and JSON output are both tested.
+- [x] Secret sanitizer is applied after serialization and before rendering.
+- [x] Stage verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli/test_serialization.py: 5 passed
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run ruff check avito/cli tests/cli: All checks passed
+```
 
 ### Stage 8: First Vertical API Slice
 

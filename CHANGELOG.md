@@ -25,6 +25,10 @@ and this project adheres to Semantic Versioning.
 - Добавлена registry-backed справка `avito help <resource>` и
   `avito help <resource> <action>` для локальных команд, helper workflows,
   aliases и API command candidates без создания `AvitoClient`.
+- Добавлена основа сериализации результатов CLI: SDK-модели выводятся через
+  публичный `model_dump()` / `to_dict()`, секреты маскируются после
+  сериализации, а `PaginatedList` по умолчанию выгружает только ограниченный
+  набор страниц.
 
 ## [2.1.0] - 2026-05-08
 

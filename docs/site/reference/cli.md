@@ -55,6 +55,17 @@ The `NO_COLOR=1` environment variable also disables colored human diagnostics.
 Command results go to stdout. Human errors, warnings, progress, and debug
 diagnostics go to stderr. JSON errors are valid JSON on stderr.
 
+The result renderer used by API commands serializes SDK models only through their
+public `model_dump()` / `to_dict()` contract. Local CLI dataclasses, enum values,
+dates, datetimes, lists, primitives, and binary values are converted to
+JSON-compatible values before rendering. Secret redaction is applied after
+serialization and before human or JSON output is printed.
+
+Lazy SDK pagination is bounded by default. A `PaginatedList` result is serialized
+as an object with `items` and `pagination` metadata; the default snapshot loads at
+most one page unless a later command explicitly opts into a higher page limit or
+full materialization.
+
 Human error shape:
 
 ```text
