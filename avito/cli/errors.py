@@ -94,6 +94,34 @@ class InvalidFlagCombinationError(CliUsageError):
     DEFAULT_CODE: ClassVar[str] = "INVALID_FLAG_COMBINATION"
 
 
+class CliPermissionError(CliError):
+    """Ошибка доступа к локальным файлам CLI."""
+
+    DEFAULT_CODE: ClassVar[str] = "PERMISSION_DENIED"
+
+    def __init__(self, message: str, *, details: object | None = None) -> None:
+        super().__init__(
+            message=message,
+            code=self.DEFAULT_CODE,
+            exit_code=EXIT_AUTHENTICATION,
+            details=details,
+        )
+
+
+class CliConfigFileError(CliError):
+    """Ошибка чтения или валидации локальной конфигурации CLI."""
+
+    DEFAULT_CODE: ClassVar[str] = "CONFIG_INVALID"
+
+    def __init__(self, message: str, *, details: object | None = None) -> None:
+        super().__init__(
+            message=message,
+            code=self.DEFAULT_CODE,
+            exit_code=EXIT_UPSTREAM,
+            details=details,
+        )
+
+
 __all__ = (
     "EXIT_AUTHENTICATION",
     "EXIT_AUTHORIZATION",
@@ -104,6 +132,8 @@ __all__ = (
     "EXIT_UPSTREAM",
     "EXIT_USAGE",
     "CliError",
+    "CliConfigFileError",
+    "CliPermissionError",
     "CliUsageError",
     "InvalidFlagCombinationError",
 )

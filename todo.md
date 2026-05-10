@@ -1028,12 +1028,12 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] CLI home resolution follows `AVITO_PY_HOME`, `MY_SDK_HOME`, then `~/.avito-py`.
-- [ ] Directory/file creation is lazy and uses required permissions where supported.
-- [ ] JSON writes are atomic through same-directory temp files and `os.replace`.
-- [ ] Active account is stored once in config, not as per-account boolean state.
-- [ ] Store loading and malformed JSON behavior are tested.
-- [ ] Stage 3A verification commands pass.
+- [x] CLI home resolution follows `AVITO_PY_HOME`, `MY_SDK_HOME`, then `~/.avito-py`.
+- [x] Directory/file creation is lazy and uses required permissions where supported.
+- [x] JSON writes are atomic through same-directory temp files and `os.replace`.
+- [x] Active account is stored once in config, not as per-account boolean state.
+- [x] Store loading and malformed JSON behavior are tested.
+- [x] Stage 3A verification commands pass.
 
 #### Stage 3B: Account Commands and Secret Input
 
