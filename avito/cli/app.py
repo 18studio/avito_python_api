@@ -3,33 +3,16 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
-from typing import NoReturn
 
 import click
 
+from avito.cli.context import CliContext
+from avito.cli.errors import CliUsageError, InvalidFlagCombinationError
+from avito.cli.ui import emit_stdout
+
 PACKAGE_NAME = "avito-py"
-
-
-@dataclass(frozen=True, slots=True)
-class CliContext:
-    """Глобальные настройки одного запуска CLI."""
-
-    profile: str | None
-    config: Path | None
-    json_output: bool
-    plain: bool
-    table: bool
-    wide: bool
-    quiet: bool
-    no_input: bool
-    no_color: bool
-    verbose: bool
-    debug: bool
-    timeout: float | None
-
 
 def package_version() -> str:
     """Return installed package version for CLI output."""
@@ -40,14 +23,19 @@ def package_version() -> str:
         return "0+unknown"
 
 
-def _fail_usage(message: str) -> NoReturn:
-    raise click.UsageError(message)
-
-
 def _validate_output_flags(json_output: bool, plain: bool, table: bool, wide: bool) -> None:
-    selected = sum((json_output, plain, table, wide))
-    if selected > 1:
-        _fail_usage("Флаги --json, --plain, --table и --wide нельзя использовать вместе.")
+    output_flags = {
+        "--json": json_output,
+        "--plain": plain,
+        "--table": table,
+        "--wide": wide,
+    }
+    selected = [name for name, enabled in output_flags.items() if enabled]
+    if len(selected) > 1:
+        raise InvalidFlagCombinationError(
+            "Флаги --json, --plain, --table и --wide нельзя использовать вместе.",
+            details={"selected_flags": selected},
+        )
 
 
 @click.group()
@@ -98,8 +86,7 @@ def app(
 ) -> None:
     """Командная строка для Avito API SDK."""
 
-    _validate_output_flags(json_output=json_output, plain=plain, table=table, wide=wide)
-    ctx.obj = CliContext(
+    cli_context = CliContext(
         profile=profile,
         config=config,
         json_output=json_output,
@@ -113,6 +100,8 @@ def app(
         debug=debug,
         timeout=timeout,
     )
+    ctx.obj = cli_context
+    _validate_output_flags(json_output=json_output, plain=plain, table=table, wide=wide)
 
 
 @app.command()
@@ -122,10 +111,9 @@ def version(ctx: CliContext) -> None:
 
     version_value = package_version()
     if ctx.json_output:
-        click.echo(json.dumps({"version": version_value}, ensure_ascii=False))
+        emit_stdout(ctx, json.dumps({"version": version_value}, ensure_ascii=False))
         return
-    if not ctx.quiet:
-        click.echo(f"avito-py {version_value}")
+    emit_stdout(ctx, f"avito-py {version_value}", essential=False)
 
 
 @app.command("help", context_settings={"ignore_unknown_options": True})
@@ -135,7 +123,10 @@ def help_command(ctx: click.Context, topic: tuple[str, ...]) -> None:
     """Показать справку по командам."""
 
     if topic:
-        _fail_usage("Подробная справка по вложенным командам появится вместе с командами API.")
+        raise CliUsageError(
+            "Подробная справка по вложенным командам появится вместе с командами API.",
+            details={"topic": topic},
+        )
     click.echo(ctx.parent.get_help() if ctx.parent is not None else ctx.get_help())
 
 

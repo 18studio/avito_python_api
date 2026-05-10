@@ -974,14 +974,14 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] `CliContext` is typed and shared by commands through one code path.
-- [ ] `CliError` maps to documented exit codes.
-- [ ] Human and JSON errors use the same sanitized error payload.
-- [ ] Invalid output flag combinations exit with code `2`.
-- [ ] `--quiet`, `--debug`, `--verbose`, `--no-color`, and `NO_COLOR=1` are covered by tests.
-- [ ] `docs/site/reference/cli.md` documents implemented global flags, output modes, and exit codes.
-- [ ] `docs/site/reference/.pages` includes `cli.md` once the page exists.
-- [ ] Stage verification commands pass.
+- [x] `CliContext` is typed and shared by commands through one code path.
+- [x] `CliError` maps to documented exit codes.
+- [x] Human and JSON errors use the same sanitized error payload.
+- [x] Invalid output flag combinations exit with code `2`.
+- [x] `--quiet`, `--debug`, `--verbose`, `--no-color`, and `NO_COLOR=1` are covered by tests.
+- [x] `docs/site/reference/cli.md` documents implemented global flags, output modes, and exit codes.
+- [x] `docs/site/reference/.pages` includes `cli.md` once the page exists.
+- [x] Stage verification commands pass.
 
 ### Stage 3: Account Store and Profile Commands
 

@@ -97,4 +97,4 @@ def test_output_format_flags_are_mutually_exclusive() -> None:
     result = CliRunner().invoke(app, ["--json", "--plain", "version"])
 
     assert result.exit_code == 2
-    assert "нельзя использовать вместе" in result.output
+    assert "нельзя использовать вместе" in result.stderr

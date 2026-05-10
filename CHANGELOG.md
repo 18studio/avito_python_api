@@ -10,6 +10,9 @@ and this project adheres to Semantic Versioning.
 ### Added
 - Добавлена базовая CLI-оболочка: `avito --help`, `avito --version`, `avito version`,
   `avito help` и единый вход через `python -m avito`.
+- Задокументирован первый CLI-контракт: глобальные флаги, режимы вывода,
+  разделение stdout/stderr, безопасный JSON/human-рендеринг ошибок и стабильные
+  exit codes.
 
 ## [2.1.0] - 2026-05-08
 
