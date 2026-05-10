@@ -28,6 +28,7 @@ avito/
     app.py
     accounts.py
     config.py
+    errors.py
     ui.py
 ```
 
@@ -38,7 +39,7 @@ Register the console command as `avito` unless product naming requires another c
 avito = "avito.cli.app:app"
 ```
 
-Also consider registering `avito-cli` as a compatibility alias if product naming wants a CLI-specific command:
+Do not register `avito-cli` unless product naming explicitly requires a CLI-specific compatibility alias:
 
 ```toml
 [tool.poetry.scripts]
@@ -46,7 +47,56 @@ avito = "avito.cli.app:app"
 avito-cli = "avito.cli.app:app"
 ```
 
-Keep `avito/__main__.py` compatible. A later implementation can either leave it as the existing smoke check or route `python -m avito` to the Typer app if that is desired.
+Route `python -m avito` to the Typer app so the module entry point and console script expose the same CLI behavior.
+
+Add version commands:
+
+```bash
+avito --version
+avito version
+```
+
+The version output should include the installed SDK version. Build commit and Avito API compatibility can be omitted until the project has those values.
+
+## CLI Contract
+
+CLI commands are public product surface. They must follow `.ai/cli-guidelines.md`:
+
+- default output is human-readable;
+- machine-readable output is available through `--json`;
+- quiet automation output is available through `--quiet`;
+- prompts are disabled by `--no-input`;
+- command results go to stdout;
+- errors, warnings, progress, and deprecation notices go to stderr;
+- no command exposes secrets in normal, JSON, verbose, debug, or error output;
+- color must not be the only source of meaning;
+- `NO_COLOR=1` and `--no-color` disable colored output.
+
+Supported global flags:
+
+```text
+--json
+--quiet
+--no-input
+--no-color
+--verbose
+--debug
+--version
+```
+
+Baseline exit codes:
+
+```text
+0   success
+1   general error
+2   invalid usage
+3   not found
+5   authentication/config required
+6   conflict
+7   validation failed
+```
+
+Every CLI error should include a stable error code such as `CONFIG_INVALID`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_EXISTS`, `AUTH_REQUIRED`, or `VALIDATION_FAILED`.
 
 ## Data Model
 
@@ -72,6 +122,14 @@ MY_SDK_HOME=/custom/path avito account list
 
 Document both variables, but make clear that `MY_SDK_HOME` exists for ticket compatibility and `AVITO_PY_HOME` is the Avito-specific name.
 
+File-system requirements:
+
+- create the CLI home directory lazily with `0700` permissions;
+- write `accounts.json` and `config.json` with `0600` permissions;
+- save JSON atomically through a temporary file and replace;
+- never create files or directories on import;
+- report permission and malformed JSON errors as CLI errors without stack traces by default.
+
 Suggested stored account fields:
 
 - `name: str`
@@ -85,6 +143,18 @@ The generic ticket example uses `--api-key`. Avito uses OAuth `client_id` and `c
 
 Do not print full secret values. Mask values such as `client_secret`, `api_key`, refresh tokens, and API-like tokens in CLI output.
 
+Human output uses stable tables or grouped key-value output. JSON output must use stable top-level object shapes, for example:
+
+```json
+{"accounts": [{"name": "dev", "base_url": "https://api.avito.ru", "active": true}]}
+```
+
+```json
+{"account": {"name": "dev", "base_url": "https://api.avito.ru", "active": true}}
+```
+
+Secret fields must be omitted or masked in JSON output; do not emit raw stored credentials.
+
 ## Implementation Plan
 
 1. Add Typer dependency
@@ -97,6 +167,7 @@ Do not print full secret values. Mask values such as `client_secret`, `api_key`,
    - Create `avito/cli/app.py` with the root Typer app.
    - Create `avito/cli/accounts.py` with an `account` subcommand app.
    - Create `avito/cli/config.py` for CLI home resolution and JSON persistence.
+   - Create `avito/cli/errors.py` for CLI error types, stable error codes, and exit-code mapping.
    - Create `avito/cli/ui.py` for shared output helpers.
 
 3. Add config/home resolver
@@ -106,6 +177,8 @@ Do not print full secret values. Mask values such as `client_secret`, `api_key`,
    - Respect `AVITO_PY_HOME` as a project-specific alias with higher precedence.
    - Keep this logic independent from Typer so tests can call it directly.
    - Create directories lazily when saving data, not on import.
+   - Create directories with `0700` and config files with `0600`.
+   - Persist JSON atomically.
 
 4. Add account storage layer
    - Use frozen dataclasses for CLI account records where practical.
@@ -114,6 +187,8 @@ Do not print full secret values. Mask values such as `client_secret`, `api_key`,
      - `accounts.json` contains named account records.
      - `config.json` contains the active account name.
    - Validate duplicate account names, missing active accounts, and malformed JSON.
+   - `account add` must fail with a conflict error when the account already exists.
+   - Do not add overwrite behavior unless a separate `account update` command is introduced.
    - Keep messages and exceptions consistent with repository conventions.
 
 5. Add account commands
@@ -121,6 +196,7 @@ Do not print full secret values. Mask values such as `client_secret`, `api_key`,
      - Accept canonical flags: `--name`, `--client-id`, `--client-secret`, `--base-url`, and optional `--user-id`.
      - Accept ticket-compatible aliases: `--api-key` for `--client-secret` and `--endpoint` for `--base-url`.
      - Prompt interactively for missing required fields.
+     - Never prompt when `--no-input` is supplied or stdin is not a TTY; fail with a validation error instead.
      - Default base URL to `https://api.avito.ru`.
    - `avito account list`
      - Display all accounts with base URL and active marker.
@@ -129,9 +205,12 @@ Do not print full secret values. Mask values such as `client_secret`, `api_key`,
      - Set the active account in `config.json`.
    - `avito account current`
      - Display the currently active account.
-   - `avito account remove <account-name>`
+   - `avito account delete <account-name>`
      - Confirm removal unless a `--yes` flag is supplied.
      - If removing the active account, clear the active account.
+   - `avito account remove <account-name>`
+     - Keep as a ticket-compatible alias for `account delete` only if the ticket requires the exact verb.
+     - If implemented, document it as an alias and keep all behavior delegated to `account delete`.
 
 6. Add SDK client factory helper for future CLI commands
    - Add a CLI-only helper that converts the active account record to `AvitoSettings`.
@@ -145,12 +224,22 @@ Do not print full secret values. Mask values such as `client_secret`, `api_key`,
      - `error(message: str) -> None`
      - `warning(message: str) -> None`
      - `info(message: str) -> None`
-     - `print_table(rows: list[dict[str, object]]) -> None`
-     - `confirm(message: str) -> bool`
+     - `print_table(rows: Sequence[Mapping[str, object]]) -> None`
+     - `print_json(payload: Mapping[str, object]) -> None`
+     - `confirm(message: str, *, expected: str | None = None) -> bool`
+     - `mask_secret(value: str | None) -> str | None`
    - Prefer `typer.echo`, `typer.secho`, `typer.confirm`, and `typer.prompt`.
    - Avoid raw `print()` in command modules.
+   - Use stdout for command results and stderr for errors/warnings.
+   - Support `--no-color` and `NO_COLOR=1`.
 
-8. Register console command
+8. Add CLI error handling
+   - Map CLI-specific errors to documented exit codes.
+   - Hide stack traces unless `--debug` is enabled.
+   - Emit stable error codes in human and JSON output.
+   - Keep user-facing SDK/CLI error text in one language; prefer Russian to match repository conventions.
+
+9. Register console command
    - Add Poetry script entry:
 
      ```toml
@@ -158,7 +247,7 @@ Do not print full secret values. Mask values such as `client_secret`, `api_key`,
      avito = "avito.cli.app:app"
      ```
 
-   - Optionally add the alias if desired:
+   - Do not add the alias unless explicitly required:
 
      ```toml
      avito-cli = "avito.cli.app:app"
@@ -169,9 +258,11 @@ Do not print full secret values. Mask values such as `client_secret`, `api_key`,
      ```bash
      poetry run avito --help
      poetry run avito account --help
+     poetry run avito --version
+     poetry run python -m avito --help
      ```
 
-9. Add tests
+10. Add tests
    - Add focused tests under `tests/cli/`.
    - Cover config home resolution:
      - default home;
@@ -183,16 +274,25 @@ Do not print full secret values. Mask values such as `client_secret`, `api_key`,
      - set/get active account;
      - remove inactive account;
      - remove active account clears active config;
+     - duplicate account names fail with conflict;
+     - malformed JSON fails with a CLI configuration error;
+     - atomic save does not leave partial config on write failure where practical;
      - sensitive value masking does not reveal full secrets.
    - Cover CLI command surface with Typer's `CliRunner`:
      - `avito --help`;
      - `avito account --help`;
+     - `avito --version`;
+     - `python -m avito --help` behavior through the module entry point;
      - non-interactive `account add --name dev --client-id ... --client-secret ... --endpoint ...`;
      - non-interactive ticket-compatible `account add --name dev --client-id ... --api-key ... --endpoint ...`;
-     - `account use`, `account current`, `account list`, and `account remove --yes`.
+     - `account add --no-input` fails instead of prompting when required values are missing;
+     - `account use`, `account current`, `account list`, and `account delete --yes`;
+     - `account remove --yes` only if the compatibility alias is implemented;
+     - `--json` output is valid JSON and contains no raw secrets;
+     - `--quiet` suppresses non-essential success output.
    - Prefer direct tests of the config/account storage layer for persistence edge cases.
 
-10. Update README
+11. Update documentation
     - Add a short CLI section:
 
       ```bash
@@ -200,18 +300,25 @@ Do not print full secret values. Mask values such as `client_secret`, `api_key`,
       avito account add --name dev --client-id ... --api-key ... --endpoint https://api.avito.ru
       avito account use dev
       avito account list
+      avito account current --json
+      avito account delete dev --yes
       ```
 
     - Document `MY_SDK_HOME` and `AVITO_PY_HOME`.
     - Mention that secrets are stored locally and masked in output.
+    - Document `--json`, `--quiet`, `--no-input`, `--no-color`, `--version`, and public exit codes.
+    - Add or update a docs how-to page if CLI is considered part of public user workflow, not just README examples.
 
-11. Verification
+12. Verification
     - Minimum for this non-API-surface change:
 
       ```bash
       poetry run pytest tests/cli
       poetry run mypy avito
       poetry run ruff check .
+      poetry run python scripts/lint_python_guidelines.py
+      poetry run python scripts/lint_architecture.py
+      poetry build
       ```
 
     - Before completing the branch, run:
@@ -226,18 +333,36 @@ Do not print full secret values. Mask values such as `client_secret`, `api_key`,
 - [ ] `avito/cli/` package exists and is isolated from SDK core.
 - [ ] Console command is registered in `pyproject.toml`.
 - [ ] `avito --help` works.
+- [ ] `avito --version` works.
+- [ ] `avito version` works.
+- [ ] `python -m avito --help` exposes the same CLI entry point.
 - [ ] `avito account --help` shows account commands.
 - [ ] `account add` stores account data.
+- [ ] `account add --no-input` never prompts and fails on missing required values.
+- [ ] `account add` rejects duplicate names with a conflict error.
 - [ ] `account list` lists accounts without exposing secrets.
+- [ ] `account list --json` emits valid JSON without exposing secrets.
 - [ ] `account use` switches active account.
 - [ ] `account current` displays active account.
-- [ ] `account remove` deletes accounts and handles active account removal.
+- [ ] `account current --json` emits valid JSON without exposing secrets.
+- [ ] `account delete` deletes accounts and handles active account removal.
+- [ ] `account remove` is either omitted or implemented only as a documented alias for `account delete`.
 - [ ] Config is stored under `~/.avito-py/` by default.
 - [ ] Config directory can be overridden with `MY_SDK_HOME`.
 - [ ] Config directory can be overridden with `AVITO_PY_HOME`.
+- [ ] CLI home directory is created lazily with `0700` permissions.
+- [ ] `accounts.json` and `config.json` are written with `0600` permissions.
+- [ ] Config writes are atomic.
 - [ ] `account add` supports ticket-compatible `--api-key` and `--endpoint` aliases.
 - [ ] CLI output uses `avito/cli/ui.py` helpers.
+- [ ] CLI errors use stable error codes and documented exit codes.
+- [ ] CLI results use stdout; errors and warnings use stderr.
+- [ ] `--quiet`, `--json`, `--no-input`, `--no-color`, `--verbose`, and `--debug` behavior is documented.
 - [ ] Existing SDK import and runtime behavior remain unchanged.
 - [ ] Basic tests cover config/account storage logic.
 - [ ] Basic CLI tests cover help output and account command flow.
+- [ ] Tests cover JSON output, quiet output, no-input behavior, duplicate names, malformed JSON, and secret masking.
 - [ ] README contains CLI usage examples.
+- [ ] Public docs mention CLI usage if the CLI is part of public workflow.
+- [ ] Minimum verification commands pass.
+- [ ] `make check` passes before completing the branch.
