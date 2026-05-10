@@ -91,7 +91,9 @@ Hard constraints:
 - CLI code belongs under `avito/cli/`.
 - Keep SDK core/domain/transport/auth layers free of Typer and CLI behavior.
 - Production CLI code must not import domain `operations.py`, transport implementations, auth provider internals, or testing fake transports.
+- Production CLI code must not import from `tests`, `avito.testing`, `tests/fake_transport.py`, or `avito.core.operations`.
 - API commands must not call `OperationSpec`, `OperationExecutor`, `Transport`, or `AuthProvider` directly.
+- API commands must not instantiate domain objects directly.
 - Do not duplicate Swagger contract data in CLI metadata. CLI metadata may store command names, examples, aliases, safety policy, output hints, and documented exclusions only.
 - Do not add or change public Avito API SDK methods as part of CLI work unless the normal SDK rules are followed: typed model, operation spec, docstring, and `@swagger_operation(...)`.
 - Human-facing CLI text is Russian only: help descriptions, prompts, warnings, errors, and success output. Stable error codes remain uppercase English identifiers.
@@ -111,8 +113,26 @@ Recorded on 2026-05-10 while preparing this plan:
 
 ```text
 sync Swagger bindings: 204
-AvitoClient public factory-like methods: 57
+AvitoClient public callable methods, excluding close/from_env/auth/debug_info: 56
+sync Swagger binding factories with factory metadata: 48
 sync bindings without factory metadata: 4
+```
+
+Sync binding count by Swagger domain:
+
+```text
+accounts: 8
+ads: 28
+auth: 4
+autoteka: 26
+cpa: 14
+jobs: 25
+messenger: 18
+orders: 45
+promotion: 24
+ratings: 4
+realty: 7
+tariffs: 1
 ```
 
 Bindings without factory metadata:
@@ -125,8 +145,65 @@ Bindings without factory metadata:
 Implementation impact:
 
 - These 4 auth-token bindings are not normal domain commands through `AvitoClient` factories.
-- Stage 0 must decide whether they are intentionally excluded from generated API CLI coverage, exposed through explicit auth/config workflows, or given factory metadata through a separate SDK architecture change.
+- Treat these 4 auth-token bindings as intentional non-domain API exclusions for the first CLI release.
+- Expose user-facing credential/account readiness through local `account`, `status`, and `doctor` workflows, not by turning token client methods into generic API commands.
+- If a future release exposes direct token exchange commands, it must be a separate SDK architecture change with explicit public facade design; CLI must not call `TokenClient` or `AlternateTokenClient` directly.
 - The final coverage linter must count this decision explicitly, not silently treat missing factory metadata as success.
+
+Current public non-Swagger helper/workflow candidates on `AvitoClient`:
+
+- `account_health`
+- `business_summary` compatibility wrapper for `account_health`
+- `listing_health`
+- `chat_summary`
+- `order_summary`
+- `review_summary`
+- `promotion_summary`
+- `capabilities`
+
+Initial helper policy:
+
+- Canonical CLI commands may cover `account_health`, `listing_health`, `chat_summary`, `order_summary`, `review_summary`, `promotion_summary`, and `capabilities`.
+- `business_summary` is a compatibility helper and should not receive a second canonical command unless product requirements explicitly demand an alias. If exposed, it is an alias and does not count as helper coverage.
+- `auth()` and `debug_info()` remain SDK support surfaces, not API coverage commands. Their CLI equivalents are `status` and `doctor`.
+
+## Documentation Structure Findings
+
+Current documentation uses MkDocs Material with `docs_dir: docs/site`.
+Navigation is controlled by `awesome-pages` through `.pages` files:
+
+- `docs/site/.pages` is the top-level nav: `Главная`, `Tutorials`, `How-to`, `Reference`, `Explanations`, `Changelog`.
+- `docs/site/tutorials/.pages` contains onboarding tutorials.
+- `docs/site/how-to/.pages` contains task-oriented recipes.
+- `docs/site/reference/.pages` contains stable public contracts and generated reference pages.
+- `docs/site/explanations/.pages` contains architecture and rationale pages.
+
+Generated reference pages are produced by `docs/site/assets/_gen_reference.py` during MkDocs builds:
+
+- `reference/coverage.md`
+- `reference/api-report.md`
+- `reference/operations.md`
+- `reference/domains/*.md`
+- `reference/enums.md`
+
+CLI documentation must follow this structure instead of adding an isolated page:
+
+- README: short CLI quickstart only, with link to full docs.
+- `docs/site/index.md`: add CLI as a first-class entry point after CLI release.
+- `docs/site/tutorials/getting-started.md`: add the shortest first CLI call path, or a short cross-link if the page would become noisy.
+- `docs/site/how-to/cli.md`: practical CLI setup and daily workflows.
+- `docs/site/reference/cli.md`: stable CLI contract: grammar, global flags, output formats, exit codes, config files, environment variables, safety flags, command coverage policy.
+- `docs/site/explanations/cli-architecture.md`: design rationale: thin wrapper over `AvitoClient`, registry/discovery, coverage linter phases, exclusions, secret masking, pagination policy.
+- `docs/site/explanations/security-and-redaction.md`: add CLI secret-storage and output-redaction notes when account store lands.
+- `docs/site/explanations/api-coverage-and-deprecations.md`: add CLI coverage guarantee and documented-exclusion policy after the coverage linter exists.
+- `docs/site/how-to/auth-and-config.md`: link CLI profile/account setup to SDK env-based configuration without duplicating the whole config reference.
+
+Navigation updates required:
+
+- Add `cli.md` to `docs/site/how-to/.pages`.
+- Add `cli.md` to `docs/site/reference/.pages`.
+- Add `cli-architecture.md` to `docs/site/explanations/.pages`.
+- If README/index/tutorial links are added before the CLI is usable, mark them clearly as planned only. Prefer adding public-facing docs after Stage 12 when commands exist.
 
 ## CLI Architecture
 
@@ -151,6 +228,15 @@ avito/
 ```
 
 Do not add domain-specific CLI modules for every API package unless a command needs custom UX. The default path must be metadata-driven to avoid hand-copying 204 operations.
+
+Command registration approach:
+
+- Use Typer for the root app, global options, local workflow commands, and help/version/status/doctor/config/account commands.
+- Register generated API commands deterministically from registry records.
+- If Typer's signature-based command model is too rigid for registry-built parameters, attach typed `click.Command` objects to the Typer app. This is allowed because it is deterministic command registration, not SDK method injection.
+- Do not generate Python source files for commands.
+- Do not use `setattr`, `globals()`, monkey-patching, or modifying SDK/domain classes to create commands.
+- Generated command callbacks must all delegate to one invocation engine; command-specific behavior belongs in registry metadata only when the generic path cannot infer it safely.
 
 Package boundary:
 
@@ -363,6 +449,14 @@ The coercion engine must support:
 - `PaginatedList[T]` with explicit materialization limits or streaming-safe iteration
 - file inputs only for methods whose public signature already accepts file/path-like public inputs
 
+Complex input policy:
+
+- Do not expose raw Avito request bodies.
+- Do not expose internal request DTOs.
+- If a public SDK method already accepts a documented public input model, CLI may accept either explicit model-field flags or `--input-json <path>` that is parsed into that public model.
+- `--input-json -` reads from stdin and is forbidden when stdin is not available or when another prompt would be required.
+- JSON input errors are `VALIDATION_FAILED` with Russian messages and no echoed secrets.
+
 If a method cannot be safely exposed by the generic engine, add it to a typed exclusion list with reason, owner, and follow-up. Final acceptance target is zero unsupported sync Swagger-bound methods unless intentionally excluded and documented.
 
 ## Registry and Coverage
@@ -410,7 +504,7 @@ Coverage report fields:
 Add a linter:
 
 ```bash
-poetry run python scripts/lint_cli_coverage.py
+poetry run python scripts/lint_cli_coverage.py --strict
 ```
 
 The linter fails when:
@@ -491,13 +585,24 @@ Stage policy:
 - After Stage 4, CLI coverage report changes must be intentional in every CLI metadata change.
 - After Stage 10, `scripts/lint_cli_coverage.py` is a required gate for all CLI changes.
 - Do not broaden command coverage before the previous stage's verification passes.
+- Keep each stage small enough for review. If a stage needs more than roughly 300-500 lines of production code or touches more than three production modules, split it into lettered sub-stages in this file before implementing.
+- A sub-stage has its own deliverables, tests, verification commands, and checked-off exit criteria.
+- Do not mark a checklist item complete from inspection alone when a command or test can verify it.
+
+Coverage linter phase policy:
+
+- Stage 4 introduces `scripts/lint_cli_coverage.py` in report/partial mode. It must validate registry invariants that exist at that stage, but it must not require full all-domain command coverage yet.
+- Stages 8-9 use the linter in read-coverage mode.
+- Stage 10 switches the linter to strict mode and adds `make cli-lint` to `make check`.
+- Strict mode fails on every missing sync Swagger-bound command unless there is a documented intentional exclusion.
+- Linter output must be deterministic and sanitized so it can be committed as an audit artifact when needed.
 
 ### Stage 0: Baseline Audit
 
 Deliverables:
 
 - Record current sync Swagger binding count.
-- Record current `AvitoClient` factory mapping count.
+- Record current `AvitoClient` public callable count and sync binding factory metadata count.
 - Confirm which factory names exist in `AvitoClient` but not in bindings.
 - Confirm whether every sync binding has `factory` metadata.
 - Record public non-Swagger helpers and decide command vs exclusion.
@@ -508,6 +613,7 @@ Verification:
 
 ```bash
 poetry run python -c "from avito.core.swagger_discovery import discover_swagger_bindings; print(len(discover_swagger_bindings().canonical_map))"
+poetry run python -c "from avito.core.swagger_discovery import discover_swagger_bindings; d=discover_swagger_bindings(); print(len([b for b in d.bindings if b.variant == 'sync' and b.operation_key is not None and b.factory is None]))"
 poetry run pytest tests/core/test_swagger_linter.py tests/contracts/test_swagger_contracts.py
 ```
 
@@ -519,7 +625,7 @@ Exit criteria:
 Stage checklist:
 
 - [ ] Baseline command output is pasted into this plan or a linked implementation note.
-- [ ] Sync binding count, factory-like method count, and missing factory metadata list are recorded.
+- [ ] Sync binding count, public callable count, sync binding factory count, and missing factory metadata list are recorded.
 - [ ] The 4 auth-token bindings have an explicit planned treatment: exclusion, auth workflow, or SDK change.
 - [ ] Stage verification commands pass.
 
@@ -528,6 +634,7 @@ Stage checklist:
 Deliverables:
 
 - Add `typer` dependency.
+- Use Typer/Click test utilities only in tests; do not add a custom subprocess harness unless behavior specifically requires `python -m avito`.
 - Add `avito/cli/` package skeleton.
 - Add root `avito` app with typed global context.
 - Add `avito --help`, `avito --version`, `avito version`.
@@ -555,6 +662,7 @@ Exit criteria:
 
 - Help/version commands do not touch network, config, or account files.
 - `python -m avito --help` and `avito --help` exercise the same app.
+- Importing `avito.cli.app` has no filesystem side effects and does not construct `AvitoClient`.
 
 Stage checklist:
 
@@ -686,7 +794,7 @@ Verification:
 
 ```bash
 poetry run pytest tests/cli/test_registry.py
-poetry run python scripts/lint_cli_coverage.py
+poetry run python scripts/lint_cli_coverage.py --phase registry
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
@@ -694,7 +802,8 @@ poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 Exit criteria:
 
 - Registry builds without creating `AvitoClient`.
-- Registry tests fail if a new sync Swagger binding lacks a command or exclusion.
+- Registry tests fail on duplicate records, invalid names, local/API collisions, or missing required exclusion metadata.
+- Full missing-command failures are deferred to read/full coverage phases, not silently skipped.
 
 Stage checklist:
 
@@ -753,7 +862,8 @@ Deliverables:
 - Invoke public SDK factory and method.
 - Map SDK exceptions to CLI errors.
 - Add explicit unsupported-method registry only for documented exclusions.
-- Add a fake-client/fake-domain test seam for invocation tests without real HTTP.
+- Add a typed client factory protocol for tests so invocation behavior can be verified without real HTTP.
+- Production code must default to constructing `AvitoClient`; tests may inject a fake client through the protocol.
 
 Tests:
 
@@ -780,6 +890,7 @@ Stage checklist:
 - [ ] API command invocation resolves profile/config before constructing `AvitoClient`.
 - [ ] `AvitoClient` is always used as a context manager.
 - [ ] Invocation calls factory method, then public domain method.
+- [ ] Test-only fake clients are injected through typed protocols and are not imported by production CLI modules.
 - [ ] Tests prove operation specs and transport are not called directly by CLI code.
 - [ ] SDK exceptions map to documented CLI exit codes and sanitized messages.
 - [ ] Stage verification commands pass.
@@ -792,7 +903,9 @@ Deliverables:
 - Serialize SDK models through `model_dump()` / `to_dict()`.
 - Serialize CLI-local dataclasses, enums, dates, datetimes, lists, and primitive values safely.
 - Handle `PaginatedList[T]` with documented bounded defaults.
-- Add `--limit`, `--page-limit`, or `--all` only when needed to avoid unbounded materialization.
+- Add `--limit`, `--page-limit`, and `--all` consistently for paginated commands when needed to avoid unbounded materialization.
+- Default paginated output must be bounded. Conservative default: first page only or at most the SDK/default page size when the operation exposes a page size.
+- `--all` must require an explicit opt-in and should show progress on stderr for long materialization.
 - Render default tables for collections and grouped output for single models.
 
 Tests:
@@ -902,7 +1015,7 @@ Verification:
 ```bash
 poetry run pytest tests/cli/test_all_domains_metadata.py
 poetry run pytest tests/cli/test_domain_smoke_commands.py
-poetry run python scripts/lint_cli_coverage.py
+poetry run python scripts/lint_cli_coverage.py --phase read
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
@@ -949,7 +1062,7 @@ Verification:
 poetry run pytest tests/cli/test_write_safety.py
 poetry run pytest tests/cli/test_all_domains_metadata.py tests/cli/test_domain_smoke_commands.py
 poetry run pytest tests/domains/promotion tests/domains/orders
-poetry run python scripts/lint_cli_coverage.py
+poetry run python scripts/lint_cli_coverage.py --strict
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
@@ -959,6 +1072,12 @@ Exit criteria:
 - Every sync discovered Swagger binding has exactly one canonical CLI command or documented intentional exclusion.
 - No destructive command can run accidentally in non-interactive mode.
 - `make cli-lint` can now be added to `make check`.
+
+Makefile integration:
+
+- Add `cli-lint` as `poetry run python scripts/lint_cli_coverage.py --strict`.
+- Include `cli-lint` in `quality` after `swagger-lint` and before `architecture-lint`.
+- Do not add strict `cli-lint` to `make check` before Stage 10; earlier stages use explicit phase commands only.
 
 Stage checklist:
 
@@ -994,7 +1113,7 @@ Verification:
 
 ```bash
 poetry run pytest tests/cli/test_helper_workflows.py
-poetry run python scripts/lint_cli_coverage.py
+poetry run python scripts/lint_cli_coverage.py --strict
 poetry run mypy avito
 poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py
 ```
@@ -1050,30 +1169,70 @@ Stage checklist:
 
 Deliverables:
 
-- README CLI quickstart.
-- Docs how-to page for CLI account/profile setup.
-- Docs reference for global flags, output formats, exit codes, config files, environment variables, and secret storage.
-- Docs page explaining generated all-domain command grammar.
-- Examples for human and JSON automation usage.
-- Document that secrets are stored locally in plaintext JSON protected with `0600` permissions.
-- Document sync Swagger-bound coverage guarantee and exclusion policy.
-- Document command naming algorithm and compatibility alias policy.
-- Document config precedence order, including reserved project/system config slots if they remain unimplemented.
+- Update `README.md` with a short CLI quickstart and links to docs.
+- Update `docs/site/index.md` so CLI is visible as a first-class usage mode.
+- Update `docs/site/tutorials/getting-started.md` with the shortest first CLI call path or a concise link to the CLI how-to.
+- Add `docs/site/how-to/cli.md` for practical account/profile setup and daily CLI workflows:
+  - install and verify `avito --version`;
+  - add/use/list/delete local accounts;
+  - run read-only API commands;
+  - run JSON automation commands with `--json --no-input`;
+  - use `status`, `doctor`, and completion commands;
+  - explain safe handling of local plaintext secrets.
+- Add `docs/site/reference/cli.md` for stable CLI contracts:
+  - command grammar `avito <resource> <action>`;
+  - global flags;
+  - output modes and stdout/stderr split;
+  - exit codes and stable error codes;
+  - config files, CLI home resolution, environment variables, and profile precedence;
+  - safety flags `--dry-run`, `--yes`, and `--confirm`;
+  - generated command naming algorithm and compatibility alias policy;
+  - sync Swagger-bound coverage guarantee and documented exclusion policy.
+- Add `docs/site/explanations/cli-architecture.md` for design rationale:
+  - CLI as a thin wrapper over `AvitoClient`;
+  - registry/discovery-driven command generation;
+  - coverage linter phases and strict gate;
+  - auth-token binding exclusions;
+  - secret masking and no raw SDK internals in CLI;
+  - bounded pagination and `--all` policy.
+- Update `docs/site/how-to/auth-and-config.md` with a short cross-link to CLI account/profile setup.
+- Update `docs/site/explanations/security-and-redaction.md` with CLI secret-storage and output-redaction notes.
+- Update `docs/site/explanations/api-coverage-and-deprecations.md` with CLI coverage and exclusion policy.
+- Update navigation files:
+  - add `cli.md` to `docs/site/how-to/.pages`;
+  - add `cli.md` to `docs/site/reference/.pages`;
+  - add `cli-architecture.md` to `docs/site/explanations/.pages`.
+- Do not add generated CLI reference pages to `docs/site/assets/_gen_reference.py` unless the implementation has a stable CLI registry JSON/report that can be generated deterministically during MkDocs builds.
+- If CLI docs mention commands that are not implemented yet, keep them in this plan only. Public docs must describe only implemented commands by the time Stage 13 is complete.
+
+Documentation style requirements:
+
+- Keep docs in Russian, with command names/flags/error codes unchanged.
+- Keep how-to pages task-oriented; do not duplicate the entire reference contract there.
+- Keep reference pages exhaustive and stable; avoid marketing language.
+- Link to existing config, security, pagination, and API coverage pages instead of copying large sections.
+- Include both human output and JSON automation examples.
+- Never show real-looking secrets; examples must use placeholders such as `client-secret`.
 
 Verification:
 
 ```bash
 poetry run mkdocs build --strict
 make docs-check
+rg -n "client_secret|access_token|Authorization: Bearer|api_key" README.md docs/site
 ```
 
 Stage checklist:
 
 - [ ] README includes a CLI quickstart.
-- [ ] Docs explain account/profile setup and local plaintext secret storage.
-- [ ] Docs list global flags, output modes, exit codes, config files, and environment variables.
-- [ ] Docs explain generated command naming and alias policy.
-- [ ] Docs state sync Swagger-bound coverage guarantees and exclusion policy.
+- [ ] `docs/site/index.md` links to the CLI docs.
+- [ ] `docs/site/tutorials/getting-started.md` has a first CLI path or a clear CLI how-to link.
+- [ ] `docs/site/how-to/cli.md` explains account/profile setup, daily workflows, automation, status/doctor, completion, and local plaintext secret storage.
+- [ ] `docs/site/reference/cli.md` lists global flags, output modes, exit codes, config files, environment variables, safety flags, command grammar, naming, alias, and coverage contracts.
+- [ ] `docs/site/explanations/cli-architecture.md` explains SDK reuse, registry/discovery, coverage linter phases, exclusions, secret masking, and pagination policy.
+- [ ] Existing auth/config, security/redaction, and API coverage/deprecation pages link to or describe relevant CLI behavior.
+- [ ] `.pages` navigation files include the new CLI pages in the correct sections.
+- [ ] Docs examples do not contain real-looking secrets or bearer tokens.
 - [ ] Stage verification commands pass.
 
 ### Stage 14: Final Gate
@@ -1087,7 +1246,7 @@ poetry run mypy avito
 poetry run ruff check .
 poetry run python scripts/lint_python_guidelines.py
 poetry run python scripts/lint_architecture.py
-poetry run python scripts/lint_cli_coverage.py
+poetry run python scripts/lint_cli_coverage.py --strict
 poetry build
 make check
 ```
@@ -1147,8 +1306,9 @@ Stage checklist:
 - [ ] Minimum stage verification commands pass during implementation.
 - [ ] Final `make check` passes before completion.
 
-## Open Decisions
+## Resolved Defaults
 
-- Whether `avito cli coverage` should be public or hidden. The linter/report is required either way.
-- Whether paginated commands should default to first page, bounded page count, or require explicit `--all`. Conservative default: bounded output with explicit opt-in for full materialization.
-- Whether generated API commands should support custom positional primary IDs after the first release. Conservative default: named flags only.
+- `avito cli coverage` is hidden/internal for the first release. The supported public surface is the script `scripts/lint_cli_coverage.py --strict` and documented coverage guarantees.
+- Paginated commands default to bounded output: first page only or the SDK/default page size when applicable. Full materialization requires explicit `--all`.
+- Generated API commands use named flags only in the first release. Positional primary IDs can be added later as additive aliases after command stability is proven.
+- The 4 auth-token Swagger bindings are documented intentional exclusions for the first release and are represented by local account/status/doctor workflows instead of direct token-client commands.
