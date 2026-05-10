@@ -4,6 +4,7 @@ Explanations описывают причины архитектурных реш
 
 | Статья | Что объясняет |
 |---|---|
+| [Архитектура CLI](cli-architecture.md) | Почему CLI является тонкой оболочкой над `AvitoClient`, как работают registry, coverage linter, exclusions, redaction и пагинация |
 | [Архитектура SDK](architecture.md) | Как `AvitoClient`, домены, `OperationSpec`, executor, transport, auth и модели разделяют ответственность |
 | [Целевая структура доменов](domain-architecture-v2.md) | Как API-домены используют dataclass-модели для сериализации, десериализации, нормализации и enum-ов |
 | [OAuth и токены](auth-flow.md) | Почему token-flow скрыт за `AuthProvider` |

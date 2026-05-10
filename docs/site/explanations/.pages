@@ -1,5 +1,6 @@
 nav:
   - index.md
+  - cli-architecture.md
   - architecture.md
   - auth-flow.md
   - transport-and-retries.md

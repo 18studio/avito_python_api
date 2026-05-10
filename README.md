@@ -24,6 +24,20 @@ print(ad.title)
 
 По умолчанию настройки читаются из переменных окружения с префиксом `AVITO_`.
 
+CLI использует тот же публичный SDK и удобен для smoke-проверок, скриптов и
+операционных задач:
+
+```bash
+avito account add main --client-id client-id --user-id 123
+avito --profile main account get-self
+avito --json --no-input --profile main account get-balance --user-id 123
+```
+
+`account add` спросит `Client Secret` скрытым prompt. Для CI используйте
+`--client-secret-stdin`, чтобы не передавать секрет в аргументах shell.
+Подробно: [CLI how-to](https://18studio.github.io/avito_python_api/how-to/cli/)
+и [CLI reference](https://18studio.github.io/avito_python_api/reference/cli/).
+
 `avito-py` — Python SDK для работы с Avito API через единые sync/async фасады
 `AvitoClient` и `AsyncAvitoClient`.
 

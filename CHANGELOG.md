@@ -56,6 +56,10 @@ and this project adheres to Semantic Versioning.
   `avito config set`, `avito config unset`, `avito config list --show-source`,
   `avito status`, `avito doctor` и `avito completion bash|zsh|fish`; команды
   работают без сетевых вызовов и не раскрывают секреты.
+- Добавлена публичная CLI-документация: quickstart в README, how-to для
+  профилей и ежедневных workflows, стабильный reference контракт, объяснение
+  архитектуры registry/coverage и ссылки из разделов security, auth/config и
+  API coverage.
 
 ## [2.1.0] - 2026-05-08
 

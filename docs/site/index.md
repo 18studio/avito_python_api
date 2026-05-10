@@ -43,6 +43,14 @@ pip install avito-py
 
     [:octicons-arrow-right-24: How-to рецепты](how-to/index.md)
 
+-   :material-console:{ .lg .middle } **Хочу работать из терминала**
+
+    ---
+
+    `avito` CLI: профили, JSON для автоматизации, status, doctor, completion и API-команды через публичный SDK.
+
+    [:octicons-arrow-right-24: CLI how-to](how-to/cli.md)
+
 -   :material-sync:{ .lg .middle } **Асинхронный режим**
 
     ---
@@ -79,4 +87,4 @@ pip install avito-py
 | **Цель** | Обучение через действие | Решить конкретную задачу | Точная информация | Понять «почему» |
 | **Раздел** | [Tutorials](tutorials/index.md) | [How-to](how-to/index.md) | [Reference](reference/index.md) | [Explanations](explanations/index.md) |
 
-Для async-кода начните с рецепта [Асинхронный режим](how-to/async.md), а точный контракт смотрите в [AvitoClient и AsyncAvitoClient](reference/client.md).
+Для терминала начните с рецепта [CLI](how-to/cli.md). Для async-кода начните с рецепта [Асинхронный режим](how-to/async.md), а точный контракт смотрите в [AvitoClient и AsyncAvitoClient](reference/client.md).

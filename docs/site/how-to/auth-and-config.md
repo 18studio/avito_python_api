@@ -92,4 +92,9 @@ print(info.user_id)
 
 Управление retry: `AVITO_RETRY_MAX_ATTEMPTS` (3), `AVITO_RETRY_BACKOFF_FACTOR` (0.5), `AVITO_RETRY_MAX_DELAY` (30 с), `AVITO_RETRY_RETRY_ON_RATE_LIMIT` (true), `AVITO_RETRY_RETRY_ON_SERVER_ERROR` (true).
 
+CLI использует отдельное локальное хранилище профилей под `~/.avito-py/` и
+превращает выбранный профиль в публичный `AvitoSettings` без сетевого вызова.
+Практический сценарий настройки описан в [CLI how-to](cli.md), а стабильный
+контракт файлов и precedence — в [CLI reference](../reference/cli.md).
+
 Полная таблица с типами и дефолтами — в [справочнике по конфигурации](../reference/config.md).

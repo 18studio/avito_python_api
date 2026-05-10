@@ -6,6 +6,7 @@
 | Страница | Что искать |
 |---|---|
 | [AvitoClient и AsyncAvitoClient](client.md) | Sync/async инициализация, контекстные менеджеры, фабричные методы, `debug_info()` |
+| [CLI](cli.md) | Команда `avito`, глобальные флаги, output modes, exit codes, локальные файлы, safety-флаги и coverage policy |
 | [Асинхронный режим](../how-to/async.md) | Практический lifecycle `AsyncAvitoClient`, ASGI и async fake transport |
 | [Конфигурация](config.md) | `AvitoSettings`, `AuthSettings`, env-переменные, per-operation overrides |
 | [Покрытие API](coverage.md) | 204/204 Swagger operations из binding report |

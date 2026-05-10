@@ -2114,17 +2114,28 @@ rg -n "client_secret|access_token|Authorization: Bearer|api_key" README.md docs/
 
 Stage checklist:
 
-- [ ] README includes a CLI quickstart.
-- [ ] `CHANGELOG.md` summarizes the CLI feature and points to the stable reference docs.
-- [ ] `docs/site/index.md` links to the CLI docs.
-- [ ] `docs/site/tutorials/getting-started.md` has a first CLI path or a clear CLI how-to link.
-- [ ] `docs/site/how-to/cli.md` explains account/profile setup, daily workflows, automation, status/doctor, completion, and local plaintext secret storage.
-- [ ] `docs/site/reference/cli.md` lists global flags, output modes, exit codes, config files, environment variables, safety flags, command grammar, naming, alias, and coverage contracts.
-- [ ] `docs/site/explanations/cli-architecture.md` explains SDK reuse, registry/discovery, coverage linter phases, exclusions, secret masking, and pagination policy.
-- [ ] Existing auth/config, security/redaction, and API coverage/deprecation pages link to or describe relevant CLI behavior.
-- [ ] `.pages` navigation files include the new CLI pages in the correct sections.
-- [ ] Docs examples do not contain real-looking secrets or bearer tokens.
-- [ ] Stage verification commands pass.
+- [x] README includes a CLI quickstart.
+- [x] `CHANGELOG.md` summarizes the CLI feature and points to the stable reference docs.
+- [x] `docs/site/index.md` links to the CLI docs.
+- [x] `docs/site/tutorials/getting-started.md` has a first CLI path or a clear CLI how-to link.
+- [x] `docs/site/how-to/cli.md` explains account/profile setup, daily workflows, automation, status/doctor, completion, and local plaintext secret storage.
+- [x] `docs/site/reference/cli.md` lists global flags, output modes, exit codes, config files, environment variables, safety flags, command grammar, naming, alias, and coverage contracts.
+- [x] `docs/site/explanations/cli-architecture.md` explains SDK reuse, registry/discovery, coverage linter phases, exclusions, secret masking, and pagination policy.
+- [x] Existing auth/config, security/redaction, and API coverage/deprecation pages link to or describe relevant CLI behavior.
+- [x] `.pages` navigation files include the new CLI pages in the correct sections.
+- [x] Docs examples do not contain real-looking secrets or bearer tokens.
+- [x] Stage verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run mkdocs build --strict: passed
+make docs-check: passed; lychee reported 1 redirect warning and 0 errors
+rg -n "client_secret|access_token|Authorization: Bearer|api_key" README.md docs/site:
+  matched only placeholder terms and redaction/security documentation, no real
+  bearer tokens or real-looking secrets.
+```
 
 ### Stage 14: Final Gate
 

@@ -1,175 +1,115 @@
 # CLI
 
-`avito` is the command-line entry point for `avito-py`. The current CLI surface
-exposes the shell, global flags, account/profile commands, version commands,
-registry-backed help, account API commands, and generated read-only API commands
-for supported sync Swagger-bound GET/HEAD methods.
+`avito` — командная строка `avito-py`. Она использует тот же публичный SDK:
+API-команды создают `AvitoClient`, вызывают публичную factory и публичный
+доменный метод, а затем печатают результат через общий renderer.
 
-## Commands
+`python -m avito` запускает то же CLI-приложение.
 
-| Command | Description |
-|---|---|
-| `avito --help` | Prints root help and exits without reading account files or touching the network. |
-| `avito help` | Prints the same root help as `avito --help`. |
-| `avito help <resource>` | Prints registry-backed help for local commands, aliases, helper workflows, and API command candidates without constructing `AvitoClient`. |
-| `avito help <resource> <action>` | Prints registry-backed command help, including selected flags from Swagger binding metadata where available. |
-| `avito --version` | Prints the installed package version. |
-| `avito version` | Prints the installed package version. With `--json`, prints `{"version": "..."}`. |
-| `python -m avito --help` | Uses the same CLI application as `avito --help`. |
-| `avito <resource> <read-action> [flags]` | Calls a supported sync Swagger-bound GET/HEAD SDK method through `AvitoClient` and public domain methods. |
-| `avito account get-self` | Calls `AvitoClient.account().get_self()` through the public SDK and prints the authorized profile. |
-| `avito account get-balance --user-id USER_ID` | Calls `AvitoClient.account(user_id=...).get_balance()` through the public SDK and prints the account balance. |
-| `avito config get active-profile` | Prints the effective active profile. |
-| `avito config set active-profile NAME` | Stores the active profile in the local config file. |
-| `avito config unset active-profile` | Clears the stored active profile. |
-| `avito config list --show-source` | Prints supported config keys with their value sources. |
-| `avito status` | Checks local profile/account readiness without touching the network. |
-| `avito doctor` | Checks local CLI files and reports malformed JSON or permission problems. |
-| `avito completion bash\|zsh\|fish` | Prints shell-specific completion setup instructions. |
+## Грамматика команд
 
-Compatibility aliases are documented separately from canonical commands. For
-example, `avito account remove` delegates to `avito account delete` and does not
-count as a separate canonical command in CLI coverage.
-
-## Global Flags
-
-Global flags are parsed before the subcommand:
-
-```bash
-avito --json version
-avito --profile main --config ./config.json --timeout 3.5 version
+```text
+avito [global flags] <resource> <action> [arguments] [flags]
 ```
 
-| Flag | Current behavior |
-|---|---|
-| `--profile NAME` | Selects the local account profile used for API commands. |
-| `--config PATH` | Selects an alternate config file for local profile resolution. |
-| `--json` | Selects JSON output for commands and JSON error rendering. |
-| `--plain` | Accepted as an output mode selector. |
-| `--table` | Accepted as an output mode selector. |
-| `--wide` | Accepted as an output mode selector. |
-| `--quiet` | Suppresses non-essential success output. Errors still go to stderr. |
-| `--no-input` | Accepted for future non-interactive commands. |
-| `--no-color` | Disables colored human diagnostics. |
-| `--verbose` | Accepted for future diagnostic output. |
-| `--debug` | Adds sanitized debug details to CLI errors. Secrets are redacted. |
-| `--timeout SECONDS` | Passed to API commands whose public SDK method accepts a timeout override. |
-
-`--json`, `--plain`, `--table`, and `--wide` are mutually exclusive. Combining
-more than one exits with code `2`.
-
-The `NO_COLOR=1` environment variable also disables colored human diagnostics.
-
-## Local Config and Diagnostics
-
-The first CLI release stores one local config key: `active-profile`. The
-effective value follows the documented precedence: the root `--profile` flag
-wins over the value stored in `config.json`; if neither exists, the value is
-empty.
-
-```bash
-avito config set active-profile main
-avito config get active-profile
-avito config list --show-source
-avito config unset active-profile
-```
-
-With `--json`, config commands emit a stable `config` object. `--show-source`
-adds the source name (`cli`, `config`, or `default`) and the local config path
-when the value came from a file.
-
-`avito status` is a local readiness check. It loads the selected profile and
-account store, reports whether the CLI can construct SDK settings, and records
-`network_checked: false` because it never calls Avito API.
-
-`avito doctor` validates the local config and account files. It reports
-malformed JSON and permission failures as sanitized diagnostics; if errors are
-found, the command prints the diagnostic report and exits with `CONFIG_INVALID`.
-
-Shell completion commands print setup instructions:
-
-```bash
-avito completion bash
-avito completion zsh
-avito completion fish
-```
-
-## Safety Flags
-
-Write-like generated API commands use reviewed safety metadata from the CLI
-registry. HTTP method can provide an initial default, but the command record is
-the contract used by command registration, help, and the coverage linter.
-
-Destructive or expensive commands require confirmation before the SDK client is
-constructed:
-
-```bash
-avito --profile main <resource> <action> --confirm <command-id>
-avito --profile main <resource> <action> --yes
-```
-
-In non-interactive mode, a command that requires confirmation fails instead of
-prompting. `--yes` and `--confirm` are mutually exclusive.
-
-`--dry-run` is shown only when the public SDK method accepts `dry_run`. The CLI
-does not fake dry-run for methods that would still call transport.
-
-## Implemented API Commands
-
-API commands are registry-backed and call only public SDK factories and public
-domain methods. Read-only commands are generated from sync Swagger binding
-metadata for GET/HEAD operations when all required CLI inputs are represented by
-`factory_args` and `method_args`.
+Глобальные флаги гарантированно поддержаны перед resource/action:
 
 ```bash
 avito --profile main account get-self
-avito --json --profile main account get-balance --user-id 123
-avito --profile main ad get --user-id 123 --item-id 456
-avito --json --profile main vacancy list
+avito --json --no-input --profile main account get-balance --user-id 123
 ```
 
-The command output uses the same result renderer as local commands. Human output
-uses grouped key/value lines for single SDK models, and `--json` emits the
-serialized public SDK model without extra prose.
+Флаги после вложенной команды являются флагами этой команды. Перенос root-флагов
+в конец команды не является контрактом первого релиза.
 
-The current read phase intentionally excludes these temporary command candidates
-because their Swagger binding metadata does not yet expose a required domain
-identifier as a stable CLI flag:
+Имена resources, actions и flags используют lowercase kebab-case. `resource-id`
+запрещён: команды используют конкретные имена вроде `item-id`, `order-id`,
+`chat-id`, `user-id`.
 
-- `autoteka-vehicle.get-preview`
-- `autoteka-vehicle.get-specification-by-id`
-- `autoteka-vehicle.get-teaser`
-- `cpa-chat.get`
-- `order-label.download`
-- `realty-analytics-report.get-market-price-correspondence`
-- `target-action-pricing.get-bids`
+## Входные точки и справка
 
-Each exclusion is represented in the CLI registry with owner, reason, follow-up,
-and target stage metadata.
+| Команда | Контракт |
+|---|---|
+| `avito --help` | Печатает root help без чтения account files и без сетевых вызовов. |
+| `avito help` | Печатает тот же root help. |
+| `avito help <resource>` | Печатает registry-backed справку по resource. |
+| `avito help <resource> <action>` | Печатает справку по команде, включая registry metadata и флаги. |
+| `avito --version` | Печатает версию пакета. |
+| `avito version` | Печатает версию; с `--json` выводит объект `version`. |
+| `python -m avito --help` | Использует ту же root-команду, что и `avito --help`. |
 
-## Output Contract
+Registry-backed справка не создаёт `AvitoClient`, не читает локальные account
+files и не делает HTTP-запросов.
 
-Command results go to stdout. Human errors, warnings, progress, and debug
-diagnostics go to stderr. JSON errors are valid JSON on stderr.
+## Глобальные флаги
 
-The result renderer used by API commands serializes SDK models only through their
-public `model_dump()` / `to_dict()` contract. Local CLI dataclasses, enum values,
-dates, datetimes, lists, primitives, and binary values are converted to
-JSON-compatible values before rendering. Secret redaction is applied after
-serialization and before human or JSON output is printed.
+| Флаг | Поведение |
+|---|---|
+| `--profile NAME` | Выбирает локальный профиль для API/helper-команд. Имеет приоритет над config. |
+| `--config PATH` | Использует альтернативный `config.json` для локальной конфигурации. |
+| `--json` | Печатает результат в stable JSON на stdout и JSON-ошибки на stderr. |
+| `--plain` | Выбирает plain human output. |
+| `--table` | Выбирает табличный human output, где команда его поддерживает. |
+| `--wide` | Выбирает расширенный табличный output, где команда его поддерживает. |
+| `--quiet` | Скрывает необязательный успешный output; ошибки остаются на stderr. |
+| `--no-input` | Запрещает prompt. Если команде нужен ввод, она завершается ошибкой. |
+| `--no-color` | Отключает цветной вывод. |
+| `--verbose` | Включает дополнительные пользовательские детали без секретов. |
+| `--debug` | Включает sanitized debug details в ошибках. |
+| `--timeout SECONDS` | Передаётся в SDK-вызов, если публичный метод принимает `timeout`. |
 
-Lazy SDK pagination is bounded by default. A `PaginatedList` result is serialized
-as an object with `items` and `pagination` metadata; the default snapshot loads at
-most one page unless a later command explicitly opts into a higher page limit or
-full materialization.
+`--json`, `--plain`, `--table` и `--wide` взаимоисключающие. Комбинация двух или
+более таких флагов завершается с exit code `2`.
 
-Human error shape:
+`NO_COLOR=1` также отключает цветной output.
+
+## Режимы вывода
+
+Результаты команд печатаются в stdout. Ошибки, предупреждения, progress и
+debug-диагностика печатаются в stderr.
+
+Human output:
+
+- одиночные объекты печатаются как сгруппированные key/value строки;
+- коллекции печатаются как таблицы, если есть стабильные колонки;
+- write-команды печатают короткий результат действия;
+- `--quiet` скрывает необязательный успешный текст.
+
+JSON output:
+
+- stdout содержит только JSON-результат;
+- warnings, progress и debug details не попадают в stdout;
+- JSON errors печатаются в stderr;
+- SDK-модели сериализуются только через публичный `model_dump()` / `to_dict()`.
+
+Пример:
+
+```bash
+avito --json --no-input --profile main account get-self
+```
+
+## Коды завершения
+
+| Code | Stable error code | Значение |
+|---:|---|---|
+| `0` | — | Успешное выполнение. |
+| `1` | `SDK_METHOD_FAILED`, `CLI_INTERNAL_ERROR` | Общая ошибка или неожиданная внутренняя ошибка. |
+| `2` | `CLI_USAGE_ERROR`, `INVALID_FLAG_COMBINATION`, `VALIDATION_FAILED` | Неверный синтаксис, несовместимые флаги или ошибка валидации CLI-аргумента. |
+| `3` | `ACCOUNT_NOT_FOUND`, `COMMAND_UNSUPPORTED` | Объект или команда не найдены. |
+| `4` | `PERMISSION_DENIED` | Недостаточно прав на локальный файл или upstream запретил действие. |
+| `5` | `AUTH_REQUIRED`, `CONFIG_INVALID`, `CLI_CONFIGURATION_ERROR` | Нужна авторизация или локальная конфигурация некорректна. |
+| `6` | `CONFLICT`, `ACCOUNT_EXISTS` | Конфликт состояния, например дублирующийся профиль. |
+| `7` | `CLI_UPSTREAM_ERROR` | Upstream API вернул ошибку, не попавшую в более точный класс. |
+| `8` | `EXTERNAL_DEPENDENCY_UNAVAILABLE`, `CLI_TRANSPORT_ERROR` | Недоступна внешняя зависимость или transport. |
+| `70` | `CLI_INTERNAL_ERROR` | Зарезервировано для неожиданных внутренних сбоев. |
+
+Форма human error:
 
 ```text
 INVALID_FLAG_COMBINATION: Флаги --json, --plain, --table и --wide нельзя использовать вместе.
 ```
 
-JSON error shape:
+Форма JSON error:
 
 ```json
 {
@@ -179,20 +119,241 @@ JSON error shape:
 }
 ```
 
-With `--debug`, error renderers may include sanitized `details`. The same
-sanitizer is used for human and JSON renderers, so values such as tokens,
-authorization headers, and `client_secret` are replaced with `***`.
+`--debug` может добавить sanitized `details`, но не печатает сырые секреты.
 
-## Exit Codes
+## Локальные файлы и переменные окружения
 
-| Exit code | Stable code | Meaning |
-|---:|---|---|
-| `0` | — | Command completed successfully. |
-| `2` | `CLI_USAGE_ERROR`, `INVALID_FLAG_COMBINATION` | Invalid command usage or incompatible flags. |
-| `3` | `CLI_CONFIGURATION_ERROR` | Reserved for local configuration errors. |
-| `4` | `CLI_AUTHENTICATION_ERROR` | Reserved for authentication failures. |
-| `5` | `CLI_AUTHORIZATION_ERROR` | Reserved for authorization failures. |
-| `6` | `CLI_RATE_LIMIT_ERROR` | Reserved for upstream rate-limit failures. |
-| `7` | `CLI_UPSTREAM_ERROR` | Reserved for upstream API errors. |
-| `8` | `CLI_TRANSPORT_ERROR` | Reserved for transport failures. |
-| `70` | `CLI_INTERNAL_ERROR` | Reserved for unexpected internal failures. |
+CLI home выбирается так:
+
+1. `AVITO_PY_HOME`
+2. `MY_SDK_HOME`
+3. `~/.avito-py`
+
+Файлы:
+
+```text
+~/.avito-py/
+  config.json
+  accounts.json
+```
+
+Требования к файловой системе:
+
+- каталог создаётся лениво с правами `0700`;
+- `config.json` и `accounts.json` записываются атомарно через временный файл и
+  `os.replace`;
+- файлы создаются с правами `0600`, где это поддерживает платформа;
+- импорт CLI-модулей не создаёт файлы и каталоги.
+
+`config.json` хранит активный профиль. `accounts.json` хранит локальные профили
+и OAuth settings. Активность не дублируется флагом внутри account record.
+
+Первая версия хранит secrets в plaintext JSON. Это не secret manager и не OS
+keychain.
+
+## Команды учетных записей
+
+| Команда | Контракт |
+|---|---|
+| `avito account add ACCOUNT-NAME --client-id CLIENT-ID` | Добавляет локальный профиль без сетевого вызова. |
+| `avito account list` | Показывает сохранённые профили и активный профиль. |
+| `avito account use ACCOUNT-NAME` | Сохраняет активный профиль в config. |
+| `avito account current` | Показывает активный профиль и замаскированные поля учетной записи. |
+| `avito account delete ACCOUNT-NAME` | Удаляет профиль после подтверждения. |
+| `avito account remove ACCOUNT-NAME` | Alias для `account delete`; не canonical command. |
+
+Флаги `account add`:
+
+| Флаг | Поведение |
+|---|---|
+| `--client-id CLIENT-ID` | Обязательный OAuth client id. |
+| `--client-secret CLIENT-SECRET` | Явный secret; может попасть в историю shell. |
+| `--api-key API-KEY` | Совместимый alias для `--client-secret`. |
+| `--client-secret-stdin` | Читает secret одной строкой из stdin. |
+| `--endpoint URL` | Alias для base URL Avito API. |
+| `--user-id USER-ID` | Пользователь по умолчанию для SDK settings. |
+| `--scope SCOPE` | OAuth scope. |
+
+Если secret не передан и input разрешён, `account add` использует hidden prompt.
+В `--no-input` режиме отсутствие secret даёт ошибку `AUTH_REQUIRED`.
+
+`--client-secret`, `--api-key` и `--client-secret-stdin` взаимоисключающие.
+
+Примеры:
+
+```bash
+avito account add main --client-id client-id --user-id 123
+printf '%s\n' 'client-secret' | avito --no-input account add main \
+  --client-id client-id \
+  --client-secret-stdin
+avito account use main
+avito account delete old --confirm old
+```
+
+## Команды конфигурации
+
+Поддержанный ключ первого релиза: `active-profile`.
+
+```bash
+avito config set active-profile main
+avito config get active-profile
+avito config get active-profile --show-source
+avito config list --show-source
+avito config unset active-profile
+```
+
+Source values:
+
+- `cli` — значение пришло из root-флага `--profile`;
+- `config` — значение прочитано из `config.json`;
+- `default` — значение не задано.
+
+С `--json` команды возвращают объект `config`.
+
+## Status, doctor и completion
+
+`status` проверяет локальную готовность профиля и account store без сетевых
+вызовов:
+
+```bash
+avito status
+avito --json status
+```
+
+В JSON поле `network_checked` равно `false`.
+
+`doctor` проверяет локальные JSON-файлы и права доступа:
+
+```bash
+avito doctor
+```
+
+Если найдены проблемы, команда печатает отчёт и завершается ошибкой
+конфигурации.
+
+Completion:
+
+```bash
+avito completion bash
+avito completion zsh
+avito completion fish
+```
+
+## API-команды
+
+API-команды registry-backed и вызывают только публичный SDK:
+
+```bash
+avito --profile main account get-self
+avito --profile main account get-balance --user-id 123
+avito --profile main ad get --user-id 123 --item-id 456
+```
+
+Флаги API-команды выбираются из Swagger binding metadata:
+
+- `factory_args`;
+- `method_args`.
+
+Публичная Python signature используется для проверки и приведения этих выбранных
+аргументов. CLI не публикует все параметры метода автоматически. Per-operation
+`timeout` управляется только root-флагом `--timeout`; `retry` не является CLI
+флагом первого релиза.
+
+Поддержанное приведение значений:
+
+- `str`, `int`, `float`, `bool`;
+- `date` и `datetime`;
+- enum по имени или значению;
+- optional values;
+- repeated flags и comma-separated lists;
+- public input models только через typed CLI adapter, когда он явно добавлен.
+
+## Вспомогательные workflows
+
+Helper-команды не входят в Swagger one-to-one coverage. Они вызывают публичные
+non-Swagger методы `AvitoClient`.
+
+```bash
+avito account-health show --user-id 123
+avito listing-health show --user-id 123 --limit 20
+avito chat-summary show --user-id 123
+avito order-summary show
+avito review-summary show
+avito promotion-summary show --item-ids 456
+avito capabilities show
+```
+
+`business_summary` является compatibility wrapper для `account_health` и не
+получает отдельную canonical CLI-команду в первом релизе.
+
+## Флаги безопасности
+
+Write/destructive/expensive команды используют reviewed safety metadata из
+registry. HTTP method может дать исходную классификацию, но не является
+единственным источником политики.
+
+| Флаг | Поведение |
+|---|---|
+| `--yes` | Выполнить destructive/expensive команду без prompt. |
+| `--confirm VALUE` | Выполнить команду только при точном подтверждении. |
+| `--dry-run` | Показать план без transport-вызова, только если SDK-метод поддерживает `dry_run`. |
+
+`--yes` и `--confirm` взаимоисключающие. В `--no-input` режиме команда, которой
+нужно подтверждение, завершается ошибкой вместо prompt.
+
+CLI не имитирует dry-run для SDK-методов, которые всё равно сделали бы сетевой
+вызов.
+
+## Пагинация
+
+SDK `PaginatedList[T]` ленивый. CLI ограничивает paginated output по умолчанию:
+первая страница или SDK/default page size. Полная материализация требует явного
+opt-in командой, которая документирует соответствующий флаг.
+
+JSON-форма пагинации содержит `items` и metadata, когда она доступна. Progress и
+warnings печатаются в stderr.
+
+## Маскирование секретов
+
+Один sanitizer применяется к:
+
+- human output;
+- JSON output;
+- errors;
+- `--verbose` и `--debug`;
+- `status` и `doctor`;
+- coverage/debug reports.
+
+Редактируются вложенные поля, списки и exception metadata с ключами или
+значениями, похожими на OAuth secrets: `client_secret`, `api_key`,
+`refresh_token`, `access_token`, authorization headers и token-like values.
+
+## Политика покрытия
+
+CLI coverage строится из `discover_swagger_bindings()` и проверяется
+`scripts/lint_cli_coverage.py`.
+
+Инварианты:
+
+```text
+каждый sync Swagger binding -> одна canonical CLI-команда или documented exclusion
+каждая canonical API CLI-команда -> один sync Swagger binding
+каждый поддержанный helper workflow -> команда или documented exclusion
+```
+
+Aliases не считаются canonical coverage.
+
+Intentional exclusions первого релиза:
+
+- четыре token-client bindings без публичной `AvitoClient` factory;
+- bindings, которым нужен typed CLI adapter, file/stdin/binary handling,
+  complex public input model или уточнение factory/method metadata.
+
+Strict gate:
+
+```bash
+poetry run python scripts/lint_cli_coverage.py --strict
+make cli-lint
+```
+
+`make cli-lint` входит в `make check`.
