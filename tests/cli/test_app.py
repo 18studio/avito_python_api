@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -114,6 +115,23 @@ def test_version_option_outputs_version() -> None:
 
     assert result.exit_code == 0
     assert "avito" in result.output
+
+
+def test_version_option_works_outside_project_directory(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])
+    result = subprocess.run(
+        [sys.executable, "-m", "avito", "--version"],
+        check=False,
+        capture_output=True,
+        cwd=tmp_path,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.startswith("avito-py ")
+    assert result.stderr == ""
 
 
 def test_python_module_entrypoint_uses_cli_help(tmp_path: Path) -> None:

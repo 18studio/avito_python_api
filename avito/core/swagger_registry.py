@@ -12,7 +12,7 @@ from typing import cast
 from avito.core.swagger_names import swagger_field_aliases
 
 HTTP_METHODS = frozenset({"delete", "get", "head", "options", "patch", "post", "put", "trace"})
-DEFAULT_SWAGGER_API_DIR = Path("docs/avito/api")
+DEFAULT_SWAGGER_API_DIR = Path(__file__).resolve().parents[2] / "docs" / "avito" / "api"
 
 _PATH_PARAMETER_RE = re.compile(r"{([A-Za-z_][A-Za-z0-9_]*)}")
 

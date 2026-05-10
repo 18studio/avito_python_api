@@ -6,6 +6,9 @@ authors = ["Nikolay Baryshnikov <root@k0d.ru>"]
 packages=[
     { include = "avito" },
 ]
+include = [
+    { path = "docs/avito/api/*.json", format = ["sdist", "wheel"] },
+]
 license="MIT"
 readme="README.md"
 homepage="https://github.com/18studio/avito_python_api"
