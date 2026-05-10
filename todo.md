@@ -1150,12 +1150,23 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] `avito/cli/registry.py` exists with typed API, helper, local, alias, and exclusion records.
-- [ ] Sync Swagger bindings are converted into deterministic command candidates.
-- [ ] Factory/method metadata and Swagger binding identifiers are preserved.
-- [ ] Registry construction has no network, config, account-file, or `AvitoClient` side effects.
-- [ ] Registry records can reference named adapters without importing adapter implementation modules.
-- [ ] Stage 4A verification commands pass.
+- [x] `avito/cli/registry.py` exists with typed API, helper, local, alias, and exclusion records.
+- [x] Sync Swagger bindings are converted into deterministic command candidates.
+- [x] Factory/method metadata and Swagger binding identifiers are preserved.
+- [x] Registry construction has no network, config, account-file, or `AvitoClient` side effects.
+- [x] Registry records can reference named adapters without importing adapter implementation modules.
+- [x] Stage 4A verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli/test_registry.py: 7 passed
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run ruff check avito/cli tests/cli: All checks passed
+```
 
 #### Stage 4B: Registry Help, Aliases, and Collisions
 
