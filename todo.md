@@ -1502,12 +1502,25 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] Adapter protocol is typed and documented in code.
-- [ ] Adapter metadata is stable and serializable in registry/coverage reports.
-- [ ] Adapter-backed invocation still uses public SDK factories and methods only.
-- [ ] Architecture lint prevents adapters from importing forbidden internal layers.
-- [ ] Unknown, duplicate, or unused adapter ids fail lint.
-- [ ] Stage 6B verification commands pass.
+- [x] Adapter protocol is typed and documented in code.
+- [x] Adapter metadata is stable and serializable in registry/coverage reports.
+- [x] Adapter-backed invocation still uses public SDK factories and methods only.
+- [x] Architecture lint prevents adapters from importing forbidden internal layers.
+- [x] Unknown, duplicate, or unused adapter ids fail lint.
+- [x] Stage 6B verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli/test_adapters.py tests/cli/test_commands.py: 11 passed
+poetry run python scripts/lint_cli_coverage.py --phase registry: errors=0
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run mypy scripts/lint_cli_coverage.py: Success
+poetry run ruff check avito/cli tests/cli: All checks passed
+```
 
 ### Stage 7: Result Serialization and Pagination
 

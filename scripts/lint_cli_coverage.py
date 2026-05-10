@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
+from avito.cli.adapters import CommandAdapterRegistry, get_command_adapter_registry
 from avito.cli.registry import (
-    KNOWN_ADAPTER_IDS,
     ApiCommandRecord,
     CliRegistry,
     ExclusionRecord,
@@ -119,8 +119,17 @@ def lint_cli_coverage(
     errors.extend(_lint_exclusions(registry))
     errors.extend(_lint_parameters(registry))
     errors.extend(_lint_deprecated_policy(registry))
-    errors.extend(_lint_adapters(registry))
+    errors.extend(lint_cli_registry_adapters(registry, get_command_adapter_registry()))
     return tuple(sorted(errors, key=lambda error: (error.item, error.code, error.message)))
+
+
+def lint_cli_registry_adapters(
+    registry: CliRegistry,
+    adapter_registry: CommandAdapterRegistry,
+) -> tuple[CliCoverageLintError, ...]:
+    """Return adapter metadata lint violations for a CLI registry."""
+
+    return _lint_adapters(registry, adapter_registry)
 
 
 def render_text_report(errors: Sequence[CliCoverageLintError], *, phase: Phase) -> str:
@@ -456,15 +465,49 @@ def _lint_deprecated_policy(registry: CliRegistry) -> tuple[CliCoverageLintError
     return tuple(errors)
 
 
-def _lint_adapters(registry: CliRegistry) -> tuple[CliCoverageLintError, ...]:
+def _lint_adapters(
+    registry: CliRegistry,
+    adapter_registry: CommandAdapterRegistry,
+) -> tuple[CliCoverageLintError, ...]:
     errors: list[CliCoverageLintError] = []
+    known_adapter_ids = adapter_registry.ids()
+    used_adapter_ids: set[str] = set()
+
+    metadata_counts = Counter(adapter.adapter_id for adapter in adapter_registry.adapters)
+    for adapter in adapter_registry.adapters:
+        if metadata_counts[adapter.adapter_id] > 1:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_ADAPTER_DUPLICATE",
+                    message="Adapter id повторяется.",
+                    item=adapter.adapter_id,
+                )
+            )
+        if not adapter.metadata.owner:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_ADAPTER_OWNER_MISSING",
+                    message="Adapter metadata должен содержать owner.",
+                    item=adapter.adapter_id,
+                )
+            )
+        if not adapter.metadata.reason:
+            errors.append(
+                CliCoverageLintError(
+                    code="CLI_ADAPTER_REASON_MISSING",
+                    message="Adapter metadata должен содержать reason.",
+                    item=adapter.adapter_id,
+                )
+            )
+
     for record in _canonical_records(registry):
         if isinstance(record, LocalCommandRecord):
             continue
         adapter_id = record.adapter_id
         if adapter_id is None:
             continue
-        if adapter_id not in KNOWN_ADAPTER_IDS:
+        used_adapter_ids.add(adapter_id)
+        if adapter_id not in known_adapter_ids:
             errors.append(
                 CliCoverageLintError(
                     code="CLI_ADAPTER_UNKNOWN",
@@ -472,6 +515,14 @@ def _lint_adapters(registry: CliRegistry) -> tuple[CliCoverageLintError, ...]:
                     item=record.command_id,
                 )
             )
+    for adapter_id in sorted(known_adapter_ids - used_adapter_ids):
+        errors.append(
+            CliCoverageLintError(
+                code="CLI_ADAPTER_UNUSED",
+                message="Adapter id зарегистрирован, но не используется ни одной командой.",
+                item=adapter_id,
+            )
+        )
     return tuple(errors)
 
 

@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Mapping, Sequence
-from types import TracebackType
-from typing import Protocol
 
+from avito.cli.adapters import (
+    ClientContext,
+    ClientFactory,
+    get_command_adapter_registry,
+    invoke_adapter_command,
+)
 from avito.cli.config import AccountStore, ConfigStore, StoredAccount, resolve_cli_home
 from avito.cli.context import CliContext
 from avito.cli.errors import (
@@ -35,28 +39,6 @@ from avito.core.exceptions import (
 from avito.core.types import ApiTimeouts
 
 
-class ClientContext(Protocol):
-    """Context manager that yields a public SDK client object."""
-
-    def __enter__(self) -> object:
-        """Enter SDK client context."""
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        """Exit SDK client context."""
-
-
-class ClientFactory(Protocol):
-    """Factory used by production code and tests to build SDK clients."""
-
-    def __call__(self, settings: AvitoSettings) -> ClientContext:
-        """Build a context-managed SDK client."""
-
-
 def invoke_api_command(
     ctx: CliContext,
     command: ApiCommandRecord,
@@ -65,6 +47,32 @@ def invoke_api_command(
     client_factory: ClientFactory | None = None,
 ) -> object:
     """Invoke one registry-backed API command through `AvitoClient`."""
+
+    if command.adapter_id is not None:
+        return invoke_adapter_command(
+            get_command_adapter_registry(),
+            ctx,
+            command,
+            raw_values,
+            engine=_invoke_api_command_generic,
+            client_factory=client_factory,
+        )
+    return _invoke_api_command_generic(
+        ctx,
+        command,
+        raw_values,
+        client_factory=client_factory,
+    )
+
+
+def _invoke_api_command_generic(
+    ctx: CliContext,
+    command: ApiCommandRecord,
+    raw_values: Mapping[str, Sequence[str]],
+    *,
+    client_factory: ClientFactory | None = None,
+) -> object:
+    """Invoke one command through the generic public SDK path."""
 
     values = coerce_cli_values(command.parameters, raw_values, no_input=ctx.no_input)
     factory_kwargs = _kwargs_for_source(command, values, source="factory")

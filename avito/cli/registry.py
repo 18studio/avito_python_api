@@ -24,7 +24,6 @@ SafetyKind = Literal["read", "write", "destructive", "expensive", "local"]
 
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
-KNOWN_ADAPTER_IDS: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -602,7 +601,6 @@ __all__ = (
     "CliRegistry",
     "ExclusionRecord",
     "HelperCommandRecord",
-    "KNOWN_ADAPTER_IDS",
     "LocalCommandRecord",
     "OutputHint",
     "SafetyKind",
