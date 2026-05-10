@@ -13,6 +13,15 @@ and this project adheres to Semantic Versioning.
 - Задокументирован первый CLI-контракт: глобальные флаги, режимы вывода,
   разделение stdout/stderr, безопасный JSON/human-рендеринг ошибок и стабильные
   exit codes.
+- Добавлены локальные CLI-команды учетных записей: `avito account add`,
+  `avito account list`, `avito account use`, `avito account current`,
+  `avito account delete` и alias `avito account remove`.
+- CLI хранит учетные записи в локальных JSON-файлах с правами доступа к файлам и
+  маскирует секреты во всех режимах вывода; первая версия использует plaintext
+  storage без OS keychain.
+- Для безопасного ввода `client_secret` добавлены скрытый интерактивный prompt и
+  `--client-secret-stdin`; `--client-secret` и совместимый `--api-key` оставлены
+  для явной автоматизации с учетом риска попадания значения в историю shell.
 
 ## [2.1.0] - 2026-05-08
 

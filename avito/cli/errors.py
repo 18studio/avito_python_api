@@ -122,6 +122,20 @@ class CliConfigFileError(CliError):
         )
 
 
+class CliAuthRequiredError(CliError):
+    """Ошибка отсутствующих учетных данных CLI."""
+
+    DEFAULT_CODE: ClassVar[str] = "AUTH_REQUIRED"
+
+    def __init__(self, message: str, *, details: object | None = None) -> None:
+        super().__init__(
+            message=message,
+            code=self.DEFAULT_CODE,
+            exit_code=EXIT_AUTHENTICATION,
+            details=details,
+        )
+
+
 __all__ = (
     "EXIT_AUTHENTICATION",
     "EXIT_AUTHORIZATION",
@@ -132,6 +146,7 @@ __all__ = (
     "EXIT_UPSTREAM",
     "EXIT_USAGE",
     "CliError",
+    "CliAuthRequiredError",
     "CliConfigFileError",
     "CliPermissionError",
     "CliUsageError",

@@ -1086,13 +1086,13 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] Account add/list/use/current/delete commands work without network.
-- [ ] `--api-key` and `--endpoint` aliases are tested.
-- [ ] Hidden prompt secret input is tested.
-- [ ] `--client-secret-stdin` is tested and refuses TTY stdin.
-- [ ] `--client-secret`, `--api-key`, and `--client-secret-stdin` are mutually exclusive.
-- [ ] Public docs or reference text clearly describe plaintext local storage and safe secret input.
-- [ ] Stage 3B verification commands pass.
+- [x] Account add/list/use/current/delete commands work without network.
+- [x] `--api-key` and `--endpoint` aliases are tested.
+- [x] Hidden prompt secret input is tested.
+- [x] `--client-secret-stdin` is tested and refuses TTY stdin.
+- [x] `--client-secret`, `--api-key`, and `--client-secret-stdin` are mutually exclusive.
+- [x] Public docs or reference text clearly describe plaintext local storage and safe secret input.
+- [x] Stage 3B verification commands pass.
 
 ### Stage 4: CLI Registry From SDK Metadata
 

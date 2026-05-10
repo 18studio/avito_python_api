@@ -8,6 +8,7 @@ from pathlib import Path
 
 import click
 
+from avito.cli.accounts import account_group
 from avito.cli.context import CliContext
 from avito.cli.errors import CliUsageError, InvalidFlagCombinationError
 from avito.cli.ui import emit_stdout
@@ -122,12 +123,39 @@ def version(ctx: CliContext) -> None:
 def help_command(ctx: click.Context, topic: tuple[str, ...]) -> None:
     """Показать справку по командам."""
 
-    if topic:
-        raise CliUsageError(
-            "Подробная справка по вложенным командам появится вместе с командами API.",
-            details={"topic": topic},
-        )
-    click.echo(ctx.parent.get_help() if ctx.parent is not None else ctx.get_help())
+    parent = ctx.parent
+    if parent is None:
+        click.echo(ctx.get_help())
+        return
+    if not topic:
+        click.echo(parent.get_help())
+        return
+
+    command_context = _resolve_help_topic(parent, topic)
+    click.echo(command_context.get_help())
+
+
+def _resolve_help_topic(parent: click.Context, topic: tuple[str, ...]) -> click.Context:
+    command: click.Command = parent.command
+    command_context = parent
+    for part in topic:
+        if not isinstance(command, click.Group):
+            raise CliUsageError(
+                "Команда не содержит вложенную справку.",
+                details={"topic": topic},
+            )
+        nested = command.get_command(command_context, part)
+        if nested is None:
+            raise CliUsageError(
+                "Команда для справки не найдена.",
+                details={"topic": topic},
+            )
+        command = nested
+        command_context = click.Context(command, info_name=part, parent=command_context)
+    return command_context
+
+
+app.add_command(account_group)
 
 
 def main() -> None:
