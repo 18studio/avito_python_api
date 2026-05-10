@@ -2162,14 +2162,31 @@ make docs-strict
 
 Stage checklist:
 
-- [ ] `poetry run pytest tests/cli` passes.
-- [ ] Swagger registry/contract tests pass.
-- [ ] `poetry run mypy avito` passes.
-- [ ] `poetry run ruff check .` passes.
-- [ ] Python guidelines, architecture, and CLI coverage linters pass.
-- [ ] `poetry build` passes.
-- [ ] `make check` passes.
-- [ ] `make docs-strict` passes when docs/reference output changed.
+- [x] `poetry run pytest tests/cli` passes.
+- [x] Swagger registry/contract tests pass.
+- [x] `poetry run mypy avito` passes.
+- [x] `poetry run ruff check .` passes.
+- [x] Python guidelines, architecture, and CLI coverage linters pass.
+- [x] `poetry build` passes.
+- [x] `make check` passes.
+- [x] `make docs-strict` is not required because docs/reference output did not change.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli: 432 passed
+poetry run pytest tests/core/test_swagger*.py tests/contracts/test_swagger_contracts.py: 1927 passed
+poetry run mypy avito: Success
+poetry run mypy scripts/lint_cli_coverage.py: Success
+poetry run ruff check .: All checks passed
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run python scripts/lint_cli_coverage.py --strict: errors=0
+poetry build: built sdist and wheel
+make check: 3855 passed, all quality gates and build passed
+make docs-strict: not run; no generated docs, snippets, coverage pages, or reference output changed in Stage 14.
+```
 
 ## Acceptance Checklist
 

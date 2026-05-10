@@ -58,6 +58,7 @@ pydocstyle = { version = ">=6.3", extras = ["toml"] }
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["scripts"]
+addopts = ["--import-mode=importlib"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
