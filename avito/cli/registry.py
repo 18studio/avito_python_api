@@ -17,6 +17,8 @@ from avito.core.swagger_registry import SwaggerOperation, SwaggerRegistry, load_
 CommandCategory = Literal["api", "helper", "local"]
 ExclusionCategory = Literal["api", "helper", "execution_smoke"]
 ExclusionStatus = Literal["intentional", "temporary"]
+OutputHint = Literal["object", "collection", "mutation", "plain", "unknown"]
+SafetyKind = Literal["read", "write", "destructive", "expensive", "local"]
 
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
@@ -65,6 +67,13 @@ class ApiCommandRecord:
     domain: str | None
     deprecated: bool
     legacy: bool
+    implemented: bool
+    description: str
+    examples: tuple[str, ...]
+    related_commands: tuple[str, ...]
+    safety: SafetyKind
+    safety_summary: str
+    output_hint: OutputHint
     adapter_id: str | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -90,6 +99,13 @@ class ApiCommandRecord:
             "domain": self.domain,
             "deprecated": self.deprecated,
             "legacy": self.legacy,
+            "implemented": self.implemented,
+            "description": self.description,
+            "examples": list(self.examples),
+            "related_commands": list(self.related_commands),
+            "safety": self.safety,
+            "safety_summary": self.safety_summary,
+            "output_hint": self.output_hint,
             "adapter_id": self.adapter_id,
         }
 
@@ -105,6 +121,11 @@ class HelperCommandRecord:
     sdk_method: str
     implemented: bool
     description: str
+    examples: tuple[str, ...]
+    related_commands: tuple[str, ...]
+    safety: SafetyKind
+    safety_summary: str
+    output_hint: OutputHint
     adapter_id: str | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -118,6 +139,11 @@ class HelperCommandRecord:
             "sdk_method": self.sdk_method,
             "implemented": self.implemented,
             "description": self.description,
+            "examples": list(self.examples),
+            "related_commands": list(self.related_commands),
+            "safety": self.safety,
+            "safety_summary": self.safety_summary,
+            "output_hint": self.output_hint,
             "adapter_id": self.adapter_id,
         }
 
@@ -131,6 +157,11 @@ class LocalCommandRecord:
     action: str
     implemented: bool
     description: str
+    examples: tuple[str, ...]
+    related_commands: tuple[str, ...]
+    safety: SafetyKind
+    safety_summary: str
+    output_hint: OutputHint
 
     def to_dict(self) -> dict[str, object]:
         """Вернуть JSON-совместимые данные локальной команды."""
@@ -141,6 +172,11 @@ class LocalCommandRecord:
             "action": self.action,
             "implemented": self.implemented,
             "description": self.description,
+            "examples": list(self.examples),
+            "related_commands": list(self.related_commands),
+            "safety": self.safety,
+            "safety_summary": self.safety_summary,
+            "output_hint": self.output_hint,
         }
 
 
@@ -239,6 +275,14 @@ class CliRegistry:
             "exclusions": [record.to_dict() for record in self.exclusions],
         }
 
+    def command_ids(self) -> frozenset[str]:
+        """Вернуть множество канонических command id без alias."""
+
+        command_ids: set[str] = set()
+        for _category, record in _canonical_records(self):
+            command_ids.add(record.command_id)
+        return frozenset(command_ids)
+
 
 def build_cli_registry(
     *,
@@ -264,13 +308,15 @@ def build_cli_registry(
 
     helper_commands, helper_exclusions = _build_helper_records()
     exclusions.extend(helper_exclusions)
-    return CliRegistry(
+    registry = CliRegistry(
         api_commands=tuple(sorted(api_commands, key=lambda record: record.command_id)),
         helper_commands=helper_commands,
         local_commands=_build_local_command_records(),
         aliases=_build_alias_records(),
         exclusions=tuple(sorted(exclusions, key=lambda record: record.exclusion_id)),
     )
+    validate_cli_registry(registry)
+    return registry
 
 
 def _sync_bindings(
@@ -328,6 +374,13 @@ def _build_api_command_record(
         domain=binding.domain,
         deprecated=binding.deprecated or operation.deprecated,
         legacy=binding.legacy,
+        implemented=False,
+        description=_api_description(binding, operation),
+        examples=_api_examples(resource, action, binding),
+        related_commands=(),
+        safety=_safety_for_method(operation.method),
+        safety_summary=_safety_summary_for_method(operation.method),
+        output_hint="unknown",
     )
 
 
@@ -407,20 +460,47 @@ def _helper(
         sdk_method=f"avito.client.AvitoClient.{method_name}",
         implemented=False,
         description=description,
+        examples=(f"avito {resource} {action}", f"avito --json --no-input {resource} {action}"),
+        related_commands=(),
+        safety="read",
+        safety_summary="Локальная вспомогательная команда читает данные через публичный интерфейс SDK.",
+        output_hint="object",
     )
 
 
 def _build_local_command_records() -> tuple[LocalCommandRecord, ...]:
     records = (
-        LocalCommandRecord("account.add", "account", "add", True, "Добавить учетную запись."),
-        LocalCommandRecord("account.list", "account", "list", True, "Показать учетные записи."),
-        LocalCommandRecord("account.use", "account", "use", True, "Выбрать активную учетную запись."),
-        LocalCommandRecord("account.current", "account", "current", True, "Показать активную учетную запись."),
-        LocalCommandRecord("account.delete", "account", "delete", True, "Удалить учетную запись."),
-        LocalCommandRecord("version.show", "version", "show", True, "Показать версию."),
-        LocalCommandRecord("help.show", "help", "show", True, "Показать справку."),
+        _local("account", "add", "Добавить учетную запись.", "mutation"),
+        _local("account", "list", "Показать учетные записи.", "collection"),
+        _local("account", "use", "Выбрать активную учетную запись.", "mutation"),
+        _local("account", "current", "Показать активную учетную запись.", "object"),
+        _local("account", "delete", "Удалить учетную запись.", "mutation", safety="destructive"),
+        _local("version", "show", "Показать версию.", "plain"),
+        _local("help", "show", "Показать справку.", "plain"),
     )
     return tuple(sorted(records, key=lambda record: record.command_id))
+
+
+def _local(
+    resource: str,
+    action: str,
+    description: str,
+    output_hint: OutputHint,
+    *,
+    safety: SafetyKind = "local",
+) -> LocalCommandRecord:
+    return LocalCommandRecord(
+        command_id=f"{resource}.{action}",
+        resource=resource,
+        action=action,
+        implemented=True,
+        description=description,
+        examples=(f"avito {resource} {action}",),
+        related_commands=(),
+        safety=safety,
+        safety_summary="Локальная команда не вызывает Avito API.",
+        output_hint=output_hint,
+    )
 
 
 def _build_alias_records() -> tuple[AliasRecord, ...]:
@@ -446,6 +526,100 @@ def kebab_case(value: str) -> str:
     return normalized
 
 
+def validate_cli_registry(registry: CliRegistry) -> None:
+    """Проверить детерминированные collision-инварианты registry."""
+
+    _validate_canonical_collisions(registry)
+    _validate_aliases(registry)
+
+
+def _validate_canonical_collisions(registry: CliRegistry) -> None:
+    seen: dict[tuple[str, str], str] = {}
+    for category, record in _canonical_records(registry):
+        key = (record.resource, record.action)
+        existing = seen.get(key)
+        if existing is not None:
+            raise ValueError(
+                "CLI registry содержит конфликт команд "
+                f"{record.resource} {record.action}: {existing} и {category}:{record.command_id}"
+            )
+        seen[key] = f"{category}:{record.command_id}"
+
+
+def _validate_aliases(registry: CliRegistry) -> None:
+    command_ids = registry.command_ids()
+    canonical_keys = {
+        (record.resource, record.action)
+        for _category, record in _canonical_records(registry)
+    }
+    seen_alias_keys: dict[tuple[str, str], str] = {}
+    for alias in registry.aliases:
+        key = (alias.resource, alias.action)
+        if alias.target_command_id not in command_ids:
+            raise ValueError(
+                f"CLI alias {alias.alias_id} ссылается на неизвестную команду "
+                f"{alias.target_command_id}."
+            )
+        if key in canonical_keys:
+            raise ValueError(
+                f"CLI alias {alias.alias_id} конфликтует с canonical command "
+                f"{alias.resource} {alias.action}."
+            )
+        existing = seen_alias_keys.get(key)
+        if existing is not None:
+            raise ValueError(
+                f"CLI alias {alias.alias_id} конфликтует с alias {existing} "
+                f"для {alias.resource} {alias.action}."
+            )
+        seen_alias_keys[key] = alias.alias_id
+
+
+def _canonical_records(
+    registry: CliRegistry,
+) -> tuple[
+    tuple[CommandCategory, ApiCommandRecord | HelperCommandRecord | LocalCommandRecord],
+    ...,
+]:
+    records: list[
+        tuple[CommandCategory, ApiCommandRecord | HelperCommandRecord | LocalCommandRecord]
+    ] = []
+    records.extend(("api", record) for record in registry.api_commands)
+    records.extend(("helper", record) for record in registry.helper_commands)
+    records.extend(("local", record) for record in registry.local_commands)
+    return tuple(records)
+
+
+def _api_description(binding: DiscoveredSwaggerBinding, operation: SwaggerOperation) -> str:
+    if operation.operation_id is not None:
+        return f"Вызвать операцию Avito API `{operation.operation_id}` через публичный SDK."
+    return f"Вызвать SDK-метод {binding.sdk_method}."
+
+
+def _api_examples(
+    resource: str,
+    action: str,
+    binding: DiscoveredSwaggerBinding,
+) -> tuple[str, ...]:
+    flags = tuple(
+        f"--{kebab_case(name)} <value>"
+        for name in (*sorted(binding.factory_args), *sorted(binding.method_args))
+    )
+    command = " ".join(("avito", resource, action, *flags))
+    return (command, f"avito --json --no-input {resource} {action}")
+
+
+def _safety_for_method(method: str) -> SafetyKind:
+    if method in {"GET", "HEAD"}:
+        return "read"
+    return "write"
+
+
+def _safety_summary_for_method(method: str) -> str:
+    if method in {"GET", "HEAD"}:
+        return "Команда только читает данные Avito API."
+    return "Команда может изменить состояние или запустить действие в Avito API."
+
+
 __all__ = (
     "AliasRecord",
     "ApiCommandRecord",
@@ -454,6 +628,9 @@ __all__ = (
     "ExclusionRecord",
     "HelperCommandRecord",
     "LocalCommandRecord",
+    "OutputHint",
+    "SafetyKind",
     "build_cli_registry",
     "kebab_case",
+    "validate_cli_registry",
 )

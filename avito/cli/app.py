@@ -11,6 +11,7 @@ import click
 from avito.cli.accounts import account_group
 from avito.cli.context import CliContext
 from avito.cli.errors import CliUsageError, InvalidFlagCombinationError
+from avito.cli.help import render_registry_help
 from avito.cli.ui import emit_stdout
 
 PACKAGE_NAME = "avito-py"
@@ -129,6 +130,11 @@ def help_command(ctx: click.Context, topic: tuple[str, ...]) -> None:
         return
     if not topic:
         click.echo(parent.get_help())
+        return
+
+    registry_help = render_registry_help(topic)
+    if registry_help is not None:
+        click.echo(registry_help)
         return
 
     command_context = _resolve_help_topic(parent, topic)

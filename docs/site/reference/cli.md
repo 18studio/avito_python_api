@@ -1,8 +1,9 @@
 # CLI
 
-`avito` is the command-line entry point for `avito-py`. The current CLI surface is
-intentionally small: it exposes the shell, global flags, help, and version
-commands. API-calling commands are not implemented yet.
+`avito` is the command-line entry point for `avito-py`. The current CLI surface
+exposes the shell, global flags, account/profile commands, version commands, and
+registry-backed help for planned API commands. API-calling commands are not
+implemented yet.
 
 ## Commands
 
@@ -10,9 +11,15 @@ commands. API-calling commands are not implemented yet.
 |---|---|
 | `avito --help` | Prints root help and exits without reading account files or touching the network. |
 | `avito help` | Prints the same root help as `avito --help`. |
+| `avito help <resource>` | Prints registry-backed help for local commands, aliases, helper workflows, and API command candidates without constructing `AvitoClient`. |
+| `avito help <resource> <action>` | Prints registry-backed command help, including selected flags from Swagger binding metadata where available. |
 | `avito --version` | Prints the installed package version. |
 | `avito version` | Prints the installed package version. With `--json`, prints `{"version": "..."}`. |
 | `python -m avito --help` | Uses the same CLI application as `avito --help`. |
+
+Compatibility aliases are documented separately from canonical commands. For
+example, `avito account remove` delegates to `avito account delete` and does not
+count as a separate canonical command in CLI coverage.
 
 ## Global Flags
 

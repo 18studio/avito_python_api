@@ -22,6 +22,9 @@ and this project adheres to Semantic Versioning.
 - Для безопасного ввода `client_secret` добавлены скрытый интерактивный prompt и
   `--client-secret-stdin`; `--client-secret` и совместимый `--api-key` оставлены
   для явной автоматизации с учетом риска попадания значения в историю shell.
+- Добавлена registry-backed справка `avito help <resource>` и
+  `avito help <resource> <action>` для локальных команд, helper workflows,
+  aliases и API command candidates без создания `AvitoClient`.
 
 ## [2.1.0] - 2026-05-08
 

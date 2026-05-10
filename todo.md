@@ -1215,11 +1215,22 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] Registry-backed `avito help <resource>` and `avito help <resource> <action>` are implemented and tested.
-- [ ] API, helper, local, alias, and exclusion records remain separate categories.
-- [ ] Compatibility aliases delegate to canonical commands and do not count as coverage.
-- [ ] Local/API command collisions fail during registry construction.
-- [ ] Stage 4B verification commands pass.
+- [x] Registry-backed `avito help <resource>` and `avito help <resource> <action>` are implemented and tested.
+- [x] API, helper, local, alias, and exclusion records remain separate categories.
+- [x] Compatibility aliases delegate to canonical commands and do not count as coverage.
+- [x] Local/API command collisions fail during registry construction.
+- [x] Stage 4B verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli/test_registry.py tests/cli/test_app.py: 22 passed
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run ruff check avito/cli tests/cli: All checks passed
+```
 
 #### Stage 4C: CLI Coverage and Architecture Lint
 

@@ -213,15 +213,14 @@ def delete_account(ctx: CliContext, account_name: str, yes: bool, confirm: str |
     _delete_account(ctx, account_name=account_name, yes=yes, confirm=confirm)
 
 
-@account_group.command("remove")
-@click.argument("account_name", metavar="ACCOUNT-NAME")
-@click.option("--yes", is_flag=True, help="Удалить без интерактивного подтверждения.")
-@click.option("--confirm", metavar="ACCOUNT-NAME", help="Подтвердить имя удаляемой учетной записи.")
-@click.pass_obj
-def remove_account(ctx: CliContext, account_name: str, yes: bool, confirm: str | None) -> None:
-    """Alias для `account delete`."""
-
-    _delete_account(ctx, account_name=account_name, yes=yes, confirm=confirm)
+account_group.add_command(
+    click.Command(
+        name="remove",
+        params=delete_account.params,
+        callback=delete_account.callback,
+        help="Alias для `account delete`.",
+    )
+)
 
 
 def _delete_account(ctx: CliContext, *, account_name: str, yes: bool, confirm: str | None) -> None:

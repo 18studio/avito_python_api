@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from avito.cli.registry import ApiCommandRecord, build_cli_registry, kebab_case
+from avito.cli.registry import (
+    ApiCommandRecord,
+    build_cli_registry,
+    kebab_case,
+    validate_cli_registry,
+)
 from avito.core.swagger_discovery import discover_swagger_bindings
 from avito.core.swagger_registry import load_swagger_registry
 
@@ -123,6 +129,62 @@ def test_registry_keeps_record_categories_separate() -> None:
         exclusion.category
         for exclusion in registry.exclusions
     } == {"api", "helper"}
+
+
+def test_registry_records_include_help_metadata() -> None:
+    registry = build_cli_registry()
+
+    api_command = _api_command(registry.api_commands, "account.get-self")
+    helper_command = registry.helper_commands[0]
+    local_command = registry.local_commands[0]
+
+    assert api_command.description
+    assert api_command.examples[0].startswith("avito account get-self")
+    assert api_command.safety == "read"
+    assert api_command.safety_summary
+    assert api_command.output_hint == "unknown"
+    assert helper_command.examples
+    assert helper_command.safety == "read"
+    assert local_command.examples
+    assert local_command.safety in {"local", "destructive"}
+
+
+def test_registry_rejects_local_api_command_collision() -> None:
+    registry = build_cli_registry()
+    colliding_local = replace(
+        registry.local_commands[0],
+        command_id="account.get-self-local",
+        resource="account",
+        action="get-self",
+    )
+    invalid_registry = replace(
+        registry,
+        local_commands=(colliding_local, *registry.local_commands[1:]),
+    )
+
+    with pytest.raises(ValueError, match="конфликт команд"):
+        validate_cli_registry(invalid_registry)
+
+
+def test_registry_rejects_alias_collision_and_unknown_target() -> None:
+    registry = build_cli_registry()
+    colliding_alias = replace(
+        registry.aliases[0],
+        alias_id="account.get-self",
+        resource="account",
+        action="get-self",
+    )
+    unknown_target_alias = replace(
+        registry.aliases[0],
+        alias_id="account.unknown",
+        target_command_id="account.unknown-target",
+    )
+
+    with pytest.raises(ValueError, match="конфликтует с canonical command"):
+        validate_cli_registry(replace(registry, aliases=(colliding_alias,)))
+
+    with pytest.raises(ValueError, match="неизвестную команду"):
+        validate_cli_registry(replace(registry, aliases=(unknown_target_alias,)))
 
 
 def test_registry_report_is_json_compatible_and_deterministic() -> None:
