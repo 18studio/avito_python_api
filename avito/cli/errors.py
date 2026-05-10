@@ -136,6 +136,20 @@ class CliAuthRequiredError(CliError):
         )
 
 
+class CliValidationError(CliError):
+    """Ошибка валидации входных значений CLI."""
+
+    DEFAULT_CODE: ClassVar[str] = "VALIDATION_FAILED"
+
+    def __init__(self, message: str, *, details: object | None = None) -> None:
+        super().__init__(
+            message=message,
+            code=self.DEFAULT_CODE,
+            exit_code=EXIT_UPSTREAM,
+            details=details,
+        )
+
+
 __all__ = (
     "EXIT_AUTHENTICATION",
     "EXIT_AUTHORIZATION",
@@ -150,5 +164,6 @@ __all__ = (
     "CliConfigFileError",
     "CliPermissionError",
     "CliUsageError",
+    "CliValidationError",
     "InvalidFlagCombinationError",
 )

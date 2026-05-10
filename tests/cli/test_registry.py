@@ -95,14 +95,13 @@ def test_api_command_records_preserve_swagger_and_sdk_metadata() -> None:
     assert command.domain == "accounts"
     assert command.deprecated is False
     assert command.legacy is False
-    assert [parameter.to_dict() for parameter in command.parameters] == [
-        {
-            "name": "user_id",
-            "source": "factory",
-            "binding_expression": "path.user_id",
-            "flag": "--user-id",
-        }
-    ]
+    assert len(command.parameters) == 1
+    parameter = command.parameters[0]
+    assert parameter.name == "user_id"
+    assert parameter.source == "factory"
+    assert parameter.binding_expression == "path.user_id"
+    assert parameter.flag == "--user-id"
+    assert parameter.value_kind == "integer"
 
 
 def test_registry_keeps_record_categories_separate() -> None:

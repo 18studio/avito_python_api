@@ -1362,15 +1362,28 @@ Exit criteria:
 
 Stage checklist:
 
-- [ ] CLI parameter metadata is typed and independent from Click internals where practical.
-- [ ] Generated parameter metadata is selected from Swagger binding
+- [x] CLI parameter metadata is typed and independent from Click internals where practical.
+- [x] Generated parameter metadata is selected from Swagger binding
       `factory_args` / `method_args`, not from the whole SDK signature.
-- [ ] `timeout` and `retry` are filtered out of generated method flags.
-- [ ] Primitive, bool, date, datetime, enum, optional, and list coercion are tested.
-- [ ] Repeated flags and documented comma-separated values behave consistently.
-- [ ] Invalid values produce Russian `VALIDATION_FAILED` errors.
-- [ ] Generated flag names are checked by the CLI coverage linter for kebab-case and absence of `--resource-id`.
-- [ ] Stage verification commands pass.
+- [x] `timeout` and `retry` are filtered out of generated method flags.
+- [x] Primitive, bool, date, datetime, enum, optional, and list coercion are tested.
+- [x] Repeated flags and documented comma-separated values behave consistently.
+- [x] Invalid values produce Russian `VALIDATION_FAILED` errors.
+- [x] Generated flag names are checked by the CLI coverage linter for kebab-case and absence of `--resource-id`.
+- [x] Stage verification commands pass.
+
+Stage result:
+
+```text
+Completed on 2026-05-10.
+poetry run pytest tests/cli/test_schemas.py: 7 passed
+poetry run python scripts/lint_cli_coverage.py --phase registry: errors=0
+poetry run python scripts/lint_python_guidelines.py: OK
+poetry run python scripts/lint_architecture.py: errors=0
+poetry run mypy avito: Success
+poetry run mypy scripts/lint_cli_coverage.py: Success
+poetry run ruff check avito/cli tests/cli scripts/lint_cli_coverage.py: All checks passed
+```
 
 ### Stage 6: Generic Invocation Engine
 

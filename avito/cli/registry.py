@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from avito.cli.schemas import CliParameterSchema as CliParameterRecord
+from avito.cli.schemas import build_parameter_schemas
 from avito.core.swagger_discovery import (
     DiscoveredSwaggerBinding,
     SwaggerBindingDiscovery,
@@ -23,26 +25,6 @@ SafetyKind = Literal["read", "write", "destructive", "expensive", "local"]
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 KNOWN_ADAPTER_IDS: frozenset[str] = frozenset()
-
-
-@dataclass(frozen=True, slots=True)
-class CliParameterRecord:
-    """Аргумент будущей CLI-команды, выбранный из binding metadata."""
-
-    name: str
-    source: Literal["factory", "method"]
-    binding_expression: str
-    flag: str
-
-    def to_dict(self) -> dict[str, object]:
-        """Вернуть JSON-совместимые данные аргумента."""
-
-        return {
-            "name": self.name,
-            "source": self.source,
-            "binding_expression": self.binding_expression,
-            "flag": self.flag,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -388,25 +370,7 @@ def _build_api_command_record(
 def _build_parameter_records(
     binding: DiscoveredSwaggerBinding,
 ) -> tuple[CliParameterRecord, ...]:
-    records: list[CliParameterRecord] = []
-    for name, expression in sorted(binding.factory_args.items()):
-        records.append(_build_parameter_record(name, "factory", expression))
-    for name, expression in sorted(binding.method_args.items()):
-        records.append(_build_parameter_record(name, "method", expression))
-    return tuple(records)
-
-
-def _build_parameter_record(
-    name: str,
-    source: Literal["factory", "method"],
-    expression: str,
-) -> CliParameterRecord:
-    return CliParameterRecord(
-        name=name,
-        source=source,
-        binding_expression=expression,
-        flag=f"--{kebab_case(name)}",
-    )
+    return build_parameter_schemas(binding)
 
 
 def _build_auth_token_exclusion(binding: DiscoveredSwaggerBinding) -> ExclusionRecord:
